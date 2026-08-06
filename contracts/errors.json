@@ -1,0 +1,22 @@
+{
+  "$schema": "contracts/errors.schema.json",
+  "schema_version": "1.0.0",
+  "updated_at": "2026-08-06T16:00:00Z",
+  "namespaces": {
+    "E-SCHEMA": "Schema 校验失败（G1-02）",
+    "E-WRITE": "写权违规（G0-04 §2 矩阵）",
+    "E-CONTRACT": "契约/版本不符",
+    "E-STATE": "非法状态转换"
+  },
+  "codes": [
+    {"code": "E-SCHEMA-001", "message": "缺必填字段", "detail": "字段名见 detail 载荷"},
+    {"code": "E-SCHEMA-002", "message": "字段类型/格式不符", "detail": "违反 schema 约束"},
+    {"code": "E-SCHEMA-003", "message": "枚举值非法", "detail": "不在 enum 列表内"},
+    {"code": "E-SCHEMA-004", "message": "未知字段（additionalProperties=false）", "detail": "schema 不允许额外字段"},
+    {"code": "E-SCHEMA-005", "message": "schema_version 不符", "detail": "对象版本与契约版本不一致"},
+    {"code": "E-WRITE-001", "message": "写者不在该对象的唯一合法写者集合", "detail": "见 writers.json matrix"},
+    {"code": "E-WRITE-002", "message": "写者在「永远不能写」名单", "detail": "LLM/自动化路径写事实/批准/预测/current 等"},
+    {"code": "E-STATE-001", "message": "非法状态转换", "detail": "如已冻结 snapshot 再写入"},
+    {"code": "E-CONTRACT-001", "message": "引用对象不存在或不可解析", "detail": "refs/inputs 指向未登记对象"}
+  ]
+}

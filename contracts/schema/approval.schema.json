@@ -1,0 +1,41 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "schema_version": "1.0.0",
+ "title": "approval canonical schema",
+ "description": "批准事件（唯一准出谓词的前提；LLM 不得写入）",
+ "type": "object",
+ "required": [
+  "id",
+  "schema_version",
+  "object_ref",
+  "approver",
+  "approved_at",
+  "subject_root_hash"
+ ],
+ "properties": {
+  "schema_version": {
+   "type": "string"
+  },
+  "id": {
+   "type": "string",
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+  },
+  "object_ref": {
+   "type": "string",
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+  },
+  "approver": {
+   "type": "string",
+   "minLength": 1
+  },
+  "approved_at": {
+   "type": "string",
+   "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+  },
+  "subject_root_hash": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  }
+ },
+ "additionalProperties": false
+}

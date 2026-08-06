@@ -1,0 +1,43 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "schema_version": "1.0.0",
+ "title": "open_item canonical schema",
+ "description": "开放项（材料性/阻断分类，ADR-003/010）",
+ "type": "object",
+ "required": [
+  "id",
+  "schema_version",
+  "title",
+  "status",
+  "material"
+ ],
+ "properties": {
+  "schema_version": {
+   "type": "string"
+  },
+  "id": {
+   "type": "string",
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+  },
+  "title": {
+   "type": "string",
+   "minLength": 1
+  },
+  "status": {
+   "enum": [
+    "OPEN",
+    "CLOSED"
+   ]
+  },
+  "material": {
+   "type": "boolean"
+  },
+  "blocks": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  }
+ },
+ "additionalProperties": false
+}

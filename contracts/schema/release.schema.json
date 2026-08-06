@@ -1,0 +1,44 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "schema_version": "1.0.0",
+ "title": "release canonical schema",
+ "description": "发布（父版本 CAS 成功 + 唯一准出谓词为真；LLM 不得写入 current）",
+ "type": "object",
+ "required": [
+  "id",
+  "schema_version",
+  "version",
+  "parent_cas",
+  "released_at",
+  "approval_id"
+ ],
+ "properties": {
+  "schema_version": {
+   "type": "string"
+  },
+  "id": {
+   "type": "string",
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+  },
+  "version": {
+   "type": "string",
+   "pattern": "^\\d+\\.\\d+\\.\\d+$"
+  },
+  "parent_cas": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "released_at": {
+   "type": "string",
+   "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+  },
+  "approval_id": {
+   "type": "string",
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+  },
+  "current_pointer": {
+   "type": "boolean"
+  }
+ },
+ "additionalProperties": false
+}
