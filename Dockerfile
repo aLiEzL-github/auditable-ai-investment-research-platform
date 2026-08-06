@@ -19,4 +19,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/livez')"
 
-CMD ["python3", "app/main.py"]
+CMD ["python3", "app/main.py", "--bind", "0.0.0.0"]

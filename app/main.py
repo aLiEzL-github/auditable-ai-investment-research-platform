@@ -4,9 +4,13 @@
 - /livez  存活探针（进程活着即 200）
 - /readyz 就绪探针（依赖就绪才 200；骨架阶段无外部依赖，恒 200）
 
+绑定地址：默认 127.0.0.1（本机安全）；容器场景传 --bind 0.0.0.0
+（Docker 端口映射转发到容器 eth0，loopback 绑定会导致外部探针打不到）。
+
 零外部依赖、零数据访问、零网络外连（G0-03 ZERO_COPY_ZERO_NETWORK_DEFAULT_DENY）。
 """
 
+import argparse
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,9 +29,13 @@ class HealthHandler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--bind", default="127.0.0.1",
+                    help="绑定地址（容器场景须为 0.0.0.0）")
+    args, _ = ap.parse_known_args()
     port = int(os.environ.get("PORT", "8080"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), HealthHandler)
-    print(f"listening on 127.0.0.1:{port}", flush=True)
+    server = ThreadingHTTPServer((args.bind, port), HealthHandler)
+    print(f"listening on {args.bind}:{port}", flush=True)
     server.serve_forever()
     return 0
 
