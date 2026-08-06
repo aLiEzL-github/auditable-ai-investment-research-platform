@@ -1,0 +1,139 @@
+# THIRD_PARTY_NOTICES
+
+```text
+状态       = FINAL —— G1-00 首提交根级文件（2026-08-06 落地）
+来源       = portfolio/g1-drafts/THIRD_PARTY_NOTICES.draft.md（08-03 定稿）
+依据       = rights-matrix.json 的 code_sources · VD-06（RESEARCH_ONLY）· VD-24（Vibe = REFERENCE_ONLY）
+许可声明   = 两份 MIT 上游的版权与许可全文见下文；TradingAgents-CN 硬禁入记录见 §3
+```
+
+---
+
+## 0. 为什么是 2 个上游而不是 3 个
+
+`OI-PF-025` 原文写「至少须含 ai-berkshire 与 akshare；**若 `VD-24` 引入 Vibe-Trading 组件另加**」。
+
+```text
+VD-24 决定内容 = HKUDS/Vibe-Trading 为 REFERENCE_ONLY —— 仅阅读参考，**不引入任何代码**
+→ 未构成 MIT 意义上的「实质性使用」→ **不需要声明**
+
+hsliuping/TradingAgents-CN = 根许可 NOASSERTION，incorporate/modify/fork/
+  copy_any_file/copy_any_text/derive **全部 PROHIBITED**
+→ 不引入任何代码 → 不需要声明，但须在 §3 记录其硬禁入状态
+```
+
+**故本文件含 2 份 MIT 声明。** 台账中「3 个 MIT 上游声明」的表述已据此更正。
+
+---
+
+## 1. xbtlin/ai-berkshire
+
+```text
+用途         参考其宏观先行价值投资方法论与审计质量门设计
+许可         MIT
+固定提交     bf216491b6c58054457ff8b8b1b43d2085225e58
+权利判定     incorporate ALLOWED · modify ALLOWED · distribute_public ALLOWED（须保留版权声明）
+             commercial_use PROHIBITED（VD-06）
+许可原文来源 本地件 references/UPSTREAM_LICENSE.txt
+             SHA-256 81b843bec8a087f4c20e5be8ad744cfe1a169dc0b4f0147cbe61e6cd3da39981
+```
+
+```
+MIT License
+
+Copyright (c) 2026 xbtlin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## 2. akfamily/akshare
+
+```text
+用途         数据取得的**永久副源**（role = SECONDARY，不得升格为主源）
+许可         MIT
+权利判定     incorporate ALLOWED · modify ALLOWED · distribute_public ALLOWED（须保留版权声明）
+             commercial_use PROHIBITED（VD-06）
+许可原文来源 https://raw.githubusercontent.com/akfamily/akshare/master/LICENSE
+             取得时刻 2026-08-03T04:14:57Z   SHA-256 d1c84fbaccd5fdbc75cd12ab9a05f4f791d89ee266569bc976c8b0befafc2d65   1073 字节
+             取得依据 rights-matrix.policy.terms_reading_authorized = 是
+                      （2026-07-28 用户授权只读服务条款与**版权声明**）
+交叉验证     除版权行外与 §1 的 MIT 全文**逐字一致**（diff 实测）
+```
+
+```
+MIT License
+
+Copyright (c) 2019-2026 Albert King
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+> ⚠️ **代码 MIT ≠ 其取回的数据可再分发。**
+> `akshare` 的 MIT 许可只覆盖**代码**。经它取回的任何数据，其可用性、可缓存性、
+> 可再分发性**须按各原始来源单独判定**（`rights-matrix.json` 的 `data_sources`）。
+> 这条义务已写入权利矩阵该条目的 `obligations`。
+
+---
+
+## 3. 明确未使用、且禁止使用的上游
+
+```text
+hsliuping/TradingAgents-CN
+  根许可 = NOASSERTION；另有 app/LICENSE 与 frontend/LICENSE 两份专有许可
+  incorporate / modify / fork / copy_any_file / copy_any_text / derive = **全部 PROHIBITED**
+  read_public_pages_as_reference = ALLOWED（思想不受著作权保护，表达受保护）
+  → 本项目**未引入其任何文件、任何文本、任何派生**
+
+HKUDS/Vibe-Trading
+  许可 = MIT（本可引入）
+  但 VD-24 决定 REFERENCE_ONLY —— **主动选择不引入**
+  → 无 MIT 义务触发
+```
+
+**列出它们不是形式主义** —— `MR-2` 要求已收紧的控制不得悄悄放松。
+把「未使用」写进分发件，使后续任何引入都必须显式修改本文件，而不能悄悄发生。
+
+---
+
+## 4. 本文件明确不声称
+
+- 不声称已穷尽全部上游 —— 仅覆盖 `rights-matrix.json` 的 `code_sources` 4 项；
+  `G1-00` 落地时须以当时的依赖清单复核；
+- 不声称 MIT 许可覆盖数据 —— 见 §2 的警示；
+- 不声称本草案已构成分发 —— 它在台账内，仓库尚未创建。
+
+**研究信息不构成投资建议。**

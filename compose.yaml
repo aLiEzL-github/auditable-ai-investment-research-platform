@@ -1,0 +1,10 @@
+# compose.yaml —— G0-07 验收地（本机 arm64 实测通过；amd64 验收移至 GitHub runner）
+# 数据禁入：无任何 volume 挂载数据目录（L1 三层分离）
+
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

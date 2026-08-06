@@ -1,0 +1,52 @@
+# .gitignore —— ADR-006 L4 数据禁入 + Python/Docker 常规排除
+
+# ── 数据禁入（ADR-006 L1/L4）：原始数据与转储一律不得入仓 ──────
+# 数据类扩展名
+*.pdf
+*.xbrl
+*.xlsx
+*.xls
+*.zip
+*.doc
+*.docx
+*.csv
+*.tsv
+*.jsonl
+*.parquet
+*.db
+*.sqlite
+*.sqlite3
+
+# 数据/对象库目录（L1 三层分离：原始字节只进本地对象库）
+data/
+object-store/
+raw/
+cache/
+downloads/
+fixtures/real/
+
+# ── 凭据与秘密 ──────────────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+id_ed25519*
+id_rsa*
+secrets/
+
+# ── Python ──────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ── 工具与系统 ──────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.log
