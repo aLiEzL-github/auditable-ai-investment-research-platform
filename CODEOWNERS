@@ -1,4 +1,20 @@
-# CODEOWNERS —— 代码所有者
+# CODEOWNERS —— 代码所有者（Monorepo 按目录分工，G1-01）
+# 单人项目（VD-02）：全部路径 owner 为仓库主；目录划分供将来第 2 名自然人接入时
+# 直接对齐（G1-01 验收「目录所有权清晰」）
 
-# 单人项目（VD-02 = 1 名自然人）：全部路径的所有者为仓库主
 * @aLiEzL-github
+
+# 后端（Python 服务 + 领域逻辑 + 工具）
+/backend/ @aLiEzL-github
+
+# 前端（React）
+/frontend/ @aLiEzL-github
+
+# 契约（Schema / OpenAPI / 错误码 —— G1-02 产物，任何变更须过 CI）
+/contracts/ @aLiEzL-github
+
+# 基础设施（Docker / compose / CI）
+/infra/ @aLiEzL-github
+
+# CI 工作流（其变更须同时核对 ruleset required checks）
+/.github/ @aLiEzL-github

@@ -10,7 +10,7 @@ FROM python:3.11-slim@sha256:94c50be2dc994b873b55bc123e95e6dbade08095b3dfd790f51
 RUN useradd --create-home --uid 10001 appuser
 WORKDIR /srv/app
 
-COPY app/ ./app/
+COPY backend/app/ ./backend/app/
 
 USER appuser
 
@@ -19,4 +19,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/livez')"
 
-CMD ["python3", "app/main.py", "--bind", "0.0.0.0"]
+CMD ["python3", "backend/app/main.py", "--bind", "0.0.0.0"]
