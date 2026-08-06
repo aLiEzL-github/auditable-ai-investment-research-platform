@@ -63,17 +63,22 @@ XBRL_STRUCT = [
     r"<xbrli:xbrl", r"<xbrl\s", r"xmlns:xbrli\s*=",
     r"<xbrli:context\b", r"<xbrli:unit\b", r"contextRef\s*=",
 ]
-# (b) 来源特征串 —— **单独出现不判定**，须与高数值密度共现
+# (b) 来源特征串 —— **独立成档（G-1/E1 修复）**：命中即判定，不得与密集块共现才报。
+# 原设计「须与高数值密度共现」导致一个阈值不达标、两个维度同时熄火：
+# 232KB 的 .py 数值转储（行含 3 个长数值 < 阈值 5）白纸黑字写着数据来源，扫描器零命中。
 SOURCE_HINT = [
-    r"cninfo\.com\.cn", r"巨潮资讯网", r"stats\.gov\.cn", r"国家统计局",
+    r"cninfo\.com\.cn", r"巨潮资讯网", r"东方财富",
+    r"stats\.gov\.cn", r"国家统计局",
     r"sse\.com\.cn", r"上海证券交易所",
 ]
 # 数值 token：≥5 字符的数字（含千分位与小数），排除年份等短数字
 NUM = re.compile(r"\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d{5,}(?:\.\d+)?\b|\b\d+\.\d{2,}\b")
-DENSE_TOKENS = 5     # 单行 ≥5 个长数值 → 该行「密集」
+DENSE_TOKENS = 3     # 单行 ≥3 个长数值 → 该行「密集」（G-1 探针行 (0,33.06,15.93,88366946) 恰为 3）
 DENSE_LINES = 3      # ≥3 个连续密集行 → 判定为数据转储
 
 TEXT_EXT = {".md", ".txt", ".json", ".yaml", ".yml", ".py", ".xml", ".html", ""}
+# E4 变异测试集豁免：tests/test_scanners_mutation.py 的合成载荷（格式真实、值随机，非真实凭据）会被扫描器命中——与 THIRD_PARTY_NOTICES 同类，豁免并注明理由（OI-PF-058 先例）
+MUTATION_TEST_EXEMPT = 'test_scanners_mutation.py'
 SKIP_DIR = {".git", "node_modules", "__pycache__", ".venv", "venv"}
 
 
@@ -106,15 +111,14 @@ def scan_text(txt, path):
     for start, n in blocks:
         hits.append({"dim": "内容指纹/数值密度", "path": path, "line": start,
                      "detail": f"{n} 个连续行各含 ≥{DENSE_TOKENS} 个长数值"})
-    # (c) 来源特征串 —— **仅在与密集块共现时判定**
-    if blocks:
-        for pat in SOURCE_HINT:
-            m = re.search(pat, txt, re.I)
-            if m:
-                hits.append({"dim": "内容指纹/来源+密度共现", "path": path,
-                             "line": txt[:m.start()].count("\n") + 1,
-                             "detail": "来源特征串与数值密集块共现"})
-                break
+    # (c) 来源特征串 —— 独立判定（G-1/E1：不依赖密集块）
+    for pat in SOURCE_HINT:
+        m = re.search(pat, txt, re.I)
+        if m:
+            hits.append({"dim": "内容指纹/来源特征", "path": path,
+                         "line": txt[:m.start()].count("\n") + 1,
+                         "detail": "来源特征串（数据转储声明）"})
+            break
     return hits
 
 
@@ -155,7 +159,8 @@ def walk(root):
         dns[:] = [d for d in dns if d not in SKIP_DIR]
         for fn in fns:
             fp = os.path.join(dp, fn)
-            if os.path.abspath(fp) == SELF:
+            if os.path.abspath(fp) == SELF or MUTATION_TEST_EXEMPT in fp:
+                continue
                 continue
             n += 1
             hits += scan_file(fp, os.path.relpath(fp, root))

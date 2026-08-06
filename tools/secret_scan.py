@@ -29,23 +29,27 @@ RULES = [
     # PEM 头行**本身不含任何密钥 material** —— 单独出现时是文档引用，不是泄漏。
     # 实测：台账里 2 处命中全是容器逃逸实测的证据记录（只引了头行）。
     # 故要求头行后须跟**至少一行 ≥20 字符的 base64 正文**才判定为真密钥。
-    ("OpenSSH 私钥", r"-----BEGIN (?:OPENSSH|RSA|EC|DSA|PGP) PRIVATE KEY-----\s*\n[A-Za-z0-9+/=]{20,}", True),
+    ("OpenSSH 私钥", r"-----BEGIN OPENSSH PRIVATE KEY-----\s*\n[A-Za-z0-9+/=]{20,}", True),
+    ("RSA/EC/DSA/PGP 私钥", r"-----BEGIN (?:RSA|EC|DSA|PGP) PRIVATE KEY-----\s*\n[A-Za-z0-9+/=]{20,}", True),
     ("PKCS8 私钥", r"-----BEGIN ENCRYPTED PRIVATE KEY-----\s*\n[A-Za-z0-9+/=]{20,}", True),
     ("GitHub PAT", r"gh[pousr]_[A-Za-z0-9]{36,}", True),
     ("GitHub Fine-grained", r"github_pat_[A-Za-z0-9_]{60,}", True),
     ("AWS Access Key", r"AKIA[0-9A-Z]{16}", True),
     ("Slack Token", r"xox[baprs]-[A-Za-z0-9-]{10,}", True),
+    ("Slack/Discord Webhook", r"https://(?:hooks\.slack\.com/services|discord(?:app)?\.com/api/webhooks)/[A-Za-z0-9/_-]{20,}", True),
     ("Google API Key", r"AIza[0-9A-Za-z\-_]{35}", True),
     ("Anthropic Key", r"sk-ant-[A-Za-z0-9\-_]{20,}", True),
     ("OpenAI Key", r"sk-[A-Za-z0-9]{32,}", True),
     ("JWT", r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}", True),
-    ("私钥文件路径赋值", r"(?i)(private_key|secret_key|api_key|password|passwd|token)\s*[:=]\s*['\"][^'\"]{12,}['\"]", False),
-    ("URL 内嵌凭据", r"(?i)https?://[^/\s:@]{3,}:[^/\s:@]{3,}@", True),
+    ("敏感变量赋值", r"(?i)(private_key|secret_key|api_key|password|passwd|token)\s*[:=]\s*['\"][^'\"]{12,}['\"]", False),
+    ("URL 内嵌凭据", r"(?i)[a-z][a-z0-9+.\-]*://(?:[^/\s:@]{2,}:[^/\s:@]{2,}|:[^/\s:@]{2,})@", True),
 ]
 
 # 扫描范围：文本类扩展名 + 无扩展名文件
 TEXT_EXT = {".md", ".txt", ".json", ".yaml", ".yml", ".py", ".sh", ".toml", ".cfg",
             ".ini", ".env", ".js", ".ts", ".sql", ".xml", ".html", ".conf", ""}
+# E4 变异测试集豁免：tests/test_scanners_mutation.py 的合成载荷（格式真实、值随机，非真实凭据）会被扫描器命中——与 THIRD_PARTY_NOTICES 同类，豁免并注明理由（OI-PF-058 先例）
+MUTATION_TEST_EXEMPT = 'test_scanners_mutation.py'
 SKIP_DIR = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache"}
 
 # 本文件自身的示例模式不得触发自己 —— 否则扫描器永远红，等于没有
@@ -85,7 +89,8 @@ def walk(root):
         dns[:] = [d for d in dns if d not in SKIP_DIR]
         for fn in fns:
             fp = os.path.join(dp, fn)
-            if os.path.abspath(fp) == SELF:
+            if os.path.abspath(fp) == SELF or MUTATION_TEST_EXEMPT in fp:
+                continue
                 continue                       # 自身豁免（见 SELF 注释）
             if os.path.splitext(fn)[1].lower() not in TEXT_EXT:
                 skipped += 1

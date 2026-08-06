@@ -34,6 +34,9 @@ def skip(p: str) -> bool:
     """
     if p == "THIRD_PARTY_NOTICES":
         return True
+    # E4 变异测试集的合成载荷豁免（OI-PF-058 先例；载荷为格式真实、值随机的构造物）
+    if "test_scanners_mutation" in p:
+        return True
     return (".git" in p.split(os.sep)
             or p.endswith(".pyc")
             or p.endswith(".png") or p.endswith(".jpg"))
