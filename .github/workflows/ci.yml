@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Compile check
-        run: python -m compileall -q app tools tests
+        run: python -m compileall -q backend
 
   test:
     runs-on: ubuntu-latest
@@ -28,12 +28,12 @@ jobs:
           python-version: "3.11"
       - name: Run tests
         run: |
-          python -m unittest discover -s tests -v
+          python -m unittest discover -s backend/tests -v
       - name: Empty-test guard (BF-02)
         run: |
-          count=$(python -c "import unittest,glob;print(len([f for f in glob.glob('tests/test_*.py')]))")
+          count=$(python -c "import unittest,glob;print(len([f for f in glob.glob('backend/tests/test_*.py')]))")
           if [ "$count" -eq 0 ]; then
-            echo "❌ 空测试必失败（BF-02）：tests/ 下无任何 test_*.py"
+            echo "❌ 空测试必失败（BF-02）：backend/tests/ 下无任何 test_*.py"
             exit 1
           fi
 
@@ -45,7 +45,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Secret scan
-        run: python tools/secret_scan.py .
+        run: python backend/tools/secret_scan.py .
 
   data-ingress-scan:
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Data ingress scan (L4)
-        run: python tools/data_ingress_scan.py .
+        run: python backend/tools/data_ingress_scan.py .
 
   upstream-taint-scan:
     runs-on: ubuntu-latest
@@ -65,7 +65,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Upstream taint scan (N21)
-        run: python tools/upstream_taint_scan.py .
+        run: python backend/tools/upstream_taint_scan.py .
 
   docker-build:
     runs-on: ubuntu-latest
@@ -95,4 +95,4 @@ jobs:
         with:
           python-version: "3.11"
       - name: Arch import check (G0-04 M1-M7)
-        run: python tools/arch_import_check.py .
+        run: python backend/tools/arch_import_check.py .

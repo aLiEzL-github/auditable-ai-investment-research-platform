@@ -54,7 +54,7 @@ def main() -> int:
             fp = os.path.join(dirpath, fn)
             rel = os.path.relpath(fp, ROOT).replace(os.sep, ".")
             # tests/ 是验证方（须能访问被测端点），不受 M1—M7 生产代码边界约束
-            if rel.startswith("tests."):
+            if ".tests." in rel or rel.startswith("tests."):
                 continue
             try:
                 tree = ast.parse(open(fp, encoding="utf-8").read(), filename=fp)
