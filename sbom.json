@@ -1,0 +1,92 @@
+{
+ "bomFormat": "CycloneDX",
+ "specVersion": "1.4",
+ "version": 1,
+ "metadata": {
+  "component": {
+   "type": "application",
+   "name": "auditable-ai-investment-research-platform",
+   "version": "0.1.0"
+  }
+ },
+ "components": [
+  {
+   "type": "library",
+   "name": "SQLAlchemy",
+   "version": "2.0.51",
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "436728ce18a80f6951a1e11cc6112c2ede9faf20766f1a26195a7c441ca12dbd"
+    },
+    {
+     "alg": "SHA-256",
+     "content": "1aa10c0daee6705294d181daadaa793221e1a59ed55000a3fab1d42b088ce4ba"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "name": "alembic",
+   "version": "1.19.0",
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "cf839d3849116aab3cc047e09c6968b9bd6b2fde61b6bb7c1e97352fe5503580"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "name": "Mako",
+   "version": "1.4.1",
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "a359d9a94a541213958742b2698d0a7757bb83551767bc468a74b9905aba9617"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "name": "MarkupSafe",
+   "version": "3.0.3",
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "0bf2a864d67e76e5c9a34dc26ec616a66b9888e25e7b9460e1c76d3293bd9dbf"
+    },
+    {
+     "alg": "SHA-256",
+     "content": "4bd4cd07944443f5a265608cc6aab442e4f74dff8088b0dfc8238647b8f6ae9a"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "name": "typing_extensions",
+   "version": "4.16.0",
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "name": "greenlet",
+   "version": "3.5.4",
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "c3fe76c2cac86b4f7a1e92865ac0a54384deb05c92986287c1a7110d9bd53071"
+    },
+    {
+     "alg": "SHA-256",
+     "content": "e883de250e299654b1f1680f72a1a9f9ba62c9bd1bce84099c90657349a8dfbb"
+    }
+   ]
+  }
+ ]
+}
