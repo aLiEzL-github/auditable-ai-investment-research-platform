@@ -66,6 +66,23 @@ jobs:
         run: pip install --require-hashes -r requirements.txt
       - name: Migration check (K-1/T2)
         run: python backend/tools/migration_check.py
+  sbom-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: SBOM check (G1-07 3b)
+        run: python backend/tools/sbom_check.py
+
+  container-policy-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Container policy check (G1-07 3b / N17-N18)
+        run: python backend/tools/container_policy_check.py
+
   docker-build:
     runs-on: ubuntu-latest
     steps:
