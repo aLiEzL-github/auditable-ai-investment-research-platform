@@ -139,8 +139,9 @@
       ],
       "preconditions": [
         {
-          "check": "PENDING_RULING",
-          "description": "AssumptionSnapshot 归属待 U 裁定（P0-4）"
+          "check": "MACHINE",
+          "key": "independent_approval_event",
+          "description": "须有独立 ApprovalEvent（G0-04 §2 AssumptionSnapshot 前置）"
         }
       ]
     },
@@ -285,7 +286,7 @@
     {
       "section2": "AssumptionSnapshot",
       "key": "prediction",
-      "note": "P0-4 裁定项"
+      "note": "P0-4a(i) 裁定（2026-08-07 U）：prediction 即 AssumptionSnapshot 的改名"
     },
     {
       "section2": "CalcLedger",
@@ -307,7 +308,7 @@
     {
       "section2": "rights-matrix",
       "key": null,
-      "note": "非 DB 对象，P0-4 裁定是否纳入"
+      "note": "P0-4b(ii) 裁定（2026-08-07 U）：非 DB 对象不纳入；由 G0-03 签署流程管辖"
     }
   ],
   "section2_rows": 10
