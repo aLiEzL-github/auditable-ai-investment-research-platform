@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install deps (G1-03)
-        run: pip install -r requirements.txt
+        run: pip install --require-hashes -r requirements.txt
       - name: Run tests
         run: |
           python -m unittest discover -s backend/tests -v

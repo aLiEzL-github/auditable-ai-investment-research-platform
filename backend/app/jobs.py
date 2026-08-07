@@ -42,7 +42,9 @@ class Job(Base):
     result = Column(Text)
     error = Column(Text)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow())
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow())
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.utcnow(),
+                        onupdate=lambda: datetime.utcnow())  # J-2/Q2
 
 
 def _now():
@@ -97,30 +99,44 @@ class JobQueue:
             self.s.expire_all()  # 清除 identity map 缓存，确保读取 UPDATE 后的状态
             return self.s.get(Job, row.id)
 
-    def extend_lease(self, job_id: int, lease_seconds: int = 60) -> bool:
+    @staticmethod
+    def _assert_holder(job, worker_id: str, now) -> None:
+        """J-1/Q1：持有者校验 —— 非持有者 E-LEASE-002；持有者但租约失效 E-LEASE-001。
+        租约机制的全部意义：过期之后原持有者不得再提交。"""
+        if job.worker_id != worker_id:
+            raise ValueError("E-LEASE-002: 非持有者（worker_id 不符）")
+        if job.lease_until is None or job.lease_until <= now:
+            raise ValueError("E-LEASE-001: 租约已失效")
+
+    def extend_lease(self, job_id: int, worker_id: str, lease_seconds: int = 60) -> bool:
+        """延长租约 —— 必须由当前持有者调用（J-1/Q1 增加 worker_id 参数）。"""
         with self._lock:
             job = self.s.get(Job, job_id)
             if job is None or job.status != "RUNNING":
                 return False
+            self._assert_holder(job, worker_id, _now())
             job.lease_until = _now() + timedelta(seconds=lease_seconds)
             self.s.commit()
             return True
 
-    def complete(self, job_id: int, result: str) -> Job:
+    def complete(self, job_id: int, worker_id: str, result: str) -> Job:
         with self._lock:
             job = self.s.get(Job, job_id)
             if job is None or job.status != "RUNNING":
                 raise ValueError("E-STATE-001: 仅 RUNNING 可完成")
+            self._assert_holder(job, worker_id, _now())
             job.status = "DONE"
             job.result = result
             self.s.commit()
             return job
 
-    def fail(self, job_id: int, error: str) -> Job:
+    def fail(self, job_id: int, worker_id: str, error: str) -> Job:
         with self._lock:
             job = self.s.get(Job, job_id)
             if job is None or job.status not in ("RUNNING", "PENDING"):
                 raise ValueError("E-STATE-001: 非法状态转换")
+            if job.status == "RUNNING":
+                self._assert_holder(job, worker_id, _now())
             job.status = "FAILED"
             job.error = error
             self.s.commit()
