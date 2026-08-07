@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "writers.json 元模式（H-4/J3）",
+  "type": "object",
+  "required": ["schema_version", "matrix"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "matrix": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-z_]+$": {
+          "type": "object",
+          "required": ["never"],
+          "properties": {
+            "writers": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "any_of": {"type": "boolean"},
+            "never": {"type": "array", "items": {"type": "string"}}
+          },
+          "anyOf": [
+            {"required": ["writers"]},
+            {"required": ["any_of"]}
+          ]
+        }
+      }
+    }
+  }
+}

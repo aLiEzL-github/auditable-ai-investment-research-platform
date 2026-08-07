@@ -17,7 +17,13 @@ PEM 头行误报同类）。故指纹须区分：
     讨论数据源       「巨潮 = 备用源，UNKNOWN 阻断」        → 不是泄漏
     数据载荷本身     XBRL 实例文档、成片的财务数字表         → 是泄漏
 
-判据：**来源特征串单独出现不判定**；须与「高数值密度」或「XBRL 实例结构」共现。
+判据（**H-1/J1 分档修订**）：来源特征串按文件类别分档判定 ——
+
+    代码/数据类扩展名（.py/.js/.json/.xml/.csv 等）    来源特征独立判定，命中即报
+    （这类文件出现来源特征 = 数据转储的强信号；上轮 232KB .py 探针即此形态）
+    散文类（.md/.txt/无扩展名）                       仍须与「高数值密度」或
+                                                      「XBRL 实例结构」共现
+    （治理文档写权利判定表属于此类 —— 单独出现是讨论，不是泄漏）
 
 ## 验收对照（`g1-drafts/L2-L4-合同与验收标准.draft.md §2.4`）
 
@@ -75,6 +81,9 @@ SOURCE_HINT = [
 NUM = re.compile(r"\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d{5,}(?:\.\d+)?\b|\b\d+\.\d{2,}\b")
 DENSE_TOKENS = 3     # 单行 ≥3 个长数值 → 该行「密集」（G-1 探针行 (0,33.06,15.93,88366946) 恰为 3）
 DENSE_LINES = 3      # ≥3 个连续密集行 → 判定为数据转储
+# H-1/J1：代码/数据类扩展名（来源特征独立判定的分档）
+CODE_EXT = {".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".xml", ".xbrl", ".csv",
+            ".tsv", ".sql", ".sh", ".toml", ".cfg", ".ini", ".env", ".yaml", ".yml"}
 
 TEXT_EXT = {".md", ".txt", ".json", ".yaml", ".yml", ".py", ".xml", ".html", ""}
 # E4 变异测试集豁免：tests/test_scanners_mutation.py 的合成载荷（格式真实、值随机，非真实凭据）会被扫描器命中——与 THIRD_PARTY_NOTICES 同类，豁免并注明理由（OI-PF-058 先例）
@@ -111,14 +120,15 @@ def scan_text(txt, path):
     for start, n in blocks:
         hits.append({"dim": "内容指纹/数值密度", "path": path, "line": start,
                      "detail": f"{n} 个连续行各含 ≥{DENSE_TOKENS} 个长数值"})
-    # (c) 来源特征串 —— 独立判定（G-1/E1：不依赖密集块）
-    for pat in SOURCE_HINT:
-        m = re.search(pat, txt, re.I)
-        if m:
-            hits.append({"dim": "内容指纹/来源特征", "path": path,
-                         "line": txt[:m.start()].count("\n") + 1,
-                         "detail": "来源特征串（数据转储声明）"})
-            break
+    # (c) 来源特征串 —— H-1/J1 分档判定：
+    #     代码/数据类扩展名独立命中即报（数据转储强信号）；
+    #     散文类（.md/.txt 等）须与高数值密度或 XBRL 结构共现（治理讨论非泄漏）。
+    _ext = os.path.splitext(path)[1].lower()
+    _src_hit = any(re.search(p, txt, re.I) for p in SOURCE_HINT)
+    if _src_hit and (_ext in CODE_EXT or blocks or any(
+            re.search(p, txt, re.I) for p in XBRL_STRUCT)):
+        hits.append({"dim": "内容指纹/来源特征", "path": path,
+                     "line": 1, "detail": "来源特征串（数据转储声明）"})
     return hits
 
 

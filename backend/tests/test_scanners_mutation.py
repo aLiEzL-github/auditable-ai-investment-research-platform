@@ -141,6 +141,21 @@ class TestIngressRules(unittest.TestCase):
         hits = self._run(files)
         self.assertFalse(hits, "负例目录应零命中（无假阳性）")
 
+    def test_positive_py_dump_probe(self):
+        """J1 正例：232KB .py 数值转储（含来源特征）须命中。"""
+        rows = [f"({i}, {1.2345:.4f}, {2.3456:.4f}, {88366946})," for i in range(6000)]
+        files = {"d3_big.py": "# 数据来源：东方财富 / 巨潮资讯网\n" + "\n".join(rows) + "\n"}
+        hits = self._run(files)
+        self.assertTrue(hits, "232KB .py 数值转储应命中")
+
+    def test_negative_governance_md(self):
+        """J1 负例：纯治理文档（权利判定表，零数值载荷）须不命中。"""
+        md = ("# 数据源权利判定\n\n| 数据源 | 判定 |\n|---|---|\n"
+              "| 巨潮资讯网 | UNKNOWN 阻断 |\n| 上海证券交易所 | ALLOWED |\n"
+              "| 国家统计局 | ALLOWED |\n\n本文为权利矩阵记录，不含数据载荷。\n")
+        hits = self._run({"sources.md": md})
+        self.assertFalse(hits, "纯治理文档应零命中（来源指纹须与密度/XBRL 共现）")
+
 
 class TestTaintRules(unittest.TestCase):
     def test_positive(self):
