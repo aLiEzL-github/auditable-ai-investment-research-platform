@@ -44,7 +44,7 @@ class TestIdempotentSubmit(TestJobQueueBase):
     def test_terminal_resubmit_returns_original(self):
         j1 = self.q.submit("key-2")
         claimed = self.q.claim_next("w1")
-        self.q.complete(claimed.id, "ok")
+        self.q.complete(claimed.id, "w1", "ok")
         j2 = self.q.submit("key-2")
         self.assertEqual(j1.id, j2.id)  # 幂等到底：终态重提返回原 job（含 result）
         self.assertEqual(j2.status, "DONE")
@@ -89,14 +89,14 @@ class TestTransitions(TestJobQueueBase):
     def test_complete(self):
         j = self.q.submit("c1")
         claimed = self.q.claim_next("w1")
-        done = self.q.complete(claimed.id, "result-ok")
+        done = self.q.complete(claimed.id, "w1", "result-ok")
         self.assertEqual(done.status, "DONE")
         self.assertEqual(done.result, "result-ok")
 
     def test_fail(self):
         j = self.q.submit("f1")
         claimed = self.q.claim_next("w1")
-        failed = self.q.fail(claimed.id, "boom")
+        failed = self.q.fail(claimed.id, "w1", "boom")
         self.assertEqual(failed.status, "FAILED")
 
     def test_cancel_pending(self):
@@ -108,22 +108,71 @@ class TestTransitions(TestJobQueueBase):
     def test_cancel_terminal_rejected(self):
         j = self.q.submit("x2")
         claimed = self.q.claim_next("w1")
-        self.q.complete(claimed.id, "ok")
+        self.q.complete(claimed.id, "w1", "ok")
         with self.assertRaises(ValueError):
             self.q.cancel(claimed.id)
 
     def test_complete_non_running_rejected(self):
         j = self.q.submit("x3")
         with self.assertRaises(ValueError) as cm:
-            self.q.complete(j.id, "x")  # PENDING 不可完成
+            self.q.complete(j.id, "w1", "x")  # PENDING 不可完成
         self.assertIn("E-STATE-001", str(cm.exception))
 
     def test_extend_lease(self):
         j = self.q.submit("e1")
         claimed = self.q.claim_next("w1", lease_seconds=5)
-        self.assertTrue(self.q.extend_lease(claimed.id, lease_seconds=30))
+        self.assertTrue(self.q.extend_lease(claimed.id, "w1", lease_seconds=30))
         self.assertGreater(claimed.lease_until,
                            datetime.utcnow() + timedelta(seconds=10))
+
+    def test_lease_ownership_sequence(self):
+        """J-1/Q1 验收序列：A 领 1s → 过期 → B 抢占 → A complete 被拒、B 成功。"""
+        self.q.submit("own-1")
+        a = self.q.claim_next("A", lease_seconds=1)
+        a.lease_until = datetime.utcnow() - timedelta(seconds=5)
+        self.q.s.commit()
+        time.sleep(0.1)
+        b = self.q.claim_next("B")
+        self.assertEqual(b.worker_id, "B")
+        # A 已被 B 抢占（worker_id=B）→ A 是**非持有者** → E-LEASE-002
+        with self.assertRaises(ValueError) as cm:
+            self.q.complete(b.id, "A", "A 的结果（租约已过期）")
+        self.assertIn("E-LEASE-002", str(cm.exception))
+        # E-LEASE-001 场景：持有者身份仍在但租约已过期（无抢占）
+        self.q.submit("own-1b")
+        a2 = self.q.claim_next("A", lease_seconds=1)
+        a2.lease_until = datetime.utcnow() - timedelta(seconds=5)
+        self.q.s.commit()
+        time.sleep(0.1)
+        with self.assertRaises(ValueError) as cm:
+            self.q.complete(a2.id, "A", "身份在但租约过期")
+        self.assertIn("E-LEASE-001", str(cm.exception))
+        # B 合法完成
+        done = self.q.complete(b.id, "B", "B 的结果")
+        self.assertEqual(done.status, "DONE")
+        self.assertEqual(done.worker_id, "B")
+
+    def test_non_holder_rejected(self):
+        """J-1/Q1：非持有者（租约未过期）提交被拒 E-LEASE-002。"""
+        self.q.submit("own-2")
+        a = self.q.claim_next("A", lease_seconds=60)
+        with self.assertRaises(ValueError) as cm:
+            self.q.complete(a.id, "B", "B 冒充")
+        self.assertIn("E-LEASE-002", str(cm.exception))
+        with self.assertRaises(ValueError) as cm:
+            self.q.fail(a.id, "B", "B 冒充失败")
+        self.assertIn("E-LEASE-002", str(cm.exception))
+        with self.assertRaises(ValueError) as cm:
+            self.q.extend_lease(a.id, "B", lease_seconds=30)
+        self.assertIn("E-LEASE-002", str(cm.exception))
+
+    def test_updated_at_advances(self):
+        """J-2/Q2：提交→领取→完成后 updated_at > created_at。"""
+        j = self.q.submit("u1")
+        claimed = self.q.claim_next("w1")
+        time.sleep(0.05)
+        done = self.q.complete(claimed.id, "w1", "ok")
+        self.assertGreater(done.updated_at, done.created_at)
 
 
 class TestConcurrentSubmit(TestJobQueueBase):
