@@ -86,6 +86,10 @@ jobs:
       - name: Non-root check (G0-07)
         run: |
           docker run --rm bootstrap-smoke id -u | grep -qx 10001
+      - name: Vertical smoke in container (G1-06 2b/2c)
+        run: |
+          docker run --rm -e DATABASE_URL=sqlite:////tmp/smoke.db \
+            bootstrap-smoke python3 backend/tools/vertical_smoke.py
       - name: Container bind verification (G1-05 1c)
         run: |
           docker run -d --name bindcheck -p 18082:8080 bootstrap-smoke
