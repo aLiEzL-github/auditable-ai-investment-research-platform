@@ -16,11 +16,28 @@ import sys
 BACKEND = os.path.join(os.path.dirname(__file__), "..")
 APP = os.path.join(BACKEND, "app")
 _URL = os.environ.get("DATABASE_URL", f"sqlite:///{os.path.join(BACKEND, 'app.db')}")
+_IS_PG = _URL.startswith(("postgresql", "postgres+"))
 _DB_PATH = _URL.replace("sqlite:///", "", 1)
 DB = os.path.abspath(_DB_PATH)
 # 与 migration_check 同款语义（R-1(a) 同类修复）：外部 DATABASE_URL 优先，否则 sqlite 默认
 ENV = dict(os.environ)
 ENV.setdefault("DATABASE_URL", _URL)
+
+
+def _row_from_job(job_id: int) -> tuple:
+    """落库断言查询：sqlite 文件或 PG URL（A1b 双引擎）。"""
+    if _IS_PG:
+        import psycopg
+        with psycopg.connect(_URL.replace("+psycopg", "")) as conn:
+            row = conn.execute(
+                "SELECT status, result, worker_id FROM job WHERE id = %s",
+                (job_id,)).fetchone()
+        return row
+    conn = sqlite3.connect(DB)
+    row = conn.execute("SELECT status, result, worker_id FROM job WHERE id=?",
+                       (job_id,)).fetchone()
+    conn.close()
+    return row
 
 
 def main() -> int:
@@ -29,7 +46,7 @@ def main() -> int:
     from jobs import JobQueue
     from datetime import datetime, timedelta
 
-    if os.path.exists(DB):
+    if not _IS_PG and os.path.exists(DB):
         os.remove(DB)
     # ① 迁移（部署路径，非 create_all）
     r = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"],
@@ -52,10 +69,7 @@ def main() -> int:
     # ④ 完成 → 落库断言
     done = q.complete(claimed.id, "W1", "vertical-smoke-done")
     assert done.status == "DONE", f"完成失败: {done.status}"
-    conn = sqlite3.connect(DB)
-    row = conn.execute("SELECT status, result, worker_id FROM job WHERE id=?",
-                       (job.id,)).fetchone()
-    conn.close()
+    row = _row_from_job(job.id)
     assert row == ("DONE", "vertical-smoke-done", "W1"), f"落库断言失败: {row}"
     print("④ 完成 + 落库 OK:", row)
 

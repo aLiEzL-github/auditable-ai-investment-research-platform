@@ -12,6 +12,25 @@ infra/         Docker / compose / 部署定义
 .github/       CI 工作流
 ```
 
+## Quickstart（原生路径，Gate 1 E1 / OI-PF-114）
+
+macOS arm64 原生一条命令启动空壳服务（默认只绑 loopback）：
+
+```bash
+# 可选环境变量：APP_PORT（默认 8080）· BIND_HOST（默认 127.0.0.1）· LOG_LEVEL（默认 INFO）
+python3 backend/app/main.py
+```
+
+健康检查：
+
+```bash
+curl -fsS http://127.0.0.1:8080/livez    # 就绪（空壳存活）
+curl -fsS http://127.0.0.1:8080/readyz   # 迁移与依赖就绪
+```
+
+非默认端口示例：`APP_PORT=18099 python3 backend/app/main.py --bind 127.0.0.1`。
+`--bind` 为 main.py 的 CLI 参数；环境变量与 CLI 均可覆盖（Settings 校验 APP_PORT/BIND_HOST 非法值即退出）。
+
 ## 变更规则（G1-01 验收「后续改动只经分支/PR」）
 
 1. **main 禁止直推** —— 唯一豁免是 578ac18e（空仓初始分支创建），已用掉；
