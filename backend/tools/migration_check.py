@@ -20,12 +20,14 @@ BACKEND = os.path.join(os.path.dirname(__file__), "..")
 APP = os.path.join(BACKEND, "app")
 MIGRATIONS = os.path.join(BACKEND, "migrations", "versions")
 DB = os.path.join(BACKEND, "app.db")
-ENV = dict(os.environ, DATABASE_URL=f"sqlite:///{DB}")
 
 
 def alembic(*args):
+    # 双引擎：环境已有 DATABASE_URL（如 CI 的 PG URL）则保留，否则 sqlite（R-1(a)）
+    env = dict(os.environ)
+    env.setdefault("DATABASE_URL", f"sqlite:///{DB}")
     r = subprocess.run([sys.executable, "-m", "alembic", *args],
-                       cwd=BACKEND, env=ENV, capture_output=True, text=True)
+                       cwd=BACKEND, env=env, capture_output=True, text=True)
     if r.returncode != 0:
         print(f"❌ alembic {' '.join(args)} 失败:\n{r.stderr[-500:]}")
         sys.exit(1)
