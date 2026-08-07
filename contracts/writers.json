@@ -18,6 +18,13 @@
       ],
       "writers": [
         "L7_freeze"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "rights_gate_and_parse_ok",
+          "description": "经 L3 权利门 + L6 解析成功"
+        }
       ]
     },
     "acquisition_event": {
@@ -39,6 +46,13 @@
       ],
       "writers": [
         "L7_freeze"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "source_snapshot_frozen",
+          "description": "来自已冻结对象"
+        }
       ]
     },
     "snapshot": {
@@ -55,6 +69,13 @@
       ],
       "writers": [
         "L7_freeze"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "cutoff_frozen",
+          "description": "cutoff 冻结后不可改"
+        }
       ]
     },
     "assumption": {
@@ -64,6 +85,12 @@
       ],
       "never": [
         "LLM"
+      ],
+      "preconditions": [
+        {
+          "check": "NONE",
+          "description": "G0-04 §2 无前置条件"
+        }
       ]
     },
     "calc": {
@@ -74,6 +101,13 @@
       ],
       "writers": [
         "L8_calc"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "inputs_frozen",
+          "description": "输入必须是已冻结对象"
+        }
       ]
     },
     "claim": {
@@ -84,16 +118,30 @@
       ],
       "writers": [
         "L9_claim"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "refs_resolvable",
+          "description": "引用必须可解析"
+        }
       ]
     },
     "prediction": {
       "never": [
         "LLM",
         "L8",
-        "L9"
+        "L9",
+        "AUTOMATION"
       ],
       "writers": [
         "L10_approval"
+      ],
+      "preconditions": [
+        {
+          "check": "PENDING_RULING",
+          "description": "AssumptionSnapshot 归属待 U 裁定（P0-4）"
+        }
       ]
     },
     "approval": {
@@ -107,6 +155,18 @@
       ],
       "writers": [
         "L12_approval_endpoint"
+      ],
+      "preconditions": [
+        {
+          "check": "MANUAL",
+          "description": "人工发起",
+          "guaranteed_by": "L12 批准端点（人工操作，无自动化路径）"
+        },
+        {
+          "check": "MACHINE",
+          "key": "subject_root_hash_bound",
+          "description": "绑定 approval_subject_root 哈希"
+        }
       ]
     },
     "release": {
@@ -118,6 +178,13 @@
       ],
       "writers": [
         "L11_release"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "exit_predicate_and_parent_cas",
+          "description": "唯一准出谓词为真 + 父版本 CAS 成功"
+        }
       ]
     },
     "current_pointer": {
@@ -131,19 +198,117 @@
       ],
       "writers": [
         "L11_release"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "exit_predicate_and_parent_cas",
+          "description": "唯一准出谓词为真 + 父版本 CAS 成功（与 release 同前置）"
+        }
       ]
     },
     "open_item": {
       "any_of": true,
       "never": [
         "LLM"
+      ],
+      "preconditions": [
+        {
+          "check": "NONE",
+          "description": "G0-04 §2 无对应行（台账对象，受管理写）"
+        }
       ]
     },
     "candidate": {
       "any_of": true,
       "never": [
         "LLM"
+      ],
+      "preconditions": [
+        {
+          "check": "NONE",
+          "description": "G0-04 §2 无对应行（台账对象，受管理写）"
+        }
+      ]
+    },
+    "source": {
+      "writers": [
+        "L7_freeze"
+      ],
+      "never": [
+        "LLM",
+        "L5",
+        "L6",
+        "L8",
+        "L9"
+      ],
+      "preconditions": [
+        {
+          "check": "MANUAL",
+          "description": "来源登记由治理层人工维护",
+          "guaranteed_by": "台账治理层（U）"
+        }
+      ]
+    },
+    "job": {
+      "writers": [
+        "L7_freeze"
+      ],
+      "never": [
+        "LLM"
+      ],
+      "preconditions": [
+        {
+          "check": "NONE",
+          "description": "G1-04 调度对象（L7_freeze 写，LLM 禁）"
+        }
       ]
     }
-  }
+  },
+  "section2_mapping": [
+    {
+      "section2": "原始字节对象库",
+      "key": "raw_artifact"
+    },
+    {
+      "section2": "EvidenceSnapshot",
+      "key": "snapshot"
+    },
+    {
+      "section2": "FactRecord",
+      "key": "fact"
+    },
+    {
+      "section2": "AssumptionProposal",
+      "key": "assumption"
+    },
+    {
+      "section2": "AssumptionSnapshot",
+      "key": "prediction",
+      "note": "P0-4 裁定项"
+    },
+    {
+      "section2": "CalcLedger",
+      "key": "calc"
+    },
+    {
+      "section2": "Claim",
+      "key": "claim"
+    },
+    {
+      "section2": "ApprovalEvent",
+      "key": "approval"
+    },
+    {
+      "section2": "release / current",
+      "key": "release",
+      "also": "current_pointer"
+    },
+    {
+      "section2": "rights-matrix",
+      "key": null,
+      "note": "非 DB 对象，P0-4 裁定是否纳入"
+    }
+  ],
+  "section2_rows": 10
 }
