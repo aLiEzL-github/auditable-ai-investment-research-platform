@@ -46,8 +46,9 @@ def module_name_of(node: ast.AST) -> str:
 def main() -> int:
     bad = []
     checked = 0
+    SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__"}
     for dirpath, dirnames, filenames in os.walk(ROOT):
-        dirnames[:] = [d for d in dirnames if d != ".git"]
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for fn in filenames:
             if not fn.endswith(".py"):
                 continue
@@ -56,6 +57,10 @@ def main() -> int:
             # tests/ 是验证方（须能访问被测端点），不受 M1—M7 生产代码边界约束
             if ".tests." in rel or rel.startswith("tests."):
                 continue
+            # persistence 实现层自身（G1-03 repository.py）允许引用 DB 库：
+            # M3 约束的对象是「L6 解析器引用 persistence」，而非 persistence 自身。
+            if "repository" in rel or "migrations" in rel:
+                continue  # persistence 实现层与迁移脚本（M3 约束对象是解析器）
             try:
                 tree = ast.parse(open(fp, encoding="utf-8").read(), filename=fp)
             except (OSError, SyntaxError) as e:
