@@ -1,2 +1,17 @@
-sqlalchemy==2.0.51
-alembic==1.19.0
+# G1-03 依赖锁定（M2/OI-PF-102）：--require-hashes 形式，锁全部传递依赖
+# 平台：CI = linux x86_64（manylinux2014），本机开发 = macOS arm64（cp311）
+# 哈希来自 PyPI JSON API 实测（2026-08-07）；VD-17 锁定工具落地后迁移
+# 编译包（SQLAlchemy/MarkupSafe）列双平台哈希，pip 按当前平台匹配
+
+SQLAlchemy==2.0.51 \
+    --hash=sha256:436728ce18a80f6951a1e11cc6112c2ede9faf20766f1a26195a7c441ca12dbd \
+    --hash=sha256:1aa10c0daee6705294d181daadaa793221e1a59ed55000a3fab1d42b088ce4ba
+alembic==1.19.0 \
+    --hash=sha256:cf839d3849116aab3cc047e09c6968b9bd6b2fde61b6bb7c1e97352fe5503580
+Mako==1.4.1 \
+    --hash=sha256:a359d9a94a541213958742b2698d0a7757bb83551767bc468a74b9905aba9617
+MarkupSafe==3.0.3 \
+    --hash=sha256:0bf2a864d67e76e5c9a34dc26ec616a66b9888e25e7b9460e1c76d3293bd9dbf \
+    --hash=sha256:4bd4cd07944443f5a265608cc6aab442e4f74dff8088b0dfc8238647b8f6ae9a
+typing_extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
