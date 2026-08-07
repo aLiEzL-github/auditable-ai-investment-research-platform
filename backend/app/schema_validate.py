@@ -88,7 +88,12 @@ def validate_object(obj_type, obj):
 
 
 def assert_writer(obj_type, writer):
-    """写权断言（G0-04 §2 矩阵）：writer 非法即抛 E-WRITE。"""
+    """写权断言（G0-04 §2 矩阵）：writer 非法即抛 E-WRITE。
+
+    H-2/J2：支持两种可判定语义 ——
+      writers: [w1, w2]   精确集合（writer 必须在其中）
+      any_of: true        任意受管写者（仅排除 never 名单）
+    """
     row = WRITERS.get(obj_type)
     if row is None:
         raise SchemaError("E-CONTRACT-001", obj_type, "writers.json 无该对象条目")
@@ -96,8 +101,10 @@ def assert_writer(obj_type, writer):
     if writer in never:
         raise SchemaError("E-WRITE-002", obj_type,
                           f"写者 {writer} 在「永远不能写」名单（{', '.join(never)}）")
-    allowed = row.get("writer")
-    if writer != allowed:
+    allowed = row.get("writers")
+    if row.get("any_of"):
+        return None  # 任意受管写者，且已排除 never
+    if allowed is None or writer not in allowed:
         raise SchemaError("E-WRITE-001", obj_type,
-                          f"写者 {writer} 非唯一合法写者 {allowed}")
+                          f"写者 {writer} 非合法写者集合 {allowed}")
     return None

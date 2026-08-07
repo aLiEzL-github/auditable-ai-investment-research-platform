@@ -101,6 +101,52 @@ class TestWriterMatrix(unittest.TestCase):
             sv.assert_writer("calc", "L10")
         self.assertEqual(cm.exception.code, "E-WRITE-001")
 
+    # H-2/J2：类别记号行的可判定语义（此前唯一无测试覆盖的三行）
+    def test_assumption_writers_set(self):
+        self.assertIsNone(sv.assert_writer("assumption", "L8"))
+        self.assertIsNone(sv.assert_writer("assumption", "L9"))
+        with self.assertRaises(sv.SchemaError) as cm:
+            sv.assert_writer("assumption", "LLM")
+        self.assertEqual(cm.exception.code, "E-WRITE-002")
+        with self.assertRaises(sv.SchemaError) as cm:
+            sv.assert_writer("assumption", "L8_L9")  # 字面量记号必须失效
+        self.assertEqual(cm.exception.code, "E-WRITE-001")
+
+    def test_any_of_writers(self):
+        self.assertIsNone(sv.assert_writer("open_item", "L7_freeze"))
+        self.assertIsNone(sv.assert_writer("open_item", "PL"))
+        self.assertIsNone(sv.assert_writer("candidate", "L5"))
+        with self.assertRaises(sv.SchemaError) as cm:
+            sv.assert_writer("open_item", "LLM")
+        self.assertEqual(cm.exception.code, "E-WRITE-002")
+        with self.assertRaises(sv.SchemaError) as cm:
+            sv.assert_writer("candidate", "LLM")
+        self.assertEqual(cm.exception.code, "E-WRITE-002")
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestContractMeta(unittest.TestCase):
+    """H-4/J3：仓库内零悬空 $schema 引用。"""
+
+    def test_no_dangling_schema_refs(self):
+        import json as _json
+        dangling = []
+        for dp, _dn, fns in os.walk(os.path.join(os.path.dirname(__file__), "..", "..")):
+            if ".git" in dp:
+                continue
+            for fn in fns:
+                if not fn.endswith(".json"):
+                    continue
+                fp = os.path.join(dp, fn)
+                try:
+                    d = _json.load(open(fp, encoding="utf-8"))
+                except Exception:
+                    continue
+                ref = d.get("$schema", "")
+                if ref.startswith("contracts/") and not os.path.exists(
+                        os.path.join(os.path.dirname(__file__), "..", "..", ref)):
+                    dangling.append((fp, ref))
+        self.assertEqual(dangling, [], f"悬空 $schema 引用: {dangling}")

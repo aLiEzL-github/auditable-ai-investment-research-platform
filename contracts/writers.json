@@ -4,18 +4,146 @@
   "source": "G0-04 §2 写权矩阵（唯一合法写者 + 永远不能写的模块）",
   "updated_at": "2026-08-06T16:00:00Z",
   "matrix": {
-    "raw_artifact":     {"writer": "L7_freeze",   "never": ["L5", "L6", "L8", "L9", "L10", "L11", "L12", "L13", "LLM"]},
-    "acquisition_event": {"writer": "L7_freeze",  "never": ["L5", "L6", "LLM"]},
-    "fact":             {"writer": "L7_freeze",   "never": ["L6", "LLM", "L8", "L9"]},
-    "snapshot":         {"writer": "L7_freeze",   "never": ["LLM", "L5", "L6", "L8", "L9", "L10", "L11", "L12", "L13"]},
-    "assumption":       {"writer": "L8_L9",       "never": ["LLM"]},
-    "calc":             {"writer": "L8_calc",     "never": ["L6", "L9", "LLM"]},
-    "claim":            {"writer": "L9_claim",    "never": ["L6", "L8", "LLM"]},
-    "prediction":       {"writer": "L10_approval", "never": ["LLM", "L8", "L9"]},
-    "approval":         {"writer": "L12_approval_endpoint", "never": ["LLM", "L8", "L9", "L10", "L11", "AUTOMATION"]},
-    "release":          {"writer": "L11_release", "never": ["LLM", "L8", "L9", "L10"]},
-    "current_pointer":  {"writer": "L11_release", "never": ["LLM", "L8", "L9", "L10", "L12", "AUTOMATION"]},
-    "open_item":        {"writer": "ANY_MANAGED", "never": ["LLM"]},
-    "candidate":        {"writer": "ANY_MANAGED", "never": ["LLM"]}
+    "raw_artifact": {
+      "never": [
+        "L5",
+        "L6",
+        "L8",
+        "L9",
+        "L10",
+        "L11",
+        "L12",
+        "L13",
+        "LLM"
+      ],
+      "writers": [
+        "L7_freeze"
+      ]
+    },
+    "acquisition_event": {
+      "never": [
+        "L5",
+        "L6",
+        "LLM"
+      ],
+      "writers": [
+        "L7_freeze"
+      ]
+    },
+    "fact": {
+      "never": [
+        "L6",
+        "LLM",
+        "L8",
+        "L9"
+      ],
+      "writers": [
+        "L7_freeze"
+      ]
+    },
+    "snapshot": {
+      "never": [
+        "LLM",
+        "L5",
+        "L6",
+        "L8",
+        "L9",
+        "L10",
+        "L11",
+        "L12",
+        "L13"
+      ],
+      "writers": [
+        "L7_freeze"
+      ]
+    },
+    "assumption": {
+      "writers": [
+        "L8",
+        "L9"
+      ],
+      "never": [
+        "LLM"
+      ]
+    },
+    "calc": {
+      "never": [
+        "L6",
+        "L9",
+        "LLM"
+      ],
+      "writers": [
+        "L8_calc"
+      ]
+    },
+    "claim": {
+      "never": [
+        "L6",
+        "L8",
+        "LLM"
+      ],
+      "writers": [
+        "L9_claim"
+      ]
+    },
+    "prediction": {
+      "never": [
+        "LLM",
+        "L8",
+        "L9"
+      ],
+      "writers": [
+        "L10_approval"
+      ]
+    },
+    "approval": {
+      "never": [
+        "LLM",
+        "L8",
+        "L9",
+        "L10",
+        "L11",
+        "AUTOMATION"
+      ],
+      "writers": [
+        "L12_approval_endpoint"
+      ]
+    },
+    "release": {
+      "never": [
+        "LLM",
+        "L8",
+        "L9",
+        "L10"
+      ],
+      "writers": [
+        "L11_release"
+      ]
+    },
+    "current_pointer": {
+      "never": [
+        "LLM",
+        "L8",
+        "L9",
+        "L10",
+        "L12",
+        "AUTOMATION"
+      ],
+      "writers": [
+        "L11_release"
+      ]
+    },
+    "open_item": {
+      "any_of": true,
+      "never": [
+        "LLM"
+      ]
+    },
+    "candidate": {
+      "any_of": true,
+      "never": [
+        "LLM"
+      ]
+    }
   }
 }
