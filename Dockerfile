@@ -15,6 +15,10 @@ RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 COPY backend/ ./backend/
 
+# G1-06：read_only 容器适配 —— 禁止写字节码 + 可写目录走 tmpfs（compose）
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 USER appuser
 
 EXPOSE 8080
