@@ -87,12 +87,16 @@ def validate_object(obj_type, obj):
     return None
 
 
-def assert_writer(obj_type, writer):
-    """写权断言（G0-04 §2 矩阵）：writer 非法即抛 E-WRITE。
+def assert_writer(obj_type, writer, context=None):
+    """写权断言（G0-04 §2 矩阵）：writer 非法或前置不满足即抛错。
 
     H-2/J2：支持两种可判定语义 ——
       writers: [w1, w2]   精确集合（writer 必须在其中）
       any_of: true        任意受管写者（仅排除 never 名单）
+    P0-2/M-1：校验 preconditions ——
+      MACHINE 前置须 context 提供对应 key 且为真，否则 E-PRECOND-001；
+      MANUAL 前置须 context 提供 acknowledged 确认，否则 E-PRECOND-002；
+      NONE / PENDING_RULING 不校验。
     """
     row = WRITERS.get(obj_type)
     if row is None:
@@ -102,9 +106,21 @@ def assert_writer(obj_type, writer):
         raise SchemaError("E-WRITE-002", obj_type,
                           f"写者 {writer} 在「永远不能写」名单（{', '.join(never)}）")
     allowed = row.get("writers")
-    if row.get("any_of"):
-        return None  # 任意受管写者，且已排除 never
-    if allowed is None or writer not in allowed:
+    if not (row.get("any_of") or (allowed and writer in allowed)):
         raise SchemaError("E-WRITE-001", obj_type,
                           f"写者 {writer} 非合法写者集合 {allowed}")
+    ctx = context or {}
+    for pre in row.get("preconditions", []):
+        kind = pre.get("check")
+        if kind == "MACHINE":
+            key = pre.get("key")
+            if not ctx.get(key):
+                raise SchemaError("E-PRECOND-001", obj_type,
+                                  f"前置不满足: {pre.get('description')}（key={key}）")
+        elif kind == "MANUAL":
+            if not ctx.get("acknowledged"):
+                raise SchemaError("E-PRECOND-002", obj_type,
+                                  f"MANUAL 前置未经确认: {pre.get('description')} "
+                                  f"（由 {pre.get('guaranteed_by')} 保证）")
+        # NONE / PENDING_RULING 不校验
     return None
