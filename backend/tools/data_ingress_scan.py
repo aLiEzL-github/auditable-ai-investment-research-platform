@@ -141,7 +141,8 @@ def scan_file(fp, rel):
         hits.append({"dim": "扩展名", "path": rel, "line": 0, "detail": f"黑名单扩展名 {ext}"})
     # 维度 2：读头部魔数，不信扩展名
     try:
-        head = open(fp, "rb").read(16)
+        with open(fp, "rb") as fh:
+            head = fh.read(16)
         for magic, name in MAGIC:
             if head.startswith(magic):
                 hits.append({"dim": "MIME 魔数", "path": rel, "line": 0,
@@ -157,7 +158,8 @@ def scan_file(fp, rel):
     # 维度 4：仅对文本
     if ext in TEXT_EXT:
         try:
-            hits += scan_text(open(fp, encoding="utf-8").read(), rel)
+            with open(fp, encoding="utf-8") as fh:
+                hits += scan_text(fh.read(), rel)
         except (UnicodeDecodeError, OSError):
             pass
     return hits
