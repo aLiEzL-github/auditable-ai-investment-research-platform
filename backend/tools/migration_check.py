@@ -35,7 +35,7 @@ def alembic(*args):
 
 
 def url_is_pg() -> bool:
-    return os.environ.get("DATABASE_URL", "").startswith("postgres")
+    return os.environ.get("DATABASE_URL", "").startswith(("postgresql", "postgres+"))
 
 
 def _engine_tables():
@@ -43,7 +43,7 @@ def _engine_tables():
     url = os.environ.get("DATABASE_URL", "")
     if url_is_pg():
         import psycopg
-        with psycopg.connect(url) as conn:
+        with psycopg.connect(url.replace("+psycopg", "")) as conn:
             rows = conn.execute(
                 "SELECT tablename FROM pg_tables "
                 "WHERE schemaname = 'public'").fetchall()

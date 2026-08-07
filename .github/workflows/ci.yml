@@ -81,7 +81,7 @@ jobs:
         run: python backend/tools/migration_check.py
       - name: Migration check - PostgreSQL (R-1a/E3)
         env:
-          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/ci
+          DATABASE_URL: postgresql+psycopg://postgres@127.0.0.1:5432/ci
           PGPASSWORD: ci-pass
         run: python backend/tools/migration_check.py
   sbom-check:
