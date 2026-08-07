@@ -129,6 +129,7 @@ class Repository:
 
 
 def create_repository(db_path: str):
-    """SQLite 工厂：/path/db.sqlite3。PostgreSQL 由 URL 传入（G7-04 跨引擎验收）。"""
-    url = f"sqlite:///{db_path}"
+    """工厂：SQLite 文件路径或完整 URL（postgresql://…，G1-03 双引擎 / R-1(a)）。"""
+    url = db_path if db_path.startswith(("postgres", "postgresql")) \
+        else f"sqlite:///{db_path}"
     return Repository(url)

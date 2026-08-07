@@ -35,7 +35,7 @@ def main() -> int:
     assert r.returncode == 0, f"alembic upgrade head 失败: {r.stderr[-400:]}"
     print("① alembic upgrade head OK")
 
-    repo = create_repository(DB)
+    repo = create_repository(_URL)
     q = JobQueue(repo)
 
     # ② 入队

@@ -32,22 +32,34 @@ def alembic(*args):
     return r
 
 
+def _engine_tables():
+    """实际库表集合：sqlite 文件或 postgres URL（G1-03 双数据库，R-1(a)）。"""
+    url = os.environ.get("DATABASE_URL", "")
+    if url.startswith("postgres"):
+        import psycopg
+        with psycopg.connect(url) as conn:
+            rows = conn.execute(
+                "SELECT tablename FROM pg_tables "
+                "WHERE schemaname = 'public'").fetchall()
+        return {r[0] for r in rows}
+    # sqlite：清库后 upgrade
+    if os.path.exists(DB):
+        os.remove(DB)
+    alembic("upgrade", "head")
+    conn = sqlite3.connect(DB)
+    tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+    conn.close()
+    return tables
+
+
 def main() -> int:
     sys.path.insert(0, APP)
     from repository import Base
     import jobs  # noqa: F401 注册 job 表模型
 
-    if os.path.exists(DB):
-        os.remove(DB)
-
-    # ① upgrade head
-    alembic("upgrade", "head")
-
-    # ② 模型 ⊆ 实际
-    conn = sqlite3.connect(DB)
-    actual = {r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
-    conn.close()
+    # ①+② upgrade head + 模型 ⊆ 实际（双引擎）
+    actual = _engine_tables()
     model = set(Base.metadata.tables.keys())
     missing = model - actual
     assert not missing, f"模型表缺失于实际库: {sorted(missing)}"
@@ -56,10 +68,7 @@ def main() -> int:
     # ③ 回滚 + 空库重建
     alembic("downgrade", "base")
     alembic("upgrade", "head")
-    conn = sqlite3.connect(DB)
-    n = len([r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")])
-    conn.close()
+    n = len(_engine_tables())
     assert n >= 4, f"空库重建后表数异常: {n}"
     print(f"③ 回滚 + 空库重建 OK（{n} 表）")
 
