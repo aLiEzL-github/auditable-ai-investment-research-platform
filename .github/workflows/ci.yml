@@ -55,6 +55,44 @@ jobs:
       - name: Arch import check (N24 / M1-M7)
         run: python backend/tools/arch_import_check.py .
 
+  migration-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install --require-hashes -r requirements.txt
+      - name: Migration check (K-1/T2)
+        run: |
+          cd backend
+          rm -f app.db
+          alembic upgrade head
+          python - <<'EOF'
+import sqlite3, sys, os
+sys.path.insert(0, "app")
+from repository import Base
+import jobs
+conn = sqlite3.connect("app.db")
+actual = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+model = set(Base.metadata.tables.keys())
+missing = model - actual
+assert not missing, f"模型表缺失于实际库: {missing}"
+print("模型表 ⊆ 实际表 ✅")
+conn.close()
+EOF
+          alembic downgrade base
+          alembic upgrade head
+          python - <<'EOF'
+import sqlite3
+conn = sqlite3.connect("app.db")
+n = len([r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")])
+assert n >= 4, f"空库重建后表数异常: {n}"
+print("回滚+空库重建 ✅")
+conn.close()
+EOF
+
   docker-build:
     runs-on: ubuntu-latest
     steps:
@@ -78,7 +116,6 @@ jobs:
       - name: Image carries full backend deps (M1/OI-PF-101)
         run: |
           docker run --rm bootstrap-smoke python3 -c "import backend.app.repository"
-  arch-import-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

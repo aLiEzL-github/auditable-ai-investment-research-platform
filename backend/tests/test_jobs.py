@@ -196,3 +196,39 @@ class TestConcurrentSubmit(TestJobQueueBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMigrationPath(unittest.TestCase):
+    """K-1/T3：测试路径与部署路径一致 —— 用 alembic upgrade head 建库（非 create_all）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self.db = os.path.join(self._tmp, "mig.sqlite3")
+        backend = os.path.join(os.path.dirname(__file__), "..")
+        env = dict(os.environ, DATABASE_URL=f"sqlite:///{self.db}")
+        import subprocess
+        r = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=backend, env=env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, f"alembic upgrade head 失败: {r.stderr}")
+        self.repo = create_repository(self.db)
+        self.q = JobQueue(self.repo)
+
+    def tearDown(self):
+        self.q.s.close()
+        self.repo.engine.dispose()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_job_flow_on_migrated_db(self):
+        """迁移建的库上完整跑一遍 job 流程（job 表经迁移存在）。"""
+        j = self.q.submit("mig-key")
+        claimed = self.q.claim_next("w1")
+        self.assertIsNotNone(claimed)
+        done = self.q.complete(claimed.id, "w1", "mig-ok")
+        self.assertEqual(done.status, "DONE")
+        import sqlite3
+        conn = sqlite3.connect(self.db)
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+        conn.close()
+        self.assertIn("job", tables)
