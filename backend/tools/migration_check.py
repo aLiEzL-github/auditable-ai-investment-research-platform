@@ -20,16 +20,39 @@ BACKEND = os.path.join(os.path.dirname(__file__), "..")
 APP = os.path.join(BACKEND, "app")
 MIGRATIONS = os.path.join(BACKEND, "migrations", "versions")
 DB = os.path.join(BACKEND, "app.db")
-ENV = dict(os.environ, DATABASE_URL=f"sqlite:///{DB}")
 
 
 def alembic(*args):
+    # 双引擎：环境已有 DATABASE_URL（如 CI 的 PG URL）则保留，否则 sqlite（R-1(a)）
+    env = dict(os.environ)
+    env.setdefault("DATABASE_URL", f"sqlite:///{DB}")
     r = subprocess.run([sys.executable, "-m", "alembic", *args],
-                       cwd=BACKEND, env=ENV, capture_output=True, text=True)
+                       cwd=BACKEND, env=env, capture_output=True, text=True)
     if r.returncode != 0:
         print(f"❌ alembic {' '.join(args)} 失败:\n{r.stderr[-500:]}")
         sys.exit(1)
     return r
+
+
+def url_is_pg() -> bool:
+    return os.environ.get("DATABASE_URL", "").startswith(("postgresql", "postgres+"))
+
+
+def _engine_tables():
+    """实际库表集合：sqlite 文件或 postgres URL（G1-03 双数据库，R-1(a)）。"""
+    url = os.environ.get("DATABASE_URL", "")
+    if url_is_pg():
+        import psycopg
+        with psycopg.connect(url.replace("+psycopg", "")) as conn:
+            rows = conn.execute(
+                "SELECT tablename FROM pg_tables "
+                "WHERE schemaname = 'public'").fetchall()
+        return {r[0] for r in rows}
+    conn = sqlite3.connect(DB)
+    tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+    conn.close()
+    return tables
 
 
 def main() -> int:
@@ -37,17 +60,16 @@ def main() -> int:
     from repository import Base
     import jobs  # noqa: F401 注册 job 表模型
 
-    if os.path.exists(DB):
-        os.remove(DB)
+    # ① upgrade head（双引擎共用：sqlite 清库 / PG 直接迁）
+    if url_is_pg():
+        alembic("upgrade", "head")
+    else:
+        if os.path.exists(DB):
+            os.remove(DB)
+        alembic("upgrade", "head")
 
-    # ① upgrade head
-    alembic("upgrade", "head")
-
-    # ② 模型 ⊆ 实际
-    conn = sqlite3.connect(DB)
-    actual = {r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
-    conn.close()
+    # ② 模型 ⊆ 实际（双引擎）
+    actual = _engine_tables()
     model = set(Base.metadata.tables.keys())
     missing = model - actual
     assert not missing, f"模型表缺失于实际库: {sorted(missing)}"
@@ -56,10 +78,7 @@ def main() -> int:
     # ③ 回滚 + 空库重建
     alembic("downgrade", "base")
     alembic("upgrade", "head")
-    conn = sqlite3.connect(DB)
-    n = len([r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")])
-    conn.close()
+    n = len(_engine_tables())
     assert n >= 4, f"空库重建后表数异常: {n}"
     print(f"③ 回滚 + 空库重建 OK（{n} 表）")
 
