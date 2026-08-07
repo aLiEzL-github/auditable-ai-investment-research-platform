@@ -59,8 +59,8 @@ def main() -> int:
                 continue
             # persistence 实现层自身（G1-03 repository.py）允许引用 DB 库：
             # M3 约束的对象是「L6 解析器引用 persistence」，而非 persistence 自身。
-            if "repository" in rel or "migrations" in rel:
-                continue  # persistence 实现层与迁移脚本（M3 约束对象是解析器）
+            if "repository" in rel or "migrations" in rel or "jobs" in rel:
+                continue  # persistence 实现层/迁移/调度（M3 约束对象是解析器）
             try:
                 tree = ast.parse(open(fp, encoding="utf-8").read(), filename=fp)
             except (OSError, SyntaxError) as e:
