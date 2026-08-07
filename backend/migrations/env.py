@@ -10,6 +10,7 @@ from alembic import context
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from repository import Base
+from jobs import Job  # noqa: F401 —— job 表模型（K-1/T1）
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
