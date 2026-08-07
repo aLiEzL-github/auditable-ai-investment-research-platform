@@ -18,7 +18,9 @@ APP = os.path.join(BACKEND, "app")
 _URL = os.environ.get("DATABASE_URL", f"sqlite:///{os.path.join(BACKEND, 'app.db')}")
 _DB_PATH = _URL.replace("sqlite:///", "", 1)
 DB = os.path.abspath(_DB_PATH)
-ENV = dict(os.environ, DATABASE_URL=_URL)
+# 与 migration_check 同款语义（R-1(a) 同类修复）：外部 DATABASE_URL 优先，否则 sqlite 默认
+ENV = dict(os.environ)
+ENV.setdefault("DATABASE_URL", _URL)
 
 
 def main() -> int:
