@@ -1,0 +1,55 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "schema_version": "1.0.0",
+ "title": "source canonical schema",
+ "description": "数据来源登记（VD-12/13 权利判定结果）",
+ "type": "object",
+ "required": [
+  "id",
+  "schema_version",
+  "kind",
+  "status",
+  "legal_basis"
+ ],
+ "properties": {
+  "schema_version": {
+   "type": "string"
+  },
+  "id": {
+   "type": "string",
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+  },
+  "kind": {
+   "enum": [
+    "PRIMARY",
+    "SECONDARY"
+   ]
+  },
+  "name": {
+   "type": "string",
+   "minLength": 1
+  },
+  "status": {
+   "enum": [
+    "ALLOWED",
+    "UNKNOWN",
+    "PROHIBITED"
+   ]
+  },
+  "legal_basis": {
+   "type": "string",
+   "minLength": 1
+  },
+  "terms_url": {
+   "type": "string"
+  },
+  "attribution_required": {
+   "type": "boolean"
+  },
+  "updated_at": {
+   "type": "string",
+   "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+  }
+ },
+ "additionalProperties": false
+}

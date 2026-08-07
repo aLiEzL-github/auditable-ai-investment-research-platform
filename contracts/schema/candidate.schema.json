@@ -1,0 +1,37 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "schema_version": "1.0.0",
+ "title": "candidate canonical schema",
+ "description": "研究候选（PARTIAL 候选不得提升为 current，VD-27）",
+ "type": "object",
+ "required": [
+  "id",
+  "schema_version",
+  "kind",
+  "payload"
+ ],
+ "properties": {
+  "schema_version": {
+   "type": "string"
+  },
+  "id": {
+   "type": "string",
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+  },
+  "kind": {
+   "type": "string",
+   "minLength": 1
+  },
+  "payload": {
+   "type": "object"
+  },
+  "parent": {
+   "type": "string",
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+  },
+  "current": {
+   "type": "boolean"
+  }
+ },
+ "additionalProperties": false
+}

@@ -1,0 +1,37 @@
+openapi: 3.0.3
+info:
+  title: auditable-ai-investment-research-platform API
+  version: 0.1.0
+  description: >
+    G1-02 契约。当前实现仅健康检查端点；领域端点（来源/事实/快照/发布等）
+    在 G2+ 按 contracts/schema/*.schema.json 展开。写权一律经写权矩阵
+    （contracts/writers.json，G0-04 §2 可执行面）。
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /livez:
+    get:
+      summary: 存活探针
+      responses:
+        "200":
+          description: 进程存活
+  /readyz:
+    get:
+      summary: 就绪探针
+      responses:
+        "200":
+          description: 就绪（骨架阶段恒 200）
+components:
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: contracts/errors.json 中的错误码（E-SCHEMA-* / E-WRITE-* / E-STATE-* / E-CONTRACT-*）
+        message:
+          type: string
+        field:
+          type: string
+          description: 出错字段路径（SchemaError.field）

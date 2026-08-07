@@ -1,0 +1,74 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "schema_version": "1.0.0",
+ "title": "fact canonical schema",
+ "description": "事实记录（LLM 不得写入 —— 写权矩阵）",
+ "type": "object",
+ "required": [
+  "id",
+  "schema_version",
+  "artifact_id",
+  "metric",
+  "value",
+  "unit",
+  "period",
+  "scope",
+  "basis",
+  "vintage",
+  "locator",
+  "parser_version"
+ ],
+ "properties": {
+  "schema_version": {
+   "type": "string"
+  },
+  "id": {
+   "type": "string",
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+  },
+  "artifact_id": {
+   "type": "string",
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+  },
+  "metric": {
+   "type": "string",
+   "minLength": 1
+  },
+  "value": {
+   "type": "string",
+   "pattern": "^-?\\d+(\\.\\d+)?$"
+  },
+  "unit": {
+   "type": "string",
+   "minLength": 1
+  },
+  "period": {
+   "type": "string",
+   "minLength": 1
+  },
+  "scope": {
+   "type": "string",
+   "minLength": 1
+  },
+  "basis": {
+   "type": "string"
+  },
+  "vintage": {
+   "type": "string"
+  },
+  "locator": {
+   "type": "string",
+   "minLength": 1
+  },
+  "parser_version": {
+   "type": "string"
+  },
+  "comparability": {
+   "enum": [
+    "COMPARABLE",
+    "NOT_COMPARABLE"
+   ]
+  }
+ },
+ "additionalProperties": false
+}
