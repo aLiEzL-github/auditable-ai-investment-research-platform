@@ -86,6 +86,15 @@ jobs:
       - name: Non-root check (G0-07)
         run: |
           docker run --rm bootstrap-smoke id -u | grep -qx 10001
+      - name: Container bind verification (G1-05 1c)
+        run: |
+          docker run -d --name bindcheck -p 18082:8080 bootstrap-smoke
+          for i in $(seq 1 20); do
+            if docker exec bindcheck python3 -c "import socket;s=socket.socket();s.bind(('127.0.0.1',0))" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          docker exec bindcheck python3 -c "import socket,time;s=socket.socket();s.settimeout(1);r=s.connect_ex(('127.0.0.1',8080));print('container loopback 8080 connect rc=',r);assert r==0"
+          docker rm -f bindcheck
       - name: Image carries full backend deps (M1/OI-PF-101)
         run: |
           docker run --rm bootstrap-smoke python3 -c "import backend.app.repository"

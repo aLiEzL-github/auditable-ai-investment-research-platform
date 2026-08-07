@@ -15,6 +15,9 @@ import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from logging_conf import setup_logging
+from settings import get_settings
+
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -29,13 +32,21 @@ class HealthHandler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    log = setup_logging(get_settings().log_level)
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bind", default="127.0.0.1",
-                    help="绑定地址（容器场景须为 0.0.0.0）")
+    ap.add_argument("--bind", default=None,
+                    help="绑定地址（缺省取 BIND_HOST；容器场景须为 0.0.0.0）")
     args, _ = ap.parse_known_args()
-    port = int(os.environ.get("PORT", "8080"))
-    server = ThreadingHTTPServer((args.bind, port), HealthHandler)
-    print(f"listening on {args.bind}:{port}", flush=True)
+    settings = get_settings()
+    errors = settings.validate()
+    if errors:
+        for e in errors:
+            log.error("配置校验失败: %s", e)
+        return 2  # fail-closed：配置非法即退出
+    bind = args.bind or settings.bind_host
+    port = settings.app_port
+    server = ThreadingHTTPServer((bind, port), HealthHandler)
+    log.info("listening on %s:%s", bind, port)
     server.serve_forever()
     return 0
 
