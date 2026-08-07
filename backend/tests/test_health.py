@@ -13,7 +13,7 @@ APP_DIR = os.path.join(os.path.dirname(__file__), "..", "app")
 class TestHealthEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        env = dict(os.environ, PORT="18081")
+        env = dict(os.environ, APP_PORT="18081")
         cls.proc = subprocess.Popen(
             [sys.executable, os.path.join(APP_DIR, "main.py")],
             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -50,6 +50,7 @@ TEXT_EXT = {".md", ".txt", ".json", ".yaml", ".yml", ".py", ".sh", ".toml", ".cf
             ".ini", ".env", ".js", ".ts", ".sql", ".xml", ".html", ".conf", ""}
 # E4 变异测试集豁免：tests/test_scanners_mutation.py 的合成载荷（格式真实、值随机，非真实凭据）会被扫描器命中——与 THIRD_PARTY_NOTICES 同类，豁免并注明理由（OI-PF-058 先例）
 MUTATION_TEST_EXEMPT = 'test_scanners_mutation.py'
+MUTATION_TEST_EXEMPT2 = 'test_logging.py'  # G1-05 合成密钥日志样本（1a 验收载荷，OI-PF-058 先例）
 SKIP_DIR = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache"}
 
 # 本文件自身的示例模式不得触发自己 —— 否则扫描器永远红，等于没有
@@ -89,7 +90,8 @@ def walk(root):
         dns[:] = [d for d in dns if d not in SKIP_DIR]
         for fn in fns:
             fp = os.path.join(dp, fn)
-            if os.path.abspath(fp) == SELF or MUTATION_TEST_EXEMPT in fp:
+            if os.path.abspath(fp) == SELF or MUTATION_TEST_EXEMPT in fp \
+                or MUTATION_TEST_EXEMPT2 in fp:
                 continue
                 continue                       # 自身豁免（见 SELF 注释）
             if os.path.splitext(fn)[1].lower() not in TEXT_EXT:
