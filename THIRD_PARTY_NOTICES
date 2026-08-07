@@ -9,7 +9,7 @@
 
 ---
 
-## 0. 为什么是 2 个上游而不是 3 个
+## 0. 为什么是 4 个上游
 
 `OI-PF-025` 原文写「至少须含 ai-berkshire 与 akshare；**若 `VD-24` 引入 Vibe-Trading 组件另加**」。
 
@@ -19,10 +19,13 @@ VD-24 决定内容 = HKUDS/Vibe-Trading 为 REFERENCE_ONLY —— 仅阅读参�
 
 hsliuping/TradingAgents-CN = 根许可 NOASSERTION，incorporate/modify/fork/
   copy_any_file/copy_any_text/derive **全部 PROHIBITED**
-→ 不引入任何代码 → 不需要声明，但须在 §3 记录其硬禁入状态
+→ 不引入任何代码 → 不需要声明，但须在 §5 记录其硬禁入状态
+
+G1-03（2026-08-07）引入运行依赖 SQLAlchemy 2.0.51 与 Alembic 1.19.0
+（requirements.txt 哈希锁定；两者均为 MIT）→ **实质性使用，须声明**
 ```
 
-**故本文件含 2 份 MIT 声明。** 台账中「3 个 MIT 上游声明」的表述已据此更正。
+**故本文件含 4 份 MIT 声明。** 早期「3 个」表述已据此更正（第四轮 I-3 / OI-PF-103）。
 
 ---
 
@@ -109,7 +112,78 @@ SOFTWARE.
 
 ---
 
-## 3. 明确未使用、且禁止使用的上游
+## 3. sqlalchemy 2.0.51
+
+```text
+用途          ORM/核心 SQL 抽象（G1-03 Repository 层）
+许可         MIT
+版本         2.0.51（requirements.txt 哈希锁定，linux/macos 双平台）
+版权行       Copyright 2005-2026 SQLAlchemy authors and contributors
+许可全文来源  已安装 wheel 内 dist-info/licenses/LICENSE
+             SHA-256 e862bb5b904fb5513c3e14288d7a25a12eb0ecc7847a0a965d310e9a955e7cb9（1100 字节）
+```
+
+```text
+Copyright 2005-2026 SQLAlchemy authors and contributors <see AUTHORS file>.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## 4. alembic 1.19.0
+
+```text
+用途          数据库迁移（G1-03 migrations/）
+许可         MIT
+版本         1.19.0（requirements.txt 哈希锁定）
+版权行       Copyright 2009-2026 Michael Bayer
+许可全文来源  已安装 wheel 内 dist-info/licenses/LICENSE
+             SHA-256 6e68d94a03a0e3e327ddf3e86d1ebedc14eece3922022618fc246a36296fd0cc（1059 字节）
+```
+
+```text
+Copyright 2009-2026 Michael Bayer.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## 5. 明确未使用、且禁止使用的上游
+
 
 ```text
 hsliuping/TradingAgents-CN
@@ -129,7 +203,7 @@ HKUDS/Vibe-Trading
 
 ---
 
-## 4. 本文件明确不声称
+## 6. 本文件明确不声称
 
 - 不声称已穷尽全部上游 —— 仅覆盖 `rights-matrix.json` 的 `code_sources` 4 项；
   `G1-00` 落地时须以当时的依赖清单复核；

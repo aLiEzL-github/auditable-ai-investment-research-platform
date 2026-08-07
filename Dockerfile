@@ -10,7 +10,10 @@ FROM python:3.11-slim@sha256:94c50be2dc994b873b55bc123e95e6dbade08095b3dfd790f51
 RUN useradd --create-home --uid 10001 appuser
 WORKDIR /srv/app
 
-COPY backend/app/ ./backend/app/
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+
+COPY backend/ ./backend/
 
 USER appuser
 

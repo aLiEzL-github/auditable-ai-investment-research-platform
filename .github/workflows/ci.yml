@@ -75,6 +75,9 @@ jobs:
       - name: Non-root check (G0-07)
         run: |
           docker run --rm bootstrap-smoke id -u | grep -qx 10001
+      - name: Image carries full backend deps (M1/OI-PF-101)
+        run: |
+          docker run --rm bootstrap-smoke python3 -c "import backend.app.repository"
   arch-import-check:
     runs-on: ubuntu-latest
     steps:
