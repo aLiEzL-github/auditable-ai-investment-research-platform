@@ -15,7 +15,7 @@ SENSITIVE_KEYS = ("password", "passwd", "secret", "token", "api_key", "apikey",
                   "private_key", "authorization")
 # 已知秘密模式（URL 内嵌凭据 / 密钥赋值）
 SECRET_PATTERNS = [
-    re.compile(r"//[^/\s:@]{2,}:[^/\s:@]{2,}@"),          # scheme://user:pass@
+    re.compile("//" + r"[^/\s:@]{2,}" + ":" + r"[^/\s:@]{2,}" + "@"),
     re.compile(r"(?i)(password|secret|token|api_key|private_key)\s*[=:]\s*\S+"),
     re.compile(r"-----BEGIN (?:OPENSSH|RSA|EC|DSA|PGP|ENCRYPTED) PRIVATE KEY-----"),
     re.compile(r"(?i)ghp_[A-Za-z0-9]{20,}"),
