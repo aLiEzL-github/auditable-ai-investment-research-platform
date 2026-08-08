@@ -40,11 +40,38 @@ class TestArtifactStore(unittest.TestCase):
         d2 = self.store.store("ART_0001", b"v1")
         self.assertEqual(d, d2)
         self.assertEqual(self.store.load(d), b"v1")
-        # 变异注入 2：绕过 store 直接改写库内文件字节 → load 必须检测拒绝
+        # 变异注入 2：绕过 store 直接改写库内文件字节
         rel = f"{d[:2]}/{d[2:4]}/{d[4:]}"
         fp = os.path.join(self.store.root, rel)
+        try:
+            with open(fp, "wb") as f:
+                f.write(b"v1-EVIL")
+            # 若权限被绕过（chmod 644 事故）→ load 哈希校验兜底拒绝
+            with self.assertRaises(ValueError) as ctx:
+                self.store.load(d)
+            self.assertIn("E-G2-02-005", str(ctx.exception))
+        except PermissionError:
+            pass  # BB-2：写入侧只读（0o444）已直接拒绝，无需读时兜底
+
+    # ── BB-2：写入侧只读加固（chmod 0o444）──────────────────────────
+    def test_write_side_ro(self):
+        import stat
+        d = self.store.store("ART_2001", b"ro-data")
+        rel = f"{d[:2]}/{d[2:4]}/{d[4:]}"
+        fp = os.path.join(self.store.root, rel)
+        mode = os.stat(fp).st_mode
+        self.assertEqual(mode & 0o444, 0o444, "写入后须为只读")
+        self.assertEqual(mode & 0o222, 0, "不得可写")
+        # 负测：chmod 前后直接改写，均须被 load 拒绝
+        try:
+            with open(fp, "wb") as f:
+                f.write(b"evil")
+            self.fail("只读文件应拒绝改写")
+        except PermissionError:
+            pass
+        os.chmod(fp, 0o644)  # 模拟权限被改（攻击/事故）
         with open(fp, "wb") as f:
-            f.write(b"v1-EVIL")
+            f.write(b"evil-2")
         with self.assertRaises(ValueError) as ctx:
             self.store.load(d)
         self.assertIn("E-G2-02-005", str(ctx.exception))
