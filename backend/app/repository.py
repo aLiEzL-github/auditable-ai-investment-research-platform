@@ -15,6 +15,7 @@
 
 import os
 import sqlite3
+import sys
 
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint,
@@ -23,6 +24,9 @@ from sqlalchemy import (
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+# schema_validate 与 repository 同目录；容器内 `import backend.app.repository`
+# 模式下 backend/app/ 不在 sys.path，须显式注入（与其他工具入口一致）
+sys.path.insert(0, os.path.dirname(__file__))
 from schema_validate import assert_writer
 
 Base = declarative_base()
