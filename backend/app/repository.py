@@ -122,6 +122,28 @@ class EvidenceRecord(Base):
     UniqueConstraint("sha256", name="uq_evidence_sha256")
 
 
+class FactRecord(Base):
+    """G2-07 FactRecord：五要素（scope/period/unit/basis/vintage）归一化。
+    contracts/schema/fact.schema.json；comparability 枚举 COMPARABLE/NOT_COMPARABLE。"""
+    __tablename__ = "fact"
+
+    id = Column(String(64), primary_key=True)
+    schema_version = Column(String(16), nullable=False)
+    artifact_id = Column(String(64), ForeignKey("raw_artifact.id"), nullable=False)
+    source_id = Column(String(64), ForeignKey("source.id"), nullable=False)
+    metric = Column(String(64), nullable=False)
+    value = Column(String(64), nullable=False)   # 数值字符串（精度保留）
+    unit = Column(String(16), nullable=False)
+    period = Column(String(32), nullable=False)
+    scope = Column(String(64), nullable=False)
+    basis = Column(String(64), nullable=False)
+    vintage = Column(String(32), nullable=False)
+    locator = Column(String(255))
+    parser_version = Column(String(32), nullable=False)
+    comparability = Column(String(16), nullable=False, default="COMPARABLE")
+    version = Column(Integer, nullable=False, default=1)
+
+
 class RightsDecisionRecord(Base):
     """G2-03 RightsDecision 审计入册（contracts/schema/rights_decision.schema.json）。"""
     __tablename__ = "rights_decision"
