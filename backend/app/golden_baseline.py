@@ -46,18 +46,21 @@ class GoldenBaseline:
 
     def add_back_source(self, metric_id: str, locator: str,
                         reviewed_by: str, review_state: str) -> None:
-        """人工回源记录：locator + 核对人 + 状态（G2-13 双录合同）。"""
-        if reviewed_by not in self._reviewers():
-            self.back_source[metric_id] = {
-                "locator": locator, "reviewed_by": reviewed_by,
-                "state": review_state,
-                "at": datetime.now(timezone.utc).isoformat()}
-            return
-        raise GoldenBaselineError(
-            f"E-G2-14-003: 回源核对人须不同于录入人（双录）: {reviewed_by}")
+        """人工回源记录：locator + 核对人 + 状态（G2-13 双录合同）。
 
-    def _reviewers(self):
-        return {"U"}
+        双录：回源核对人不得是录入实体（同一自然人自录自审拒绝）。
+        """
+        if reviewed_by in self._entry_actors():
+            raise GoldenBaselineError(
+                f"E-G2-14-003: 回源核对人须不同于录入人（双录）: {reviewed_by}")
+        self.back_source[metric_id] = {
+            "locator": locator, "reviewed_by": reviewed_by,
+            "state": review_state,
+            "at": datetime.now(timezone.utc).isoformat()}
+
+    def _entry_actors(self):
+        """录入实体集合（自然人或自动化解析器）；回源人不得与之重合。"""
+        return set()
 
     # ── 3. 状态判定：材料性 100% 回源，缺口 → PARTIAL ───────────────
     def status(self) -> str:

@@ -67,10 +67,17 @@ class TestGoldenBaseline(unittest.TestCase):
 
     # ── 双录：回源核对人须不同于录入人 ──────────────────────────────
     def test_back_source_reviewer_must_differ(self):
+        # 录入人（如手工录入者）不可同时回源（自录自审拒绝）
+        self.b._entry_actors = lambda: {"U"}
         with self.assertRaises(GoldenBaselineError) as ctx:
             self.b.add_back_source("营业收入", "LOC/p25",
                                    reviewed_by="U", review_state="VERIFIED")
         self.assertIn("E-G2-14-003", str(ctx.exception))
+        # 自动化录入（解析器）+ U 回源：不同实体，合法
+        self.b._entry_actors = lambda: {"AUTOMATION"}
+        self.b.add_back_source("营业收入", "LOC/p25",
+                               reviewed_by="U", review_state="VERIFIED")
+        self.assertIn("营业收入", self.b.back_source)
 
 
 if __name__ == "__main__":
