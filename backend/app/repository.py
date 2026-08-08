@@ -121,6 +121,21 @@ class EvidenceRecord(Base):
     UniqueConstraint("sha256", name="uq_evidence_sha256")
 
 
+class ManualEntry(Base):
+    """G2-13 材料性手工录入双录复核（不可变录入事件）。"""
+    __tablename__ = "manual_entry"
+
+    id = Column(String(64), primary_key=True)
+    schema_version = Column(String(16), nullable=False)
+    field_key = Column(String(64), nullable=False)
+    value = Column(String(255), nullable=False)
+    locator = Column(String(255), nullable=False)
+    entered_by = Column(String(64), nullable=False)
+    signed_at = Column(DateTime, nullable=False)
+    record_hash = Column(String(64), nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+
+
 class Snapshot(Base):
     """G2-08 Snapshot：vintage/cutoff 语义（contracts/schema/snapshot.schema.json）。
 

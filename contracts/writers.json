@@ -2,7 +2,7 @@
   "$schema": "contracts/writers.schema.json",
   "schema_version": "1.0.0",
   "source": "G0-04 §2 写权矩阵（唯一合法写者 + 永远不能写的模块）",
-  "updated_at": "2026-08-08T14:25:00Z",
+  "updated_at": "2026-08-08T17:25:00Z",
   "matrix": {
     "raw_artifact": {
       "never": [
@@ -329,6 +329,30 @@
           "check": "MACHINE",
           "key": "policy_frozen",
           "description": "policy_version 须为已冻结版本"
+        }
+      ]
+    },
+    "manual_entry": {
+      "never": [
+        "LLM",
+        "L6",
+        "L8",
+        "L9",
+        "AUTOMATION"
+      ],
+      "writers": [
+        "L16_manual_entry"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "locator_valid",
+          "description": "来源 locator 须有效"
+        },
+        {
+          "check": "MACHINE",
+          "key": "dual_verified",
+          "description": "双录复核完成（G2-13）"
         }
       ]
     }
