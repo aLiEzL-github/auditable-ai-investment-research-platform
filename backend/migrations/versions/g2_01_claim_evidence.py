@@ -43,6 +43,26 @@ def upgrade() -> None:
         sa.UniqueConstraint('sha256', name='uq_evidence_sha256'),
         sa.ForeignKeyConstraint(['artifact_id'], ['raw_artifact.id'])
     )
+    op.create_table('fact',
+        sa.Column('id', sa.String(length=64), nullable=False),
+        sa.Column('schema_version', sa.String(length=16), nullable=False),
+        sa.Column('artifact_id', sa.String(length=64), nullable=False),
+        sa.Column('source_id', sa.String(length=64), nullable=False),
+        sa.Column('metric', sa.String(length=64), nullable=False),
+        sa.Column('value', sa.String(length=64), nullable=False),
+        sa.Column('unit', sa.String(length=16), nullable=False),
+        sa.Column('period', sa.String(length=32), nullable=False),
+        sa.Column('scope', sa.String(length=64), nullable=False),
+        sa.Column('basis', sa.String(length=64), nullable=False),
+        sa.Column('vintage', sa.String(length=32), nullable=False),
+        sa.Column('locator', sa.String(length=255), nullable=True),
+        sa.Column('parser_version', sa.String(length=32), nullable=False),
+        sa.Column('comparability', sa.String(length=16), nullable=False),
+        sa.Column('version', sa.Integer(), nullable=False),
+        sa.PrimaryKeyConstraint('id'),
+        sa.ForeignKeyConstraint(['artifact_id'], ['raw_artifact.id']),
+        sa.ForeignKeyConstraint(['source_id'], ['source.id'])
+    )
     op.create_table('rights_decision',
         sa.Column('id', sa.String(length=64), nullable=False),
         sa.Column('schema_version', sa.String(length=16), nullable=False),
@@ -70,5 +90,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table('claim_evidence_link')
     op.drop_table('rights_decision')
+    op.drop_table('fact')
     op.drop_table('evidence_record')
     op.drop_table('claim')
