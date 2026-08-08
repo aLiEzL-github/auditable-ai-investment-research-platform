@@ -14,6 +14,8 @@ BF-04 增补（取得器级）：
 PROHIBITED/UNKNOWN 即 GuardDenied，动作体（网络请求）不执行。
 """
 import json
+import os
+import ssl
 import sys
 import time
 import urllib.request
@@ -30,6 +32,11 @@ SSE_SOURCE_ID = "SRC_SSE"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 TIMEOUT_S = 15
 MIN_INTERVAL_S = 2.0  # 保守限速：两次请求最小间隔（BF-04）
+# 系统证书链（macOS /etc/ssl/cert.pem）；缺失时仍失败关闭（不绕过 TLS）
+_CA = "/etc/ssl/cert.pem"
+_SSL_CTX = ssl.create_default_context()
+if os.path.exists(_CA):
+    _SSL_CTX.load_verify_locations(_CA)
 
 
 class SSEAdapter:
@@ -82,7 +89,8 @@ class SSEAdapter:
         })
         ok, error, payload, status = False, None, None, None
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout,
+                                        context=_SSL_CTX) as resp:
                 status = resp.status
                 payload = resp.read()
                 ok = True
