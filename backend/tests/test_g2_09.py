@@ -6,6 +6,11 @@
 G0-09 已裁：六类全缺 → REMOVED（不得选 QUALIFIED）
 """
 import unittest
+import os
+import sys
+
+APP = os.path.join(os.path.dirname(__file__), "..", "app")
+sys.path.insert(0, APP)
 
 from backtest_contract import (BacktestContract, current_contract, MODES,
                                REQUIRED_DATA)
