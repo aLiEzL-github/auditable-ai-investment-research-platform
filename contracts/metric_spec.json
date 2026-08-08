@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "title": "metric_spec registry",
+  "description": "G2-10 冻结 20 项决策关键值（基线 B §22.2 逐字）",
+  "metrics": [
+    {
+      "metric_id": "营业收入",
+      "expected_origin": "REPORTED",
+      "caliber": "合并、期间、币种"
+    },
+    {
+      "metric_id": "归母净利润",
+      "expected_origin": "REPORTED",
+      "caliber": "合并、归属"
+    },
+    {
+      "metric_id": "扣非归母净利润",
+      "expected_origin": "REPORTED",
+      "caliber": "公司披露定义"
+    },
+    {
+      "metric_id": "少数股东损益",
+      "expected_origin": "REPORTED",
+      "caliber": "合并"
+    },
+    {
+      "metric_id": "经营活动现金流净额",
+      "expected_origin": "REPORTED",
+      "caliber": "累计/年度"
+    },
+    {
+      "metric_id": "自由现金流",
+      "expected_origin": "DERIVED",
+      "caliber": "OCF−维持性资本开支与 OCF−总资本开支分开"
+    },
+    {
+      "metric_id": "分部收入",
+      "expected_origin": "REPORTED_OR_NOT_DISCLOSED",
+      "caliber": "外部/内部交易和抵消"
+    },
+    {
+      "metric_id": "分部毛利率",
+      "expected_origin": "REPORTED_OR_DERIVED",
+      "caliber": "收入与成本同口径"
+    },
+    {
+      "metric_id": "ROE",
+      "expected_origin": "DERIVED_WITH_REPORTED_CROSSCHECK",
+      "caliber": "平均净资产分母"
+    },
+    {
+      "metric_id": "ROIC",
+      "expected_origin": "DERIVED",
+      "caliber": "NOPAT、投入资本、平均/期末分母"
+    },
+    {
+      "metric_id": "资产负债率",
+      "expected_origin": "DERIVED",
+      "caliber": "总负债/总资产"
+    },
+    {
+      "metric_id": "有息负债",
+      "expected_origin": "DERIVED_FROM_REPORTED_COMPONENTS",
+      "caliber": "科目清单版本化"
+    },
+    {
+      "metric_id": "货币资金",
+      "expected_origin": "REPORTED",
+      "caliber": "不等同现金及现金等价物"
+    },
+    {
+      "metric_id": "应收账款及票据",
+      "expected_origin": "DERIVED_FROM_REPORTED_COMPONENTS",
+      "caliber": "科目边界"
+    },
+    {
+      "metric_id": "存货",
+      "expected_origin": "REPORTED",
+      "caliber": "减值后/账面"
+    },
+    {
+      "metric_id": "在建工程",
+      "expected_origin": "REPORTED",
+      "caliber": "合并"
+    },
+    {
+      "metric_id": "资本开支",
+      "expected_origin": "DERIVED_OR_REPORTED",
+      "caliber": "现金流口径与附注口径并列"
+    },
+    {
+      "metric_id": "商誉",
+      "expected_origin": "REPORTED",
+      "caliber": "减值后账面"
+    },
+    {
+      "metric_id": "总股本",
+      "expected_origin": "REPORTED_POINT_IN_TIME",
+      "caliber": "与价格同一时点"
+    },
+    {
+      "metric_id": "分红总额",
+      "expected_origin": "REPORTED_EVENT",
+      "caliber": "已宣告、已批准、已支付分开"
+    }
+  ],
+  "frozen_sha256": "ddcc542469a880d287f1dcd2c63d526c0759b51f0f1a874a06efc2415d04c5f8"
+}
