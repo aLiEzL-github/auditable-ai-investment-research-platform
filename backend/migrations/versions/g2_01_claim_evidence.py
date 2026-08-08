@@ -43,6 +43,18 @@ def upgrade() -> None:
         sa.UniqueConstraint('sha256', name='uq_evidence_sha256'),
         sa.ForeignKeyConstraint(['artifact_id'], ['raw_artifact.id'])
     )
+    op.create_table('snapshot',
+        sa.Column('id', sa.String(length=64), nullable=False),
+        sa.Column('schema_version', sa.String(length=16), nullable=False),
+        sa.Column('created_at', sa.DateTime(), nullable=False),
+        sa.Column('cutoff', sa.DateTime(), nullable=False),
+        sa.Column('frozen', sa.Boolean(), nullable=False),
+        sa.Column('golden', sa.Boolean(), nullable=False),
+        sa.Column('scope_set', sa.Text(), nullable=False),
+        sa.Column('facts', sa.Text(), nullable=False),
+        sa.Column('version', sa.Integer(), nullable=False),
+        sa.PrimaryKeyConstraint('id')
+    )
     op.create_table('fact',
         sa.Column('id', sa.String(length=64), nullable=False),
         sa.Column('schema_version', sa.String(length=16), nullable=False),
@@ -91,5 +103,6 @@ def downgrade() -> None:
     op.drop_table('claim_evidence_link')
     op.drop_table('rights_decision')
     op.drop_table('fact')
+    op.drop_table('snapshot')
     op.drop_table('evidence_record')
     op.drop_table('claim')
