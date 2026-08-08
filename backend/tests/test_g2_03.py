@@ -92,10 +92,16 @@ class TestRightsGuard(unittest.TestCase):
                          os.path.realpath(os.path.join(root, "ok.txt")))
 
     def test_import_url_ssrf_rejected(self):
+        """SSRF 防护在出网工具层（backend/tools/import_guard.py，M1 合规）。"""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "import_guard", os.path.join(os.path.dirname(__file__), "..", "tools", "import_guard.py"))
+        ig = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ig)
         for bad in ("http://127.0.0.1/x", "http://192.168.1.1/x",
                     "http://10.0.0.5/x", "ftp://example.com/x"):
             with self.assertRaises(ValueError) as ctx:
-                self.guard.validate_import_url(bad, allowed_hosts=None)
+                ig.validate_import_url(bad, allowed_hosts=None)
             self.assertIn("E-G2-03-004", str(ctx.exception))
 
     # ── X-4：审计写路径 assert_writer ───────────────────────────────

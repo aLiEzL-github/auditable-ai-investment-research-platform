@@ -12,22 +12,14 @@
   · fetch 适配器必须经 guard 派生（X-9：直调适配器 = 无 RightsDecision = 拒绝）
 """
 import datetime
-import ipaddress
 import re
-import socket
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 ALLOWED = "ALLOWED"
 PROHIBITED = "PROHIBITED"
 UNKNOWN = "UNKNOWN"
 ACTIONS = ("FETCH", "IMPORT", "PARSE", "EXPORT")
-
-PRIVATE_HOST_RE = re.compile(
-    r"^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.)"
-)
-_LOOPBACK = "::1"
-
 
 @dataclass
 class RightsDecision:
@@ -109,30 +101,6 @@ class RightsGuard:
             raise ValueError(f"E-G2-03-003: 导入文件不存在: {path}")
         return target
 
-    def validate_import_url(self, url: str, allowed_hosts: Optional[set] = None):
-        """URL 导入（SSRF 防护）：host 解析后须为公开地址且在允许清单。"""
-        from urllib.parse import urlparse
-        u = urlparse(url)
-        if u.scheme not in ("http", "https"):
-            raise ValueError("E-G2-03-004: 非法 URL 协议")
-        host = u.hostname
-        if host is None:
-            raise ValueError("E-G2-03-004: 无主机名")
-        if allowed_hosts is not None and host not in allowed_hosts:
-            raise ValueError(f"E-G2-03-004: 主机不在允许清单: {host}")
-        try:
-            addrs = socket.getaddrinfo(host, None)
-        except socket.gaierror:
-            raise ValueError(f"E-G2-03-004: 主机无法解析: {host}")
-        for fam, _, _, _, sockaddr in addrs:
-            ip = sockaddr[0]
-            if fam == socket.AF_INET:
-                if PRIVATE_HOST_RE.match(ip):
-                    raise ValueError(f"E-G2-03-004: 解析到私网地址（SSRF）: {ip}")
-            else:
-                try:
-                    if ipaddress.ip_address(ip).is_private or ip == _LOOPBACK:
-                        raise ValueError(f"E-G2-03-004: 解析到私网地址（SSRF）: {ip}")
-                except ValueError:
-                    raise ValueError(f"E-G2-03-004: 非法 IP: {ip}")
-        return u
+    # URL 导入的 SSRF 校验在工具层（backend/tools/import_guard.py）——
+    # M1/M4 禁止可信内核（backend/app/）引入网络库（G0-04 §1.1）；
+    # SSRF 校验属出网适配器层（VD-11 §6 Discovery 允许清单）。
