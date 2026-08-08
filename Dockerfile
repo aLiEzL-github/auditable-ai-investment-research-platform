@@ -13,6 +13,7 @@ WORKDIR /srv/app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
+COPY contracts/ ./contracts/
 COPY backend/ ./backend/
 
 # G1-06：read_only 容器适配 —— 禁止写字节码 + 可写目录走 tmpfs（compose）

@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "title": "evidence_record canonical schema",
+  "description": "G2-01 EvidenceRecord：从 raw_artifact 提取的可引用证据片段；带解析器版本并绑定快照",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "artifact_id",
+    "snapshot_id",
+    "schema_ver",
+    "parser_version",
+    "sha256",
+    "content"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+    },
+    "artifact_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+    },
+    "snapshot_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+    },
+    "schema_ver": {
+      "type": "string",
+      "description": "证据内容自身采用的 schema 版本（G2-01 基线）"
+    },
+    "parser_version": {
+      "type": "string",
+      "description": "产出该证据的解析器版本（G2-01 基线）"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "content": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
