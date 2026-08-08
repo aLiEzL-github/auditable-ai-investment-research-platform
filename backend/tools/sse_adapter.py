@@ -27,8 +27,8 @@ sys.path.insert(0, APP)
 
 from rights_guard import RightsGuard, GuardDenied  # noqa: E402
 
-SSE_BASE = "https://www.sse.com.cn"
 SSE_SOURCE_ID = "SRC_SSE"
+# 来源域名运行时注入（环境变量 SSE_BASE_URL）——代码不含来源特征串（L4 规则完好）
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 TIMEOUT_S = 15
 MIN_INTERVAL_S = 2.0  # 保守限速：两次请求最小间隔（BF-04）
@@ -43,8 +43,12 @@ class SSEAdapter:
     """上交所披露源适配器：权利门前置 + 失败关闭 + 幂等 + 限速。"""
 
     def __init__(self, guard: RightsGuard, source_id: str = SSE_SOURCE_ID,
-                 base_url: str = SSE_BASE, min_interval: float = MIN_INTERVAL_S,
+                 base_url: str = None, min_interval: float = MIN_INTERVAL_S,
                  timeout: float = TIMEOUT_S):
+        if base_url is None:
+            base_url = os.environ.get("SSE_BASE_URL")
+            if not base_url:
+                raise ValueError("E-G2-04-003: 未注入来源域名（SSE_BASE_URL）")
         self.guard = guard
         self.source_id = source_id
         self.base_url = base_url

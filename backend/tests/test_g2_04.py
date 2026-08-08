@@ -37,6 +37,7 @@ def _resp(status, body=b"<html>ok</html>"):
 class TestSSEAdapter(unittest.TestCase):
     def setUp(self):
         self.guard = RightsGuard(policy_version="v1")
+        os.environ["SSE_BASE_URL"] = "https://example.test"
         self.ad = SSEAdapter(self.guard, min_interval=0.0)
         self._tmp = tempfile.mkdtemp()
         self.repo = create_repository(os.path.join(self._tmp, "g2_04.sqlite3"))
