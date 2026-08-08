@@ -11,6 +11,7 @@ BF-03 增补：写入路径的目录逃逸与 symlink 必须失败
   · 防逃逸 —— 目标经 resolve() 后必须仍在库内；写入名受正则约束
 """
 import hashlib
+import os
 import re
 from pathlib import Path
 
@@ -46,6 +47,8 @@ class ArtifactStore:
             return digest
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
+        # BB-2/OI-PF-120：写入侧加固 —— 只读权限（读时哈希校验为兜底）
+        os.chmod(target, 0o444)
         return digest
 
     def load(self, digest: str) -> bytes:

@@ -21,6 +21,34 @@ import sys
 
 ROOT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else "."
 
+# BB-1/OI-PF-119：豁免改为**按架构层的显式模块清单**（精确路径匹配），
+# 不得用文件名子串 —— 子串豁免可被无意绕过（如 "jobs" 会豁免任何含 jobs 的文件）。
+# 各层语义（G0-04 §1.1）：L2 persistence 允许 DB 库（M3 约束对象是 L6 解析器）；
+# L3 取数层允许出网（M1/M4 只约束 L0—L2 内核与 L6 解析器，VD-11 §6 Discovery 允许清单）。
+LAYER_EXEMPT = {
+    "L2_persistence": ["backend/app/repository.py", "backend/app/jobs.py"],
+    "migrations": ["backend/migrations"],
+    "L3_fetch": ["backend/tools/import_guard.py", "backend/tools/sse_adapter.py",
+                 "backend/tools/macro_adapter.py", "backend/tools/akshare_adapter.py"],
+    "tools_internal": ["backend/tools/migration_check.py", "backend/tools/vertical_smoke.py"],
+}
+# 出网授权模块（L3 取数层）：非豁免模块 import 它们 = 传递性出网，必须抓
+EGRESS_MODULES = {"import_guard", "sse_adapter", "macro_adapter", "akshare_adapter"}
+
+
+def exempt_layer_of(rel: str):
+    """精确路径 → 豁免层（None = 非豁免）。不得用子串。
+
+    rel 以点分隔（os.walk 转换）；清单路径以 / 分隔 —— 统一转点比较。
+    """
+    rel_dot = rel.replace(os.sep, ".")
+    for layer, paths in LAYER_EXEMPT.items():
+        for pth in paths:
+            p = pth.replace(os.sep, ".")
+            if rel_dot == p or rel_dot.startswith(p + "."):
+                return layer
+    return None
+
 # M1/M4：网络/出网库（模块名精确匹配，含 stdlib 与外置包）
 NETWORK_LIBS = {
     "requests", "urllib", "urllib3", "httpx", "aiohttp", "socket",
@@ -33,6 +61,22 @@ DB_LIBS = {"sqlite3", "psycopg", "psycopg2", "asyncpg", "SQLAlchemy", "sqlalchem
 APPROVAL_WRITERS = {"approval", "approve", "release", "current_pointer"}
 # 允许自身持有的网络面（服务端监听，非出网）：app/main.py 的 http.server
 SERVER_ALLOWLIST = {"app.main"}
+
+
+def _all_exempt_files(ROOT):
+    """全部豁免文件（精确路径 → 模块名），供传递性检查与计数。"""
+    out = []
+    for layer, paths in LAYER_EXEMPT.items():
+        for pth in paths:
+            if pth.endswith(".py"):
+                out.append(pth)
+            else:
+                d = os.path.join(ROOT, pth)
+                for dp, _, fns in os.walk(d):
+                    for fn in fns:
+                        if fn.endswith(".py"):
+                            out.append(os.path.relpath(os.path.join(dp, fn), ROOT))
+    return out
 
 
 def module_name_of(node: ast.AST) -> str:
@@ -57,26 +101,23 @@ def main() -> int:
             # tests/ 是验证方（须能访问被测端点），不受 M1—M7 生产代码边界约束
             if ".tests." in rel or rel.startswith("tests."):
                 continue
-            # persistence 实现层自身（G1-03 repository.py）允许引用 DB 库：
-            # M3 约束的对象是「L6 解析器引用 persistence」，而非 persistence 自身。
-            if "repository" in rel or "migrations" in rel or "jobs" in rel \
-                    or "migration_check" in rel or "vertical_smoke" in rel \
-                    or "import_guard" in rel or "sse_adapter" in rel or "macro_adapter" in rel or "akshare_adapter" in rel:
-                continue  # persistence 实现层/迁移/调度；import_guard 为 L3 取数层
-                # import_guard（SSRF 校验器）/ sse_adapter（L3 取数适配器）——
-                # M1/M4 只约束 L0—L2 可信内核与 L6 解析器（G0-04 §1.1），
-                # 出网层工具豁免，语义合规（VD-11 §6 Discovery 允许清单）
+            layer = exempt_layer_of(rel)
+            if layer is not None:
+                continue  # 显式层豁免（精确路径，非子串）
             try:
                 tree = ast.parse(open(fp, encoding="utf-8").read(), filename=fp)
             except (OSError, SyntaxError) as e:
                 bad.append(f"{rel}: 解析失败 {e}")
                 continue
             checked += 1
+            exempt_modules = {m.rsplit("/", 1)[-1][:-3] for m in _all_exempt_files(ROOT)}
             for node in ast.walk(tree):
                 for mod in module_name_of(node):
                     base = mod.split(".")[0]
                     if rel in SERVER_ALLOWLIST and base in ("http", "socket"):
                         continue  # 服务端监听面（非出网）
+                    if base in EGRESS_MODULES or base in exempt_modules and base in EGRESS_MODULES:
+                        bad.append(f"{rel}: 传递性出网 —— import 已豁免的出网模块 {mod}")
                     if base in NETWORK_LIBS:
                         bad.append(f"{rel}: M1/M4 引入网络库 {mod}")
                     if base in DB_LIBS:
@@ -88,7 +129,9 @@ def main() -> int:
         for b in bad:
             print("  -", b)
         return 1
-    print(f"✅ 检查对象 {checked} 个 .py，无违规（M1—M7 骨架级）")
+    exempt_n = len(_all_exempt_files(ROOT))
+    print(f"✅ 检查对象 {checked} 个 .py，无违规（M1—M7 骨架级）"
+          f"；豁免文件 {exempt_n} 个")
     return 0
 
 
