@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "title": "manual_entry canonical schema",
+  "description": "G2-13 材料性手工录入事件（不可变：record_hash 内容绑定）",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "field_key",
+    "value",
+    "locator",
+    "entered_by",
+    "signed_at",
+    "record_hash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+    },
+    "field_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "value": {
+      "type": "string",
+      "minLength": 1
+    },
+    "locator": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entered_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signed_at": {
+      "type": "string"
+    },
+    "record_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
