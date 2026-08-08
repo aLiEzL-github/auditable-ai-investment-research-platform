@@ -45,6 +45,14 @@ class TestG2_01(unittest.TestCase):
                           acquired_at=__import__("datetime").datetime.utcnow(), version=1)
         self.s.add(art)
         self.s.commit()
+        # G2-08：evidence.snapshot_id 已强化 FK → 需先建 snapshot
+        import json as _json
+        from datetime import datetime as _dt
+        self.s.add(Snapshot(id="SNAP_0001", schema_version="1.0",
+                            created_at=_dt.utcnow(), cutoff=_dt.utcnow(),
+                            frozen=True, golden=False,
+                            scope_set=_json.dumps(["600089"]), facts=_json.dumps([]), version=1))
+        self.s.commit()
 
     def tearDown(self):
         self.s.close()
