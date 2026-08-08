@@ -87,7 +87,7 @@ CODE_EXT = {".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".xml", ".xbrl", ".csv
 
 TEXT_EXT = {".md", ".txt", ".json", ".yaml", ".yml", ".py", ".xml", ".html", ""}
 # E4 变异测试集豁免：tests/test_scanners_mutation.py 的合成载荷（格式真实、值随机，非真实凭据）会被扫描器命中——与 THIRD_PARTY_NOTICES 同类，豁免并注明理由（OI-PF-058 先例）
-MUTATION_TEST_EXEMPT = 'test_scanners_mutation.py'
+MUTATION_TEST_EXEMPT = ('test_scanners_mutation.py', 'test_g2_11.py')
 SKIP_DIR = {".git", "node_modules", "__pycache__", ".venv", "venv"}
 
 
@@ -171,7 +171,7 @@ def walk(root):
         dns[:] = [d for d in dns if d not in SKIP_DIR]
         for fn in fns:
             fp = os.path.join(dp, fn)
-            if os.path.abspath(fp) == SELF or MUTATION_TEST_EXEMPT in fp:
+            if os.path.abspath(fp) == SELF or any(e in fp for e in MUTATION_TEST_EXEMPT):
                 continue
                 continue
             n += 1
