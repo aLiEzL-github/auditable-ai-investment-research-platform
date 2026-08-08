@@ -18,7 +18,7 @@ APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 
 from repository import (Repository, Source, RawArtifact, AcquisitionEvent,
-                        Claim, EvidenceRecord, ClaimEvidenceLink, create_repository)
+                        Claim, EvidenceRecord, ClaimEvidenceLink, Snapshot, create_repository)
 from schema_validate import validate_object
 
 
@@ -44,6 +44,14 @@ class TestG2_01(unittest.TestCase):
                           sha256=_sha("raw1"), bytes=5, content_type="text/plain",
                           acquired_at=__import__("datetime").datetime.utcnow(), version=1)
         self.s.add(art)
+        self.s.commit()
+        # G2-08：evidence.snapshot_id 已强化 FK → 需先建 snapshot
+        import json as _json
+        from datetime import datetime as _dt
+        self.s.add(Snapshot(id="SNAP_0001", schema_version="1.0",
+                            created_at=_dt.utcnow(), cutoff=_dt.utcnow(),
+                            frozen=True, golden=False,
+                            scope_set=_json.dumps(["600089"]), facts=_json.dumps([]), version=1))
         self.s.commit()
 
     def tearDown(self):
@@ -97,7 +105,7 @@ class TestG2_01(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             self.repo.add_evidence(self.s, EvidenceRecord(
                 id="EVID_BAD", schema_version="1.0", artifact_id="ART_NONE",
-                snapshot_id="S", schema_ver="v", parser_version="p",
+                snapshot_id="SNAP_0001", schema_ver="v", parser_version="p",
                 sha256=_sha("x"), content="c", version=1))
         # 前置断言（assert_writer）先于显式检查拦截
         self.assertTrue("E-PRECOND-001" in str(ctx.exception) or "E-G2-01-001" in str(ctx.exception))
@@ -105,12 +113,12 @@ class TestG2_01(unittest.TestCase):
     def test_evidence_sha_dedup(self):
         self.repo.add_evidence(self.s, EvidenceRecord(
                 id="EVID_D1", schema_version="1.0", artifact_id="ART_0001",
-            snapshot_id="S", schema_ver="v", parser_version="p",
+            snapshot_id="SNAP_0001", schema_ver="v", parser_version="p",
             sha256=_sha("dup"), content="c", version=1))
         with self.assertRaises(ValueError) as ctx:
             self.repo.add_evidence(self.s, EvidenceRecord(
                 id="EVID_D2", schema_version="1.0", artifact_id="ART_0001",
-                snapshot_id="S", schema_ver="v", parser_version="p",
+                snapshot_id="SNAP_0001", schema_ver="v", parser_version="p",
                 sha256=_sha("dup"), content="c2", version=1))
         self.assertIn("E-G2-01-002", str(ctx.exception))
 

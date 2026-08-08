@@ -112,14 +112,30 @@ class EvidenceRecord(Base):
     id = Column(String(64), primary_key=True)
     schema_version = Column(String(16), nullable=False)
     artifact_id = Column(String(64), ForeignKey("raw_artifact.id"), nullable=False)
-    # snapshot 表属 G2-08（Snapshot/vintage）；此处为绑定字段，G2-08 建表后强化 FK
-    snapshot_id = Column(String(64), nullable=False)
+    snapshot_id = Column(String(64), ForeignKey("snapshot.id"), nullable=False)
     schema_ver = Column(String(32), nullable=False)
     parser_version = Column(String(32), nullable=False)
     sha256 = Column(String(64), nullable=False)
     content = Column(Text, nullable=False)
     version = Column(Integer, nullable=False, default=1)
     UniqueConstraint("sha256", name="uq_evidence_sha256")
+
+
+class Snapshot(Base):
+    """G2-08 Snapshot：vintage/cutoff 语义（contracts/schema/snapshot.schema.json）。
+
+    cutoff 冻结后不可改（writers 前置 cutoff_frozen）；facts 为绑定 fact id 列表。"""
+    __tablename__ = "snapshot"
+
+    id = Column(String(64), primary_key=True)
+    schema_version = Column(String(16), nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    cutoff = Column(DateTime, nullable=False)
+    frozen = Column(Boolean, nullable=False, default=False)
+    golden = Column(Boolean, nullable=False, default=False)
+    scope_set = Column(Text, nullable=False, default="[]")  # JSON 数组
+    facts = Column(Text, nullable=False, default="[]")      # JSON 数组（fact id）
+    version = Column(Integer, nullable=False, default=1)
 
 
 class FactRecord(Base):
