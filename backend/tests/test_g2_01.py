@@ -18,7 +18,7 @@ APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 
 from repository import (Repository, Source, RawArtifact, AcquisitionEvent,
-                        Claim, EvidenceRecord, ClaimEvidenceLink, create_repository)
+                        Claim, EvidenceRecord, ClaimEvidenceLink, Snapshot, create_repository)
 from schema_validate import validate_object
 
 
