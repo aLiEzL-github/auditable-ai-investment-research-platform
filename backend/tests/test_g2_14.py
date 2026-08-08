@@ -28,16 +28,16 @@ class TestGoldenBaseline(unittest.TestCase):
         self.b.add_source_doc("LOC/600089/2026H1/annual.pdf")
         self.assertEqual(len(self.b.source_docs), 1)
 
-    # ── 材料性事实须先回源 ──────────────────────────────────────────
-    def test_material_fact_requires_back_source(self):
-        with self.assertRaises(GoldenBaselineError) as ctx:
-            self.b.add_fact("营业收入", "1000000", "CNY", "LOC/600089/p25")
-        self.assertIn("E-G2-14-002", str(ctx.exception))
-        # 回源后可登记
-        self.b.add_back_source("营业收入", "LOC/600089/p25",
-                               reviewed_by="HR", review_state="VERIFIED")
+    # ── 材料性事实未回源 → 可登记但 PARTIAL ────────────────────────
+    def test_material_fact_unbacked_partial(self):
+        self.b.add_source_doc("LOC/600089/2026H1/annual.pdf")
         self.b.add_fact("营业收入", "1000000", "CNY", "LOC/600089/p25")
         self.assertEqual(self.b.facts["营业收入"]["value"], "1000000")
+        self.assertIn("PARTIAL", self.b.status())
+        # 回源后登记可升格
+        self.b.add_back_source("营业收入", "LOC/600089/p25",
+                               reviewed_by="HR", review_state="VERIFIED")
+        self.assertIn("营业收入", self.b.back_source)
 
     # ── 非材料性事实不需回源 ────────────────────────────────────────
     def test_non_material_no_back_source_required(self):

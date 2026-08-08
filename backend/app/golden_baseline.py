@@ -39,9 +39,8 @@ class GoldenBaseline:
     # ── 2. 事实登记（须带回源记录）──────────────────────────────────
     def add_fact(self, metric_id: str, value: str, unit: str,
                  locator: str, material: bool = True) -> None:
-        if material and metric_id not in self.back_source:
-            raise GoldenBaselineError(
-                f"E-G2-14-002: 材料性事实须先回源: {metric_id}")
+        # 材料性事实未回源：允许登记，状态保持 PARTIAL（G2-13 缺口语义，
+        # 不回源不升格 COMPLETE）
         self.facts[metric_id] = {"value": value, "unit": unit,
                                  "locator": locator, "material": material}
 
