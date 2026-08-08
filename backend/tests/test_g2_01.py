@@ -105,7 +105,7 @@ class TestG2_01(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             self.repo.add_evidence(self.s, EvidenceRecord(
                 id="EVID_BAD", schema_version="1.0", artifact_id="ART_NONE",
-                snapshot_id="S", schema_ver="v", parser_version="p",
+                snapshot_id="SNAP_0001", schema_ver="v", parser_version="p",
                 sha256=_sha("x"), content="c", version=1))
         # 前置断言（assert_writer）先于显式检查拦截
         self.assertTrue("E-PRECOND-001" in str(ctx.exception) or "E-G2-01-001" in str(ctx.exception))
@@ -113,12 +113,12 @@ class TestG2_01(unittest.TestCase):
     def test_evidence_sha_dedup(self):
         self.repo.add_evidence(self.s, EvidenceRecord(
                 id="EVID_D1", schema_version="1.0", artifact_id="ART_0001",
-            snapshot_id="S", schema_ver="v", parser_version="p",
+            snapshot_id="SNAP_0001", schema_ver="v", parser_version="p",
             sha256=_sha("dup"), content="c", version=1))
         with self.assertRaises(ValueError) as ctx:
             self.repo.add_evidence(self.s, EvidenceRecord(
                 id="EVID_D2", schema_version="1.0", artifact_id="ART_0001",
-                snapshot_id="S", schema_ver="v", parser_version="p",
+                snapshot_id="SNAP_0001", schema_ver="v", parser_version="p",
                 sha256=_sha("dup"), content="c2", version=1))
         self.assertIn("E-G2-01-002", str(ctx.exception))
 
