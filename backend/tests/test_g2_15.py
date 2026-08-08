@@ -74,8 +74,11 @@ class TestValuationContract(unittest.TestCase):
         v.add_source(**_src(source_role="SECONDARY", source_id="AGGREGATOR"))
         self.assertIn("PARTIAL", v.status())  # 副源不得升格
         v2 = ValuationInput("price")
-        v2.add_source(**_src(source_id="MANUAL"))
-        self.assertIn("PARTIAL", v2.status())  # 手工值不得静默升格
+        v2.add_source(**_src(source_id="AGGREGATOR", kind="AGGREGATOR"))
+        self.assertIn("PARTIAL", v2.status())  # 聚合器不得升格
+        v3 = ValuationInput("price")
+        v3.add_source(**_src(source_id="MANUAL", kind="MANUAL"))
+        self.assertIn("PARTIAL", v3.status())  # 手工值不得静默升格
 
     # ── 合同整体 ────────────────────────────────────────────────────
     def test_contract_summary(self):
@@ -83,7 +86,7 @@ class TestValuationContract(unittest.TestCase):
         s = self.c.summary()
         self.assertEqual(s["price"], "READY")
         self.assertEqual(s["shares_outstanding"], "MISSING")
-        self.assertIn("PARTIAL", s["net_debt"])
+        self.assertEqual(s["net_debt"], "MISSING")  # 未登记 = MISSING
 
 
 if __name__ == "__main__":

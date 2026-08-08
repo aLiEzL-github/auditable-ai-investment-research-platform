@@ -25,17 +25,20 @@ class ValuationInput:
 
     # ── 独立来源登记 ────────────────────────────────────────────────
     def add_source(self, source_id: str, source_role: str, rights: str,
-                   as_of: str, period: str, basis: str, locator: str) -> None:
+                   as_of: str, period: str, basis: str, locator: str,
+                   kind: str = "OFFICIAL") -> None:
         if source_role not in ("PRIMARY", "SECONDARY"):
             raise ValuationContractError(
                 f"E-G2-15-001: 非法 source_role: {source_role}")
+        if kind not in ("OFFICIAL", "AGGREGATOR", "MANUAL"):
+            raise ValuationContractError(f"E-G2-15-004: 非法 source_kind: {kind}")
         # 同源镜像不算独立证据：同一 source_id 已有登记 → 拒绝（镜像）
         if any(s["source_id"] == source_id for s in self.sources):
             raise ValuationContractError(
                 f"E-G2-15-002: 同源镜像不算独立证据: {source_id}")
         self.sources.append({
             "source_id": source_id, "source_role": source_role,
-            "rights": rights, "as_of": as_of, "period": period,
+            "kind": kind, "rights": rights, "as_of": as_of, "period": period,
             "basis": basis, "locator": locator,
             "registered_at": datetime.now(timezone.utc).isoformat()})
 
@@ -46,6 +49,8 @@ class ValuationInput:
         primaries = [s for s in self.sources if s["source_role"] == "PRIMARY"]
         if not primaries:
             return "PARTIAL（无主源；副源/手工值不得静默升格）"
+        if any(s.get("kind") != "OFFICIAL" for s in primaries):
+            return "PARTIAL（主源非官方（聚合器/手工），不得静默升格）"
         if any(s["rights"] != "ALLOWED" for s in primaries):
             return "PARTIAL（主源权利不足）"
         if any(not s["as_of"] for s in primaries):
