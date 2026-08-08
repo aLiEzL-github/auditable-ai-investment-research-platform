@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "title": "rights_decision canonical schema",
+  "description": "G2-03 RightsDecision：每次动作先产出的权利决定，绑定 source/action/scope/policy_version",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "source_id",
+    "action",
+    "scope",
+    "policy_version",
+    "verdict",
+    "decided_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
+    },
+    "action": {
+      "enum": [
+        "FETCH",
+        "IMPORT",
+        "PARSE",
+        "EXPORT"
+      ]
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "enum": [
+        "ALLOWED",
+        "PROHIBITED",
+        "UNKNOWN"
+      ]
+    },
+    "decided_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

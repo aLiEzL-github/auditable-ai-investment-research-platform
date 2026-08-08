@@ -122,6 +122,21 @@ class EvidenceRecord(Base):
     UniqueConstraint("sha256", name="uq_evidence_sha256")
 
 
+class RightsDecisionRecord(Base):
+    """G2-03 RightsDecision 审计入册（contracts/schema/rights_decision.schema.json）。"""
+    __tablename__ = "rights_decision"
+
+    id = Column(String(64), primary_key=True)
+    schema_version = Column(String(16), nullable=False)
+    source_id = Column(String(64), ForeignKey("source.id"), nullable=False)
+    action = Column(String(16), nullable=False)
+    scope = Column(String(512), nullable=False)
+    policy_version = Column(String(32), nullable=False)
+    verdict = Column(String(16), nullable=False)
+    decided_at = Column(DateTime, nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+
+
 class ClaimEvidenceLink(Base):
     """G2-01 ClaimEvidenceLink：证据支持/反驳多个 Claim（多对多）。
 
@@ -205,6 +220,18 @@ class Repository:
         session.add(ev)
         session.commit()
         return ev
+
+    def record_rights_decision(self, session, rd: RightsDecisionRecord,
+                               writer: str = "L15_rights"):
+        """RightsDecision 审计入册（X-4：assert_writer 接入）。"""
+        assert_writer("rights_decision", writer, {
+            "id": rd.id, "source_id": rd.source_id, "policy_frozen": True,
+            "source_registered": session.query(Source).filter_by(id=rd.source_id).first() is not None})
+        if session.query(Source).filter_by(id=rd.source_id).first() is None:
+            raise ValueError(f"E-G2-03-005: source 未登记: {rd.source_id}")
+        session.add(rd)
+        session.commit()
+        return rd
 
     def link_evidence(self, session, claim_id: str, evidence_id: str,
                       direction: str, writer: str = "L14_evidence_link"):
