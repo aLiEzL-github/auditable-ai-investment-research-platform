@@ -2,7 +2,7 @@
   "$schema": "contracts/writers.schema.json",
   "schema_version": "1.0.0",
   "source": "G0-04 §2 写权矩阵（唯一合法写者 + 永远不能写的模块）",
-  "updated_at": "2026-08-06T16:00:00Z",
+  "updated_at": "2026-08-08T13:36:00Z",
   "matrix": {
     "raw_artifact": {
       "never": [
@@ -262,6 +262,51 @@
         {
           "check": "NONE",
           "description": "G1-04 调度对象（L7_freeze 写，LLM 禁）"
+        }
+      ]
+    },
+    "evidence_record": {
+      "never": [
+        "LLM",
+        "L8",
+        "L9",
+        "AUTOMATION"
+      ],
+      "writers": [
+        "L13_evidence"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "artifact_frozen",
+          "description": "证据的原始工件须已登记（内容寻址，G2-01）"
+        },
+        {
+          "check": "MACHINE",
+          "key": "snapshot_bound",
+          "description": "证据须绑定已存在 snapshot（G2-01 基线）"
+        }
+      ]
+    },
+    "claim_evidence_link": {
+      "never": [
+        "LLM",
+        "L8",
+        "AUTOMATION"
+      ],
+      "writers": [
+        "L14_evidence_link"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "claim_exists",
+          "description": "claim 须已存在"
+        },
+        {
+          "check": "MACHINE",
+          "key": "evidence_exists",
+          "description": "evidence 须已存在"
         }
       ]
     }
