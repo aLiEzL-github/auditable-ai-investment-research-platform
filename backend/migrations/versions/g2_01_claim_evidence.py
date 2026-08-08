@@ -43,6 +43,19 @@ def upgrade() -> None:
         sa.UniqueConstraint('sha256', name='uq_evidence_sha256'),
         sa.ForeignKeyConstraint(['artifact_id'], ['raw_artifact.id'])
     )
+    op.create_table('rights_decision',
+        sa.Column('id', sa.String(length=64), nullable=False),
+        sa.Column('schema_version', sa.String(length=16), nullable=False),
+        sa.Column('source_id', sa.String(length=64), nullable=False),
+        sa.Column('action', sa.String(length=16), nullable=False),
+        sa.Column('scope', sa.String(length=512), nullable=False),
+        sa.Column('policy_version', sa.String(length=32), nullable=False),
+        sa.Column('verdict', sa.String(length=16), nullable=False),
+        sa.Column('decided_at', sa.DateTime(), nullable=False),
+        sa.Column('version', sa.Integer(), nullable=False),
+        sa.PrimaryKeyConstraint('id'),
+        sa.ForeignKeyConstraint(['source_id'], ['source.id'])
+    )
     op.create_table('claim_evidence_link',
         sa.Column('claim_id', sa.String(length=64), nullable=False),
         sa.Column('evidence_id', sa.String(length=64), nullable=False),
@@ -56,5 +69,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table('claim_evidence_link')
+    op.drop_table('rights_decision')
     op.drop_table('evidence_record')
     op.drop_table('claim')

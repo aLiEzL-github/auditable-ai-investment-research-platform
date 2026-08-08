@@ -60,8 +60,10 @@ def main() -> int:
             # persistence 实现层自身（G1-03 repository.py）允许引用 DB 库：
             # M3 约束的对象是「L6 解析器引用 persistence」，而非 persistence 自身。
             if "repository" in rel or "migrations" in rel or "jobs" in rel \
-                    or "migration_check" in rel or "vertical_smoke" in rel:
-                continue  # persistence 实现层/迁移/调度（M3 约束对象是解析器）
+                    or "migration_check" in rel or "vertical_smoke" in rel \
+                    or "import_guard" in rel:
+                continue  # persistence 实现层/迁移/调度；import_guard 为 L3 取数层
+                # SSRF 校验器（M1/M4 只约束 L0—L2 可信内核与 L6 解析器，G0-04 §1.1）
             try:
                 tree = ast.parse(open(fp, encoding="utf-8").read(), filename=fp)
             except (OSError, SyntaxError) as e:
