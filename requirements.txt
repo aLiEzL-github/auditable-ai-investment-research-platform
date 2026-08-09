@@ -109,3 +109,5 @@ curl_cffi==0.16.0 \
 jsonpath==0.82.2 \
         --hash=sha256:d87ef2bcbcded68ee96bc34c1809b69457ecec9b0c4dd471658a12bd391002d1
 
+py-mini-racer==0.6.0; platform_system == "Linux" \
+        --hash=sha256:42896c24968481dd953eeeb11de331f6870917811961c9b26ba09071e07180e2
