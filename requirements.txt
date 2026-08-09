@@ -111,3 +111,6 @@ jsonpath==0.82.2 \
 
 py-mini-racer==0.6.0; platform_system == "Linux" \
         --hash=sha256:42896c24968481dd953eeeb11de331f6870917811961c9b26ba09071e07180e2
+
+akracer==0.0.14; platform_system == "Linux" \
+        --hash=sha256:629eaccd0e1d18366804b797eb2692ed47bed0028f55b5a5af3cc277d521df04
