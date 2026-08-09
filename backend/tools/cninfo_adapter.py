@@ -140,11 +140,14 @@ class CninfoAdapter:
 
 if __name__ == "__main__":
     code = sys.argv[1] if len(sys.argv) > 1 else "600089"
+    date_from = sys.argv[2] if len(sys.argv) > 2 else ""
+    date_to = sys.argv[3] if len(sys.argv) > 3 else ""
     guard = RightsGuard(policy_version="v1")
     ad = CninfoAdapter(guard)
     try:
         org = ad.resolve_org_id(code, source_status="ALLOWED")
-        anns = ad.query_announcements(code, org, source_status="ALLOWED")
+        anns = ad.query_announcements(code, org, source_status="ALLOWED",
+                                      date_from=date_from, date_to=date_to)
         print(json.dumps({"verdict": "OK", "org_id": org,
                           "announcements": len(anns),
                           "first": anns[0] if anns else None}, ensure_ascii=False))
