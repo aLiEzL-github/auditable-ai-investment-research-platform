@@ -29,11 +29,13 @@ LAYER_EXEMPT = {
     "L2_persistence": ["backend/app/repository.py", "backend/app/jobs.py"],
     "migrations": ["backend/migrations"],
     "L3_fetch": ["backend/tools/import_guard.py", "backend/tools/sse_adapter.py",
-                 "backend/tools/macro_adapter.py", "backend/tools/akshare_adapter.py"],
+                 "backend/tools/macro_adapter.py", "backend/tools/akshare_adapter.py",
+                 "backend/tools/cninfo_adapter.py"],
     "tools_internal": ["backend/tools/migration_check.py", "backend/tools/vertical_smoke.py"],
 }
 # 出网授权模块（L3 取数层）：非豁免模块 import 它们 = 传递性出网，必须抓
-EGRESS_MODULES = {"import_guard", "sse_adapter", "macro_adapter", "akshare_adapter"}
+EGRESS_MODULES = {"import_guard", "sse_adapter", "macro_adapter", "akshare_adapter",
+                  "cninfo_adapter"}
 
 
 def exempt_layer_of(rel: str):
