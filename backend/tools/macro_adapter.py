@@ -87,10 +87,10 @@ class MacroAdapter:
         self._stopped = True
 
     # ── 1. 权利门先行 ───────────────────────────────────────────────
-    def fetch(self, scope: str, source_status: str, record_decision=None,
+    def fetch(self, scope: str, record_decision=None,
               record_event=None, event_id: str = "EVT_MACRO_0001",
               reference_period: str = "") -> MacroDataPoint:
-        rd = self.guard.decide(source_status, self.source_id, "FETCH", scope)
+        rd = self.guard.decide(self.source_id, "FETCH", scope)
         if record_decision is not None:
             record_decision(rd)
         if rd.verdict != "ALLOWED":
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     guard = RightsGuard(policy_version="v1")
     ad = MacroAdapter(guard)
     try:
-        p = ad.fetch(scope, source_status=os.environ.get("MACRO_STATUS", "UNKNOWN"))
+        p = ad.fetch(scope)
         print(json.dumps({"verdict": "OK"} | p.to_dict()))
     except GuardDenied as e:
         print(json.dumps({"verdict": "DENIED", "reason": str(e)[:80]}))

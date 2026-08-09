@@ -1,0 +1,224 @@
+{
+ "schema": "portfolio-rights-matrix/1.0",
+ "task": "G0-03 动作级权利矩阵（VD-12 的交付件）",
+ "produced_at": "2026-07-28T14:22:50Z",
+ "policy": {
+  "default": "RESEARCH_ONLY（VD-06）",
+  "gate_rule": "UNKNOWN / PROHIBITED 一律阻断请求；零正文、零缓存、零解析产物、零外发",
+  "commercial_use": "PROHIBITED（由 VD-06 直接推导，全部上游与数据源统一适用）",
+  "manual_fallback": "允许（VD-12 政策）——条款禁止自动取得时，人工下载属普通用户行为；录入必须走 G2-13 双录复核并绑定来源 locator。**但 VD-02 只有 1 名自然人，双录不可满足，该路径产出的事实保持 REVIEW_REQUIRED**",
+  "terms_reading_authorized": "是（2026-07-28 用户授权）——只读服务条款、版权声明与 robots.txt；不请求数据接口、不下载公告正文、不缓存",
+  "repository_visibility": "**公开**（VD-05 记录 #4 / ADR-006，2026-07-29），附生效条件：ADR-006 的 L2 fixture 合成化与 L4 数据禁入须在 G1-00 首推前落地。本矩阵的判定历经四次可见性变更**一律未放松**（MR-2）。",
+  "data_ingress_policy": "ADR-006 五层防护。事实/表达二分：单个事实数字可入库；原文、汇编、批量转储禁止。黄金 fixture 必须结构真实、数值合成、勾稽自洽（L2）。禁入由 CI required check 机械执行，.gitignore 不作为唯一防线（L4）。",
+  "first_sources": "公告主源 = 上交所（ADR-008）；宏观主源 = 国家统计局；巨潮 = 备用源；AKShare = 永久副源"
+ },
+ "code_sources": [
+  {
+   "id": "xbtlin/ai-berkshire",
+   "license": "MIT",
+   "verified_by": "GitHub API spdx_id + 本地 UPSTREAM_LICENSE.txt",
+   "pinned_commit": "bf216491b6c58054457ff8b8b1b43d2085225e58",
+   "commit_resolves": true,
+   "actions": {
+    "incorporate": "ALLOWED",
+    "modify": "ALLOWED",
+    "distribute_public": "ALLOWED（须保留版权声明）",
+    "commercial_use": "PROHIBITED（VD-06）"
+   },
+   "obligations": [
+    "THIRD_PARTY_NOTICES 保留 MIT 声明与固定提交"
+   ]
+  },
+  {
+   "id": "akfamily/akshare",
+   "license": "MIT",
+   "verified_by": "GitHub API spdx_id",
+   "actions": {
+    "incorporate": "ALLOWED",
+    "modify": "ALLOWED",
+    "distribute_public": "ALLOWED（须保留版权声明）",
+    "commercial_use": "PROHIBITED（VD-06）"
+   },
+   "obligations": [
+    "THIRD_PARTY_NOTICES 保留 MIT 声明",
+    "**代码 MIT 不等于其取回的数据可再分发**——数据侧按各原始来源单独判",
+    "**代码 MIT 不等于其依赖闭包可接受** —— 见 dependency_closure_capabilities（ADR-017）"
+   ],
+   "role": "SECONDARY（永远副源，不得升格为主源）",
+   "dependency_closure_capabilities": {
+    "observed_at": "2026-08-08T19:43:45Z",
+    "method": "隔离 venv 实测安装 akshare 1.18.83 + 静态提取代码中的上游域名，未发任何请求",
+    "closure_size": "29 个包（当前 requirements.txt 为 6 个）",
+    "curl_cffi": ">=0.13.0，**硬运行时依赖**。PyPI 自述：libcurl ffi bindings with **impersonation support**；Python binding for **curl-impersonate** fork —— 用途是让自动请求的 TLS/JA3 指纹伪装成浏览器，专为击败反爬。**与 ADR-008 C2「不规避任何反爬机制」直接冲突**（OI-PF-123）",
+    "mini_racer": "mini-racer / py-mini-racer = **V8 JavaScript 引擎绑定**，与 G2-12 解析器隔离要求相冲",
+    "upstream_domains": "静态提取（按引用次数）：data.eastmoney.com 338 · datacenter-web.eastmoney.com 175 · vip.stock.finance.sina.com.cn 131 · datacenter.jin10.com 127 · quote.eastmoney.com 123 · **webapi.cninfo.com.cn 122** · data.10jqka.com.cn 100 · legulegu.com 66 · www.chinamoney.com.cn 50",
+    "rights_status": "除巨潮外**均未在本矩阵 data_sources 登记** → fail-closed → UNKNOWN → 阻断；**巨潮已登记且已明判 automated_bulk_acquisition = UNKNOWN → 阻断** ⇒ 经 akshare 取数等于用第三方封装绕过一个已判阻断的源（OI-PF-124）",
+    "conclusion": "**ADR-017 §3：记 NOT_APPLICABLE_PENDING_RIGHTS（可逆），挂起期间不得安装**"
+   }
+  },
+  {
+   "id": "HKUDS/Vibe-Trading",
+   "license": "MIT",
+   "verified_by": "GitHub API spdx_id",
+   "actions": {
+    "incorporate": "ALLOWED_PENDING_VD-24",
+    "distribute_public": "ALLOWED（须保留版权声明）",
+    "commercial_use": "PROHIBITED（VD-06）"
+   },
+   "obligations": [
+    "VD-24 默认 REFERENCE_ONLY；若引入组件须加 MIT 声明"
+   ]
+  },
+  {
+   "id": "hsliuping/TradingAgents-CN",
+   "license": "NOASSERTION（根）+ app/LICENSE 与 frontend/LICENSE 两份专有",
+   "verified_by": "GitHub API spdx_id=NOASSERTION；contents API 确认两份子许可存在",
+   "actions": {
+    "incorporate": "PROHIBITED",
+    "modify": "PROHIBITED",
+    "fork": "PROHIBITED",
+    "copy_any_file": "PROHIBITED",
+    "copy_any_text": "PROHIBITED",
+    "derive": "PROHIBITED",
+    "read_public_pages_as_reference": "ALLOWED（思想不受著作权保护，表达受保护）"
+   },
+   "obligations": [
+    "CI 加入禁入目录与来源标识扫描（OI-PF-024）",
+    "G7-03 Git 全历史终审覆盖"
+   ],
+   "note": "本判定强于基线 B（B 只要求专有目录硬禁入）；原理由：根许可 UNKNOWN + VD-05 已改公开。【2026-07-29 ADR-005 改回私有：两条理由中的第二条消失，**判定维持 PROHIBITED 不变** —— 第一条「根许可 NOASSERTION」独立成立，本身即触发 fail-closed；且按 MR-2 不得降级。】"
+  }
+ ],
+ "data_sources": [
+  {
+   "id": "国家统计局 www.stats.gov.cn",
+   "role": "首个宏观主源（VD-13）",
+   "terms_located": true,
+   "terms_url": "https://www.stats.gov.cn/wzgl/202302/t20230217_1912857.html",
+   "robots_txt": "HTTP 404 —— 无机器可读抓取政策；按 fail-closed 不得推定为允许",
+   "actions": {
+    "read_terms": "ALLOWED（已执行）",
+    "acquire_public_statistics": "ALLOWED —— 条款「欢迎转载或引用」，属资料性公共免费信息",
+    "parse": "ALLOWED",
+    "cache_for_research": "ALLOWED_WITH_ATTRIBUTION",
+    "attribution": "**MANDATORY** —— 须在显著位置注明转自国家统计局网站并标明 www.stats.gov.cn。并入 G4-02 验收：报告渲染层自动附署名，缺失即审计失败（OI-PF-037）。",
+    "modify_meaning": "PROHIBITED —— 条款明禁曲解、修改原意",
+    "copy_site_program_or_layout": "PROHIBITED —— 条款明列图形、标志、页面风格、编排方式、程序除外",
+    "redistribute_in_public_repo": "PROHIBITED —— 条款「不得擅自同意他人继续转载」；公开仓等于再授权。处置：ADR-006 L5 指针化，只放 locator + SHA-256 + 少量事实数字，原始序列不入库。",
+    "commercial_use": "PROHIBITED（VD-06）",
+    "connectivity_probe": "ALLOWED（ADR-002 Discovery）"
+   },
+   "material_finding": "条款载明「不得擅自同意他人继续转载、引用本网内容」。VD-05 已改**公开仓库**，把统计局原始数据落盘入库，实质上使任何人可继续取用，可能触及该条。→ 数据不得进入公开仓库；与 OI-PF-022 合并处理。",
+   "automated_access_restriction": "条款未明确禁止程序访问，但也无 robots.txt 授权；按 fail-closed，自动取得的频率与方式须在 G2-05 设保守限速并可随时停止",
+   "source_key": "SRC_NBS"
+  },
+  {
+   "id": "巨潮资讯网 www.cninfo.com.cn",
+   "role": "**备用源**（VD-13：由主源降级）—— 用于上交所不可用时的人工回源核对",
+   "terms_located": true,
+   "robots_txt": "HTTP 404（返回站点错误页）",
+   "actions": {
+    "read_terms": "ALLOWED（已执行）",
+    "manual_download_by_human": "ALLOWED —— 公告为发行人依法公开披露信息，人工查阅下载属普通用户行为",
+    "automated_bulk_acquisition": "**UNKNOWN → 阻断** —— 无 robots.txt、无肯定性授权条款，按 fail-closed 不得推定允许",
+    "copy_platform_pages_layout_or_program": "PROHIBITED —— footer 明示版权所有",
+    "parse_manually_obtained_files": "ALLOWED",
+    "redistribute_in_public_repo": "PROHIBITED —— 正文永不入库；只放 locator。ADR-006 L5。",
+    "commercial_use": "PROHIBITED（VD-06）",
+    "connectivity_probe": "ALLOWED（ADR-002 Discovery；不取正文、不缓存）"
+   },
+   "blocking": "首页为 JS 渲染，静态抓取无法取得导航链接。须人工定位其服务条款/版权声明页，或改由 G0-03 以浏览器方式人工查阅后录入判定。在此之前不得发起任何数据请求。",
+   "terms_form": "仅有**免责声明**（首页 JS 弹窗），**无服务条款、无使用许可条款、无转载规定**",
+   "operator": "深圳证券信息有限公司（深交所全资子公司）；平台性质为深交所法定信息披露平台，同时承载沪深北公告",
+   "footer_copyright": "深圳证券信息有限公司 版权所有 粤B2-20050313号",
+   "disclaimer_scope": "仅免除准确性/完整性担保与索赔责任；进入网站即视为接受。**完全未涉及转载、复制、程序访问权限**",
+   "material_finding": "巨潮**没有公开的使用许可条款**，只有免责声明。这不是「允许」，也不是「禁止」，而是**未授权**。按 VD-12 的 fail-closed 规则，自动批量抓取判为 UNKNOWN 并阻断；人工下载路径依 VD-12 政策可用。",
+   "consequence_chain": [
+    "自动抓取 UNKNOWN → 阻断",
+    "→ 只能走 VD-12 批准的人工下载 + 手工录入路径",
+    "→ 手工录入须走 G2-13 双录复核",
+    "→ VD-02 只有 1 名自然人，双录不可满足",
+    "→ **600089 的材料性事实将全部停在 REVIEW_REQUIRED**",
+    "→ G7-06 准出输出 PARTIAL（与 VD-02 重开条款的预期一致）"
+   ],
+   "source_key": "SRC_CNINFO"
+  },
+  {
+   "id": "行情 / 股本 / 净债务 / 商品",
+   "role": "估值输入（VD-15）",
+   "terms_located": false,
+   "actions": {
+    "__all__": "UNKNOWN —— 来源尚未选定（VD-15 未决）"
+   },
+   "source_key": "SRC_VALUATION"
+  },
+  {
+   "id": "上海证券交易所 www.sse.com.cn",
+   "role": "**首个官方公告源（VD-13 已定）**；600089 上市地",
+   "terms_located": true,
+   "terms_url": "https://www.sse.com.cn/home/legal/",
+   "robots_txt": "HTTP 404 —— 无机器可读抓取政策",
+   "observed_at": "2026-07-29T09:0xZ",
+   "key_clauses_verbatim": {
+    "肯定性授权": "任何机构或者个人可基于非商业目的浏览、下载本网站的内容",
+    "禁止范围": "未经上海证券交易所书面许可，任何机构或者个人不得以向他人出售牟利为目的，使用本网站的任何内容，此种使用包括但不限于拷贝、下载、存贮、通过硬拷贝或电子抓取系统获取、发送、转换、出租、演示、转载、复制、修改、销售、传播、出版或任何其它形式的散发",
+    "知识产权": "本网站提供的所有资料（包括但不限于行情信息、上市公司信息、市场统计信息等）以及相关软件程序的知识产权均归属上海证券交易所",
+    "书面许可申请": "上海市浦东南路528号证券大厦上证所信息网络有限公司"
+   },
+   "material_finding": "**这是巨潮完全没有的肯定性授权。** 巨潮无 robots.txt、无条款页 -> UNKNOWN -> fail-closed 阻断自动取得；上交所明文允许「非商业目的浏览、下载」，而 VD-06=RESEARCH_ONLY + commercial_use=PROHIBITED 使本项目在定义上非商业。**若采信宽读法，OI-PF-029 的『人工下载->双录->单人无法双录->永久 REVIEW_REQUIRED』僵局对公司财报数据即被打破。**",
+   "reading_ambiguity": "两种读法待 SEC 裁定：**宽读法** —— 禁止条款整句被『以向他人出售牟利为目的』限定，故非商业抓取落在肯定性授权内 -> ALLOWED；**严读法** —— 『通过硬拷贝或电子抓取系统获取』出现在禁止清单内，按 fail-closed 从严 -> 自动抓取 PROHIBITED，仅人工浏览下载 ALLOWED。句法上宽读法更贴合原文结构，但 fail-closed 原则倾向严读法。**已由 ADR-008 裁定采信宽读法；严读法作为回落形态保留。**",
+   "technical_observation": "`https://www.sse.com.cn/disclosure/` 对 curl HEAD 返回 **403**，首页返回 200。403 可能是反爬，也可能只是 HEAD 方法或缺 UA 的产物 —— **未做进一步探测**：判别需真实取得尝试，属 VD-12/VD-13 关闭后的授权范围。**条款允许不等于允许绕过技术管控**：即便采信宽读法，也不得伪造 UA、不得规避任何反爬机制。",
+   "actions": {
+    "read_terms": "ALLOWED（已执行）",
+    "manual_download_by_human": "ALLOWED —— 明文『非商业目的浏览、下载』",
+    "automated_acquisition": "**ALLOWED** —— ADR-008 宽读法：禁止条款受「以向他人出售牟利为目的」限定，非商业自动取得落在肯定性授权「任何机构或者个人可基于非商业目的浏览、下载」内。**生效条件 C1—C7 缺一不可**，尤其 C1 技术管控优先（403 即停）与 C2 绝不绕过技术管控。",
+    "parse": "ALLOWED（对合法取得的文件）",
+    "redistribute_in_public_repo": "PROHIBITED —— 知识产权归属上交所；且 ADR-006 L5 三层分离本就禁止数据入库",
+    "commercial_use": "PROHIBITED —— 条款明禁 + VD-06",
+    "circumvent_technical_controls": "PROHIBITED —— 独立于条款读法，一律禁止"
+   },
+   "source_key": "SRC_SSE"
+  }
+ ],
+ "open_questions": [
+  "统计局数据能否进入公开仓库 —— 「不得擅自同意他人继续转载」的解释问题，需人工裁定（OI-PF-026）",
+  "巨潮自动抓取为 UNKNOWN —— 可选路径：(a) 接受人工路径与 REVIEW_REQUIRED；(b) 向深圳证券信息有限公司申请书面授权；(c) 改用其他有明确授权条款的公告源",
+  "VD-15 估值输入来源未选定 —— 无法判权"
+ ],
+ "updated_at": "2026-08-08T19:43:45Z",
+ "architecture": {
+  "adr": "ADR-002（局部）+ ADR-003（普遍原则）",
+  "pipeline": [
+   "① Discovery 查找：只验证可达性与 locator 正确性，不取正文/不缓存/不解析",
+   "② Review 审查：权利判定 + 内容完整性 + 口径与时点可比性",
+   "③ Freeze 冻结：内容寻址落盘、EvidenceSnapshot 冻结、vintage 固定"
+  ],
+  "coupling": "三模块解耦，可独立开发与运行，彼此不强制绑定",
+  "mandatory_gate": "未经 ② 与 ③ 的数据不得进入下游任何计算、Claim、估值或报告；违反必须失败关闭",
+  "repo_policy": "三层分离 —— 公开仓库零数据；本地对象库冻结原始字节；仓库内只留 locator+哈希+cutoff+vintage 指针",
+  "external_reproducibility": "外部 clone 者只能 PROVENANCE_ONLY（预期行为，须在 README 显式声明）",
+  "benefit_for_cninfo": "Discovery 不取正文，权利风险最低；人工下载文件走同一条 Freeze 路径，无需另建机制"
+ },
+ "open_questions_status": {
+  "reviewed_at": "2026-08-03T04:31:32Z",
+  "reviewer": "OI-PF-020 复核",
+  "note": "原 open_questions 三条中 2 条已陈旧，按台账惯例**保留原文并标注**，不删除。",
+  "items": [
+   {
+    "q": "统计局数据能否进入公开仓库",
+    "status": "LIVE",
+    "detail": "仍未裁定；OI-PF-026 为 OPEN、material=true、blocks_data_flow=ALL"
+   },
+   {
+    "q": "巨潮自动抓取为 UNKNOWN —— 可选路径 (a)(b)(c)",
+    "status": "STALE_PATH_CHOSEN",
+    "detail": "ADR-008 已选定：公告主源由巨潮改为上交所，巨潮降为备用源并保持 UNKNOWN 阻断。「可选路径」的提问前提已消失；巨潮的 UNKNOWN 状态本身**仍然有效**，只是不再是待决问题"
+   },
+   {
+    "q": "VD-15 估值输入来源未选定 —— 无法判权",
+    "status": "STALE_RESOLVED",
+    "detail": "VD-15 已 DECIDED（记录 #2）：价格与商品 = 上交所自动取得为主源（ADR-008 覆盖行情信息），人工录入降为 fallback；股本/净债务/少数股东权益 = 上交所定期报告自动取得"
+   }
+  ]
+ }
+}

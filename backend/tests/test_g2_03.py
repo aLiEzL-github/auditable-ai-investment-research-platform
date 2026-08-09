@@ -12,6 +12,10 @@ import tempfile
 import shutil
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from _matrix_fixture import MATRIX
+
 
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
@@ -22,7 +26,7 @@ from repository import create_repository, Source, RightsDecisionRecord
 
 class TestRightsGuard(unittest.TestCase):
     def setUp(self):
-        self.guard = RightsGuard(policy_version="v1", allow_scope_patterns={})
+        self.guard = RightsGuard(matrix=MATRIX)
         self._tmp = tempfile.mkdtemp()
         self.repo = create_repository(os.path.join(self._tmp, "g2_03.sqlite3"))
         self.repo.create_all()
@@ -49,11 +53,11 @@ class TestRightsGuard(unittest.TestCase):
 
     # ── 1. 每次动作先产出绑定四要素的 RightsDecision ─────────────────
     def test_decision_binds_four_elements(self):
-        rd = self.guard.decide("ALLOWED", "SRC_SSE", "FETCH", "/announcements")
+        rd = self.guard.decide("SRC_SSE", "FETCH", "/announcements")
         self.assertEqual(rd.source_id, "SRC_SSE")
         self.assertEqual(rd.action, "FETCH")
         self.assertEqual(rd.scope, "/announcements")
-        self.assertEqual(rd.policy_version, "v1")
+        self.assertEqual(rd.policy_version, "2026-08-09T00:00:00Z")  # FF-2：policy 绑定矩阵版本
         self.assertEqual(rd.verdict, ALLOWED)
 
     # ── 2. PROHIBITED/UNKNOWN 五个零（动作体不执行）──────────────────
@@ -61,19 +65,19 @@ class TestRightsGuard(unittest.TestCase):
         calls = []
         def fn():
             calls.append("executed")
-        for status, sid in (("PROHIBITED", "SRC_BAN"), ("UNKNOWN", "SRC_UNK")):
+        for sid in ("SRC_BAN", "SRC_UNK"):
             with self.assertRaises(GuardDenied):
-                self.guard.guarded(status, sid, "FETCH", "/x", fn)
+                self.guard.guarded(sid, "FETCH", "/x", fn)
         self.assertEqual(calls, [], "拒绝后动作体不得执行（零请求/正文/缓存/解析/外发）")
 
     def test_allowed_executes(self):
-        self.assertEqual(self.guard.guarded("ALLOWED", "SRC_SSE", "FETCH", "/a",
+        self.assertEqual(self.guard.guarded("SRC_SSE", "FETCH", "/a",
                                             lambda: "data"), "data")
 
     # ── scope 允许清单 ──────────────────────────────────────────────
     def test_scope_pattern_deny(self):
-        g = RightsGuard(policy_version="v2", allow_scope_patterns={"SRC_SSE": r"^/public/"})
-        rd = g.decide("ALLOWED", "SRC_SSE", "FETCH", "/private/x")
+        g = RightsGuard(matrix=MATRIX, allow_scope_patterns={"SRC_SSE": r"^/public/"})
+        rd = g.decide("SRC_SSE", "FETCH", "/private/x")
         self.assertEqual(rd.verdict, PROHIBITED)
 
     # ── 3. 人工导入：路径穿越 + SSRF ────────────────────────────────
@@ -106,7 +110,7 @@ class TestRightsGuard(unittest.TestCase):
 
     # ── X-4：审计写路径 assert_writer ───────────────────────────────
     def test_decision_recorded_with_writer_gate(self):
-        rd = self.guard.decide("ALLOWED", "SRC_SSE", "FETCH", "/a")
+        rd = self.guard.decide("SRC_SSE", "FETCH", "/a")
         rec = self._rd_to_record(rd)
         rec.id = "RD_0001"
         self.repo.record_rights_decision(self.s, rec)
@@ -134,9 +138,29 @@ class TestRightsGuard(unittest.TestCase):
         a = Adapter(None)
         # guard 化的调用链：先 decide，PROHIBITED 即拒绝且不触碰适配器
         with self.assertRaises(GuardDenied):
-            self.guard.guarded("PROHIBITED", "SRC_BAN", "FETCH", "/x", lambda: a.fetch("/x"))
+            self.guard.guarded("SRC_BAN", "FETCH", "/x", lambda: a.fetch("/x"))
         self.assertEqual(a.calls, 0, "绕门路径：动作体不得执行")
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    # ── FF-2/U-2（OI-PF-127）：矩阵驱动 —— 传假状态结构上不可能 ─────
+    def test_matrix_driven_cninfo_unknown_blocked(self):
+        """真实矩阵（工程镜像）对巨潮 automated_bulk_acquisition = UNKNOWN → 阻断。"""
+        import json as _j
+        real = _j.load(open(os.path.join(
+            os.path.dirname(__file__), "..", "..", "contracts",
+            "rights_matrix.json"), encoding="utf-8"))
+        g = RightsGuard(matrix=real)
+        rd = g.decide("SRC_CNINFO", "FETCH", "/announcements/600089")
+        self.assertEqual(rd.verdict, UNKNOWN)
+        with self.assertRaises(GuardDenied):
+            g.guarded("SRC_CNINFO", "FETCH", "/x", lambda: None)
+
+    def test_fake_status_impossible_by_signature(self):
+        """FF-2：decide 无 source_status 参数 —— 传假状态在结构上不可能。"""
+        g = RightsGuard(matrix=MATRIX)
+        with self.assertRaises(TypeError):
+            g.decide("SRC_SSE", "FETCH", "/x")  # 旧签名已删

@@ -9,11 +9,16 @@ BF-04（取得器级）：
   · 超时中止；来源权利失效后新请求/缓存为零
 """
 import unittest
+
 import tempfile
 import shutil
 import os
 import sys
 from unittest import mock
+
+import os as _os
+sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from _matrix_fixture import MATRIX
 
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
@@ -36,7 +41,7 @@ def _resp(status, body=b"<html>ok</html>"):
 
 class TestSSEAdapter(unittest.TestCase):
     def setUp(self):
-        self.guard = RightsGuard(policy_version="v1")
+        self.guard = RightsGuard(matrix=MATRIX)
         os.environ["SSE_BASE_URL"] = "https://example.test"
         self.ad = SSEAdapter(self.guard, min_interval=0.0)
         self._tmp = tempfile.mkdtemp()
@@ -69,23 +74,34 @@ class TestSSEAdapter(unittest.TestCase):
         self.s.commit()
 
     # ── 基线：无先行权利决定时零网络 ────────────────────────────────
+    def _denied_adapter(self, status_text):
+        """专用矩阵：SRC_SSE 状态可控（矩阵驱动零网络测试）。"""
+        import copy
+        mx = copy.deepcopy(MATRIX)
+        for d in mx["data_sources"]:
+            if d["source_key"] == "SRC_SSE":
+                d["actions"]["FETCH"] = status_text
+        return SSEAdapter(RightsGuard(matrix=mx), min_interval=0.0)
+
     def test_unknown_zero_network(self):
+        ad = self._denied_adapter("UNKNOWN（测试）")
         with mock.patch("sse_adapter.urllib.request.urlopen") as m:
             with self.assertRaises(GuardDenied):
-                self.ad.fetch("/disclosure/", source_status="UNKNOWN")
+                ad.fetch("/disclosure/")
             m.assert_not_called()
 
     def test_prohibited_zero_network(self):
+        ad = self._denied_adapter("PROHIBITED（测试）")
         with mock.patch("sse_adapter.urllib.request.urlopen") as m:
             with self.assertRaises(GuardDenied):
-                self.ad.fetch("/disclosure/", source_status="PROHIBITED")
+                ad.fetch("/disclosure/")
             m.assert_not_called()
 
     # ── 正例：ALLOWED + 200 ─────────────────────────────────────────
     def test_allowed_success(self):
         with mock.patch("sse_adapter.urllib.request.urlopen",
                         return_value=_resp(200, b"<html>announcement</html>")):
-            r = self.ad.fetch("/disclosure/", source_status="ALLOWED",
+            r = self.ad.fetch("/disclosure/",
                               record_event=self._record_event, event_id="EVT_OK")
         self.assertEqual(r["status"], 200)
         self.assertIn(b"announcement", r["payload"])
@@ -98,7 +114,7 @@ class TestSSEAdapter(unittest.TestCase):
                         side_effect=__import__("urllib.error").error.HTTPError(
                             "url", 403, "Forbidden", None, None)):
             with self.assertRaises(RuntimeError) as ctx:
-                self.ad.fetch("/disclosure/", source_status="ALLOWED",
+                self.ad.fetch("/disclosure/",
                               record_event=self._record_event, event_id="EVT_403")
         self.assertIn("E-G2-04-002", str(ctx.exception))
         ev = self.s.query(AcquisitionEvent).filter_by(id="EVT_403").first()
@@ -110,7 +126,7 @@ class TestSSEAdapter(unittest.TestCase):
                         side_effect=__import__("urllib.error").error.HTTPError(
                             "url", 429, "Too Many Requests", None, None)):
             with self.assertRaises(RuntimeError):
-                self.ad.fetch("/disclosure/", source_status="ALLOWED",
+                self.ad.fetch("/disclosure/",
                               record_event=self._record_event, event_id="EVT_429")
         ev = self.s.query(AcquisitionEvent).filter_by(id="EVT_429").first()
         self.assertEqual(ev.ok, False)
@@ -121,7 +137,7 @@ class TestSSEAdapter(unittest.TestCase):
         with mock.patch("sse_adapter.urllib.request.urlopen",
                         side_effect=TimeoutError("timed out")):
             with self.assertRaises(RuntimeError):
-                self.ad.fetch("/disclosure/", source_status="ALLOWED",
+                self.ad.fetch("/disclosure/",
                               record_event=self._record_event, event_id="EVT_TO")
         ev = self.s.query(AcquisitionEvent).filter_by(id="EVT_TO").first()
         self.assertEqual(ev.ok, False)
@@ -132,14 +148,14 @@ class TestSSEAdapter(unittest.TestCase):
         """同一取得事件重试：event_id 相同 → 唯一（数据库层面去重防重放）。"""
         with mock.patch("sse_adapter.urllib.request.urlopen",
                         return_value=_resp(200)):
-            self.ad.fetch("/disclosure/", source_status="ALLOWED",
+            self.ad.fetch("/disclosure/",
                           record_event=self._record_event, event_id="EVT_IDEMP")
         # 重试同一事件（相同 event_id）：已存在则拒绝（E-WRITE-003 风格）
         from sqlalchemy.exc import IntegrityError
         with mock.patch("sse_adapter.urllib.request.urlopen",
                         return_value=_resp(200)):
             try:
-                self.ad.fetch("/disclosure/", source_status="ALLOWED",
+                self.ad.fetch("/disclosure/",
                               record_event=self._record_event, event_id="EVT_IDEMP")
                 self.fail("重复 event_id 应被拒")
             except Exception:
@@ -150,9 +166,10 @@ class TestSSEAdapter(unittest.TestCase):
     # ── BF-04：来源权利失效后新请求为零 ─────────────────────────────
     def test_rights_revoked_zero_requests(self):
         """条款变化（source 转 PROHIBITED）后，新请求/缓存为零。"""
+        ad = self._denied_adapter("PROHIBITED（测试）")
         with mock.patch("sse_adapter.urllib.request.urlopen") as m:
             with self.assertRaises(GuardDenied):
-                self.ad.fetch("/disclosure/", source_status="PROHIBITED")
+                ad.fetch("/disclosure/")
             m.assert_not_called()
 
     # ── 保守限速：请求间隔 ──────────────────────────────────────────
@@ -160,9 +177,9 @@ class TestSSEAdapter(unittest.TestCase):
         ad = SSEAdapter(self.guard, min_interval=0.05)
         with mock.patch("sse_adapter.urllib.request.urlopen",
                         return_value=_resp(200)) as m:
-            ad.fetch("/a", source_status="ALLOWED")
+            ad.fetch("/a")
             t0 = __import__("time").time()
-            ad.fetch("/b", source_status="ALLOWED")
+            ad.fetch("/b")
             elapsed = __import__("time").time() - t0
         self.assertGreaterEqual(elapsed, 0.04, "两次请求须有最小间隔")
         self.assertEqual(m.call_count, 2)

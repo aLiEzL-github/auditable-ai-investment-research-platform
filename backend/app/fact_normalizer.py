@@ -80,8 +80,9 @@ class FactNormalizer:
                         getattr(f1, "period", ""), f1.value, f2.value, kind)
 
     @staticmethod
-    def _num(v: str):
+    def _num(v):
+        """防御性容错（GG-2/OI-PF-125）：int/float/None/非数字串均受控返回 None。"""
         try:
-            return float(v.replace(",", ""))
-        except (TypeError, ValueError):
+            return float(str(v).replace(",", ""))
+        except (TypeError, ValueError, AttributeError):
             return None

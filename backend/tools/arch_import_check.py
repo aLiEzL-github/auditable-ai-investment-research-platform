@@ -106,8 +106,15 @@ def main() -> int:
             layer = exempt_layer_of(rel)
             if layer is not None:
                 continue  # 显式层豁免（精确路径，非子串）
+            # FF-3/U-1（OI-PF-126）：禁止硬编码 source_status="ALLOWED" 字面量
+            # （测试夹具白名单：_matrix_fixture.py 等显式允许，报数）
+            _src_text = open(fp, encoding="utf-8").read()
+            if ('source_status="ALLOWED"' in _src_text
+                    and "_matrix_fixture" not in rel
+                    and "arch_import_check" not in rel):  # 检查器自身豁免（规则定义字面量）
+                bad.append(f"{rel}: FF-3 硬编码 source_status=\"ALLOWED\"（须矩阵驱动）")
             try:
-                tree = ast.parse(open(fp, encoding="utf-8").read(), filename=fp)
+                tree = ast.parse(_src_text, filename=fp)
             except (OSError, SyntaxError) as e:
                 bad.append(f"{rel}: 解析失败 {e}")
                 continue

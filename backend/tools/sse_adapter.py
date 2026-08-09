@@ -61,13 +61,13 @@ class SSEAdapter:
         self._stopped = True
 
     # ── 1. 权利门先行（任何路径都不可绕过：X-9）────────────────────
-    def fetch(self, scope: str, source_status: str, record_decision=None,
+    def fetch(self, scope: str, record_decision=None,
               record_event=None, event_id: str = "EVT_SSE_0001") -> dict:
         """guard 化的取得：UNKNOWN/PROHIBITED → GuardDenied 且零网络。
 
         record_decision / record_event 为审计回调（由调用方入册）。
         """
-        rd = self.guard.decide(source_status, self.source_id, "FETCH", scope)
+        rd = self.guard.decide(self.source_id, "FETCH", scope)
         if record_decision is not None:
             record_decision(rd)
         if rd.verdict != "ALLOWED":
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     guard = RightsGuard(policy_version="v1")
     ad = SSEAdapter(guard)
     try:
-        r = ad.fetch(scope, source_status="UNKNOWN")
+        r = ad.fetch(scope)
         print(json.dumps({"verdict": "OK", "status": r["status"], "bytes": len(r["payload"])}))
     except GuardDenied as e:
         print(json.dumps({"verdict": "DENIED", "reason": str(e)[:80]}))
