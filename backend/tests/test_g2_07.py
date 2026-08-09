@@ -125,3 +125,12 @@ class TestFactNormalizer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    # ── GG-2/OI-PF-125：_num 类型化容错（受控结果，不抛裸异常）──────
+    def test_num_controlled_types(self):
+        from fact_normalizer import FactNormalizer
+        for v in (123, 123.5, None, "abc", "1,234", "12.5%"):
+            r = FactNormalizer._num(v)  # 不得抛裸异常
+            self.assertIsInstance(r, (float, type(None)))
+        self.assertEqual(FactNormalizer._num("1,234"), 1234.0)
+        self.assertEqual(FactNormalizer._num(None), None)

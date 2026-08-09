@@ -41,9 +41,9 @@ class AKShareAdapter:
                 "安装后由同一契约驱动）")
 
     # ── 1. 权利门先行（与主源同款，X-9 不可绕门）────────────────────
-    def fetch(self, scope: str, source_status: str, record_decision=None,
+    def fetch(self, scope: str, record_decision=None,
               record_event=None, event_id: str = "EVT_AK_0001") -> list:
-        rd = self.guard.decide(source_status, self.source_id, "FETCH", scope)
+        rd = self.guard.decide(self.source_id, "FETCH", scope)
         if record_decision is not None:
             record_decision(rd)
         if rd.verdict != "ALLOWED":
@@ -84,8 +84,7 @@ if __name__ == "__main__":
     guard = RightsGuard(policy_version="v1")
     ad = AKShareAdapter(guard)
     try:
-        rows = ad.fetch(os.environ.get("AK_SCOPE", "stock_zh_a_spot"),
-                        source_status=os.environ.get("AK_STATUS", "UNKNOWN"))
+        rows = ad.fetch(os.environ.get("AK_SCOPE", "stock_zh_a_spot"))
         print(json.dumps({"verdict": "OK", "rows": len(rows),
                           "all_secondary": all(r.get("__secondary") for r in rows)}))
     except GuardDenied as e:

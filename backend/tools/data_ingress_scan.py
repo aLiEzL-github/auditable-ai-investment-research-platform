@@ -87,7 +87,8 @@ CODE_EXT = {".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".xml", ".xbrl", ".csv
 
 TEXT_EXT = {".md", ".txt", ".json", ".yaml", ".yml", ".py", ".xml", ".html", ""}
 # E4 变异测试集豁免：tests/test_scanners_mutation.py 的合成载荷（格式真实、值随机，非真实凭据）会被扫描器命中——与 THIRD_PARTY_NOTICES 同类，豁免并注明理由（OI-PF-058 先例）
-MUTATION_TEST_EXEMPT = ('test_scanners_mutation.py', 'test_g2_11.py')
+MUTATION_TEST_EXEMPT = ('test_scanners_mutation.py', 'test_g2_11.py',
+                         'rights_matrix.json')  # 契约镜像：含来源域名是职能性引用（OI-PF-058 模式）
 SKIP_DIR = {".git", "node_modules", "__pycache__", ".venv", "venv"}
 
 

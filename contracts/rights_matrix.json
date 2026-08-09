@@ -1,0 +1,53 @@
+{
+ "schema": "rights-matrix-mirror/1.0",
+ "mirror_of": "rights-matrix.json",
+ "produced_at": "2026-07-28T14:22:50Z",
+ "policy": {
+  "default": "RESEARCH_ONLY（VD-06）"
+ },
+ "data_sources": [
+  {
+   "id": "国家统计局 www.stats.gov.cn",
+   "source_key": "SRC_NBS",
+   "actions": {
+    "read_terms": "ALLOWED（已执行）",
+    "acquire_public_statistics": "ALLOWED —— 条款「欢迎转载或引用」，属资料性公共免费信息",
+    "parse": "ALLOWED",
+    "cache_for_research": "ALLOWED_WITH_ATTRIBUTION",
+    "attribution": "**MANDATORY** —— 须在显著位置注明转自国家统计局网站并标明 www.stats.gov.cn。并入 G4-02 验收：报告渲染层自动附署名，缺失即审计失败（OI-PF-037）。",
+    "modify_meaning": "PROHIBITED —— 条款明禁曲解、修改原意",
+    "copy_site_program_or_layout": "PROHIBITED —— 条款明列图形、标志、页面风格、编排方式、程序除外",
+    "redistribute_in_public_repo": "PROHIBITED —— 条款「不得擅自同意他人继续转载」；公开仓等于再授权。处置：ADR-006 L5 指针化，只放 locator + SHA-256 + 少量事实数字，原始序列不入库。",
+    "commercial_use": "PROHIBITED（VD-06）",
+    "connectivity_probe": "ALLOWED（ADR-002 Discovery）"
+   }
+  },
+  {
+   "id": "巨潮资讯网 www.cninfo.com.cn",
+   "source_key": "SRC_CNINFO",
+   "actions": {
+    "read_terms": "ALLOWED（已执行）",
+    "manual_download_by_human": "ALLOWED —— 公告为发行人依法公开披露信息，人工查阅下载属普通用户行为",
+    "automated_bulk_acquisition": "**UNKNOWN → 阻断** —— 无 robots.txt、无肯定性授权条款，按 fail-closed 不得推定允许",
+    "copy_platform_pages_layout_or_program": "PROHIBITED —— footer 明示版权所有",
+    "parse_manually_obtained_files": "ALLOWED",
+    "redistribute_in_public_repo": "PROHIBITED —— 正文永不入库；只放 locator。ADR-006 L5。",
+    "commercial_use": "PROHIBITED（VD-06）",
+    "connectivity_probe": "ALLOWED（ADR-002 Discovery；不取正文、不缓存）"
+   }
+  },
+  {
+   "id": "上海证券交易所 www.sse.com.cn",
+   "source_key": "SRC_SSE",
+   "actions": {
+    "read_terms": "ALLOWED（已执行）",
+    "manual_download_by_human": "ALLOWED —— 明文『非商业目的浏览、下载』",
+    "automated_acquisition": "**ALLOWED** —— ADR-008 宽读法：禁止条款受「以向他人出售牟利为目的」限定，非商业自动取得落在肯定性授权「任何机构或者个人可基于非商业目的浏览、下载」内。**生效条件 C1—C7 缺一不可**，尤其 C1 技术管控优先（403 即停）与 C2 绝不绕过技术管控。",
+    "parse": "ALLOWED（对合法取得的文件）",
+    "redistribute_in_public_repo": "PROHIBITED —— 知识产权归属上交所；且 ADR-006 L5 三层分离本就禁止数据入库",
+    "commercial_use": "PROHIBITED —— 条款明禁 + VD-06",
+    "circumvent_technical_controls": "PROHIBITED —— 独立于条款读法，一律禁止"
+   }
+  }
+ ]
+}

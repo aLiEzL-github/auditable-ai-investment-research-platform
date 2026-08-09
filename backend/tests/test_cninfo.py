@@ -7,6 +7,10 @@
 import unittest
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from _matrix_fixture import MATRIX
+
 from unittest import mock
 
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
@@ -22,14 +26,14 @@ class TestCninfoAdapter(unittest.TestCase):
     def setUp(self):
         os.environ["CNINFO_BASE_URL"] = "https://example.test"
         os.environ["CNINFO_PDF_BASE_URL"] = "https://pdf.example.test"
-        self.guard = RightsGuard(policy_version="v1")
+        self.guard = RightsGuard(matrix=MATRIX)
         self.ad = CninfoAdapter(self.guard, min_interval=0.0)
 
     # ── 域名运行时注入（L4 来源特征规则保持严格）───────────────────
     def test_missing_domain_rejected(self):
         os.environ.pop("CNINFO_BASE_URL")
         with self.assertRaises(ValueError) as ctx:
-            CninfoAdapter(RightsGuard(policy_version="v1"))
+            CninfoAdapter(RightsGuard(matrix=MATRIX))
         self.assertIn("E-G2-04-003", str(ctx.exception))
 
     def _resp_json(self, payload, status=200):
@@ -44,12 +48,18 @@ class TestCninfoAdapter(unittest.TestCase):
 
     # ── 权利门：UNKNOWN/PROHIBITED 零请求 ───────────────────────────
     def test_unknown_zero_request(self):
+        """FF-2：真实矩阵（CNINFO automated_bulk_acquisition=UNKNOWN）→ 零请求。"""
+        import copy, json as _j
+        real = _j.load(open(os.path.join(
+            os.path.dirname(__file__), "..", "..", "contracts",
+            "rights_matrix.json"), encoding="utf-8"))
+        ad = CninfoAdapter(RightsGuard(matrix=real), min_interval=0.0)
         with mock.patch("cninfo_adapter.urllib.request.urlopen") as m:
             with self.assertRaises(GuardDenied):
-                self.ad.resolve_org_id("600089", source_status="UNKNOWN")
+                ad.resolve_org_id("600089")
             m.assert_not_called()
             with self.assertRaises(GuardDenied):
-                self.ad.query_announcements("600089", "g1", source_status="PROHIBITED")
+                ad.query_announcements("600089", "g1")
             m.assert_not_called()
 
     # ── 搜索 → orgId ────────────────────────────────────────────────
@@ -57,14 +67,14 @@ class TestCninfoAdapter(unittest.TestCase):
         with mock.patch("cninfo_adapter.urllib.request.urlopen",
                         return_value=self._resp_json(
                             [{"code": "600089", "orgId": "gssh0600089"}])):
-            org = self.ad.resolve_org_id("600089", source_status="ALLOWED")
+            org = self.ad.resolve_org_id("600089")
         self.assertEqual(org, "gssh0600089")
 
     def test_resolve_org_id_missing(self):
         with mock.patch("cninfo_adapter.urllib.request.urlopen",
                         return_value=self._resp_json([{"code": "600888"}])):
             with self.assertRaises(RuntimeError) as ctx:
-                self.ad.resolve_org_id("600089", source_status="ALLOWED")
+                self.ad.resolve_org_id("600089")
         self.assertIn("E-G2-04-004", str(ctx.exception))
 
     # ── 公告查询 → PDF 直链元数据 ──────────────────────────────────
@@ -74,7 +84,7 @@ class TestCninfoAdapter(unittest.TestCase):
              "announcementTime": 1714400000000}]}
         with mock.patch("cninfo_adapter.urllib.request.urlopen",
                         return_value=self._resp_json(j)):
-            anns = self.ad.query_announcements("600089", "g1", source_status="ALLOWED")
+            anns = self.ad.query_announcements("600089", "g1")
         self.assertEqual(len(anns), 1)
         self.assertEqual(anns[0]["title"], "年度报告")
         self.assertIn("x.PDF", anns[0]["locator"])
@@ -86,7 +96,7 @@ class TestCninfoAdapter(unittest.TestCase):
                         side_effect=urllib.error.HTTPError(
                             "u", 429, "Too Many", None, None)):
             with self.assertRaises(RuntimeError) as ctx:
-                self.ad.resolve_org_id("600089", source_status="ALLOWED")
+                self.ad.resolve_org_id("600089")
         self.assertIn("E-G2-04-002", str(ctx.exception))
 
     # ── PDF 防护页拒绝（返回 HTML 非 PDF → 失败关闭）───────────────
@@ -99,7 +109,7 @@ class TestCninfoAdapter(unittest.TestCase):
         with mock.patch("cninfo_adapter.urllib.request.urlopen",
                         return_value=resp):
             with self.assertRaises(RuntimeError) as ctx:
-                self.ad.download_pdf("finalpage/x.PDF", source_status="ALLOWED")
+                self.ad.download_pdf("finalpage/x.PDF")
         self.assertIn("E-G2-04-005", str(ctx.exception))
 
     def test_pdf_ok(self):
@@ -110,7 +120,7 @@ class TestCninfoAdapter(unittest.TestCase):
         resp.__exit__ = mock.Mock(return_value=False)
         with mock.patch("cninfo_adapter.urllib.request.urlopen",
                         return_value=resp):
-            data = self.ad.download_pdf("finalpage/x.PDF", source_status="ALLOWED")
+            data = self.ad.download_pdf("finalpage/x.PDF")
         self.assertEqual(data, b"%PDF-1.4")
 
     # ── 限速 ───────────────────────────────────────────────────────
@@ -119,9 +129,9 @@ class TestCninfoAdapter(unittest.TestCase):
         with mock.patch("cninfo_adapter.urllib.request.urlopen",
                         return_value=self._resp_json(
                             [{"code": "600089", "orgId": "g1"}])):
-            ad.resolve_org_id("600089", source_status="ALLOWED")
+            ad.resolve_org_id("600089")
             t0 = __import__("time").time()
-            ad.resolve_org_id("600089", source_status="ALLOWED")
+            ad.resolve_org_id("600089")
             el = __import__("time").time() - t0
         self.assertGreaterEqual(el, 0.04)
 

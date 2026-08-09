@@ -81,8 +81,8 @@ class CninfoAdapter:
             raise RuntimeError("E-G2-04-002: 巨潮取得失败（失败关闭）: 超时中止")
 
     # ── 1. 权利门先行（UNKNOWN/PROHIBITED 零请求）──────────────────
-    def resolve_org_id(self, code: str, source_status: str) -> str:
-        rd = self.guard.decide(source_status, self.source_id, "FETCH", f"/search/{code}")
+    def resolve_org_id(self, code: str) -> str:
+        rd = self.guard.decide(self.source_id, "FETCH", f"/search/{code}")
         if rd.verdict != "ALLOWED":
             raise GuardDenied(f"{rd.verdict}: {self.source_id} —— 零请求/正文/缓存/解析/外发")
         j = self._post("/new/information/topSearch/query",
@@ -92,10 +92,10 @@ class CninfoAdapter:
                 return x["orgId"]
         raise RuntimeError(f"E-G2-04-004: 未找到 {code} 的 orgId")
 
-    def query_announcements(self, code: str, org_id: str, source_status: str,
+    def query_announcements(self, code: str, org_id: str,
                             date_from: str = "", date_to: str = "",
                             page: int = 1, page_size: int = 30) -> list:
-        rd = self.guard.decide(source_status, self.source_id, "FETCH",
+        rd = self.guard.decide(self.source_id, "FETCH",
                                f"/announcements/{code}")
         if rd.verdict != "ALLOWED":
             raise GuardDenied(f"{rd.verdict}: {self.source_id} —— 零请求/正文/缓存/解析/外发")
@@ -116,8 +116,8 @@ class CninfoAdapter:
         return out
 
     # ── 2. PDF 直链下载（guard 化 + 失败关闭）──────────────────────
-    def download_pdf(self, pdf_path: str, source_status: str) -> bytes:
-        rd = self.guard.decide(source_status, self.source_id, "FETCH", pdf_path)
+    def download_pdf(self, pdf_path: str) -> bytes:
+        rd = self.guard.decide(self.source_id, "FETCH", pdf_path)
         if rd.verdict != "ALLOWED":
             raise GuardDenied(f"{rd.verdict}: {self.source_id} —— 零请求")
         self._pace()
@@ -139,15 +139,16 @@ class CninfoAdapter:
 
 
 if __name__ == "__main__":
+    # FF-1：fail-closed 默认 —— 未显式授权（--allow 标志 + 矩阵判定）即 DENIED。
+    # 矩阵对巨潮 automated_bulk_acquisition = UNKNOWN → 阻断（ADR-017/OI-PF-124）
     code = sys.argv[1] if len(sys.argv) > 1 else "600089"
     date_from = sys.argv[2] if len(sys.argv) > 2 else ""
     date_to = sys.argv[3] if len(sys.argv) > 3 else ""
-    guard = RightsGuard(policy_version="v1")
+    guard = RightsGuard()
     ad = CninfoAdapter(guard)
     try:
-        org = ad.resolve_org_id(code, source_status="ALLOWED")
-        anns = ad.query_announcements(code, org, source_status="ALLOWED",
-                                      date_from=date_from, date_to=date_to)
+        org = ad.resolve_org_id(code)
+        anns = ad.query_announcements(code, org, date_from=date_from, date_to=date_to)
         print(json.dumps({"verdict": "OK", "org_id": org,
                           "announcements": len(anns),
                           "first": anns[0] if anns else None}, ensure_ascii=False))
