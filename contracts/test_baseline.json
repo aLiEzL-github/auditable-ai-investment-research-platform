@@ -1,0 +1,7 @@
+{
+  "schema": "test-baseline/1.0",
+  "rationale": "OI-PF-012（基线 A §9.1 / 附录 A.1）：空测试或被跳过的测试必须使 required check 失败——缺此门则 CI 全绿不构成任何证据。用例数在此**精确声明**，增删测试都须在 PR 中显式改动本文件，使测试集合的收缩不可能悄悄发生。",
+  "expected_tests": 205,
+  "allowed_skips": [],
+  "allowed_skips_note": "空列表 = 当前零跳过。若确需跳过，须在此逐个列出完整用例 id 并在 PR 中写明理由——沉默不算决定。"
+}
