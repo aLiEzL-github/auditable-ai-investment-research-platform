@@ -141,12 +141,6 @@ class TestRightsGuard(unittest.TestCase):
             self.guard.guarded("SRC_BAN", "FETCH", "/x", lambda: a.fetch("/x"))
         self.assertEqual(a.calls, 0, "绕门路径：动作体不得执行")
 
-
-if __name__ == "__main__":
-    unittest.main()
-
-
-    # ── FF-2/U-2（OI-PF-127）：矩阵驱动 —— 传假状态结构上不可能 ─────
     def test_matrix_driven_cninfo_unknown_blocked(self):
         """真实矩阵（工程镜像）对巨潮 automated_bulk_acquisition = UNKNOWN → 阻断。"""
         import json as _j
@@ -159,8 +153,17 @@ if __name__ == "__main__":
         with self.assertRaises(GuardDenied):
             g.guarded("SRC_CNINFO", "FETCH", "/x", lambda: None)
 
+
     def test_fake_status_impossible_by_signature(self):
         """FF-2：decide 无 source_status 参数 —— 传假状态在结构上不可能。"""
         g = RightsGuard(matrix=MATRIX)
         with self.assertRaises(TypeError):
-            g.decide("SRC_SSE", "FETCH", "/x")  # 旧签名已删
+            g.decide("ALLOWED", "SRC_SSE", "FETCH", "/x")  # 旧签名已删 → TypeError
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+    # ── FF-2/U-2（OI-PF-127）：矩阵驱动 —— 传假状态结构上不可能 ─────
+

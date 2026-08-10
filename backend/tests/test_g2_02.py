@@ -98,6 +98,30 @@ class TestArtifactStore(unittest.TestCase):
         self.assertIn("E-G2-02-001", str(ctx.exception))
         # store 路径同理：不经过任意用户路径，digest 由内容决定（逃逸面封闭）
 
+    # ── BF-03 负例 2b（OI-PF-013/B4-1）：写原语直接遇 symlink 载荷 ──
+    def test_store_symlink_payload_fails_closed(self):
+        """对写原语直接构造 symlink 载荷：digest 路径链上的目录被替换为
+        指向库外的 symlink 时，store() 必须失败关闭（不得写出库外）。"""
+        outside_dir = os.path.join(self._tmp, "outside-lib")
+        os.makedirs(outside_dir)
+        marker = os.path.join(outside_dir, "marker.txt")
+        with open(marker, "w") as f:
+            f.write("escaped")
+        # 内容寻址路径不可预知 → 先占一个 64 位 hex 摘要前缀的目录位置，
+        # 植入「目录 → 库外」symlink（模拟攻击者预先布置的写路径劫持）
+        d = self.store.store("ART_SYM1", b"probe")
+        rel = f"{d[:2]}/{d[2:4]}/{d[4:]}"
+        target_dir = os.path.join(self.store.root, d[:2], d[2:4])
+        os.chmod(target_dir, 0o755)
+        shutil.rmtree(target_dir)
+        os.symlink(outside_dir, target_dir)
+        # 同内容再次 store：目标链已被 symlink 劫持 → resolve 追出库外 → 拒绝
+        with self.assertRaises(ValueError) as ctx:
+            self.store.store("ART_SYM2", b"probe")
+        self.assertIn("E-G2-02-001", str(ctx.exception))
+        # 失败关闭：库外不得出现任何由本次写入产生的文件
+        self.assertFalse(os.path.exists(marker), "symlink 载荷写入必须失败关闭")
+
     # ── BF-03 负例 3：超长/深度嵌套名 ────────────────────────────────
     def test_overlong_name_rejected(self):
         with self.assertRaises(ValueError) as ctx:

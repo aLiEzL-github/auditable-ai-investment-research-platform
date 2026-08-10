@@ -1,0 +1,6 @@
+{
+ "schema": "test-baseline/1.0",
+ "declared_test_count": 204,
+ "skip_whitelist": [],
+ "note": "T-1 精确匹配基线；增删用例须在 PR 显式更新"
+}
