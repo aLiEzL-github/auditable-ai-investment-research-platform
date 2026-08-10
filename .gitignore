@@ -51,3 +51,4 @@ htmlcov/
 .idea/
 .vscode/
 *.log
+.wheel_policy_cache.json
