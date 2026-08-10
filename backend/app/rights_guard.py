@@ -75,17 +75,38 @@ class RightsGuard:
         self.policy_version = policy_version or str(
             matrix.get("produced_at", "matrix"))
         self.allow_scope_patterns = allow_scope_patterns or {}
+        # OI-PF-128：动作映射表来自**契约**，不写死在代码里
+        _amp = os.path.join(os.path.dirname(__file__), "..", "..",
+                            "contracts", "rights_action_map.json")
+        with open(_amp, encoding="utf-8") as _f:
+            self.action_map = json.load(_f)["map"]
 
     # ── 1. 矩阵查询：source_key + action → 状态（归一化）─────────────
     def _status_of(self, source_key: str, action: str) -> str:
+        """矩阵查询（OI-PF-128 修复）。
+
+        原实现用 actions.get(action)，而守卫词汇（FETCH/IMPORT/PARSE/EXPORT）
+        与矩阵领域键（automated_acquisition / manual_download_by_human / …）
+        **完全不相交** ⇒ raw 恒为 None ⇒ 每源每动作恒返回 UNKNOWN，
+        矩阵实际从未被咨询，PROHIBITED 分支结构上不可达。
+
+        现改为经 contracts/rights_action_map.json 的**显式映射**解析；
+        **未映射即抛错，不得静默降级为 UNKNOWN** —— 否则同一缺陷会再次隐身。
+        """
         entry = next((d for d in self.matrix.get("data_sources", [])
                       if d.get("source_key") == source_key), None)
         if entry is None:
-            return UNKNOWN  # 未登记 → fail-closed
+            return UNKNOWN  # 未登记 → fail-closed（这是正当的 UNKNOWN）
         actions = entry.get("actions", {})
-        raw = actions.get(action) or actions.get("__all__")
+        cands = self.action_map.get(action)
+        if not cands:
+            raise ValueError(
+                f"E-G2-03-004: 动作 {action} 在 rights_action_map.json 中无映射")
+        raw = next((actions[c] for c in cands if c in actions), None)
         if raw is None:
-            return UNKNOWN
+            raise ValueError(
+                f"E-G2-03-005: 源 {source_key} 的 actions 中无 {action} 的任何候选键 "
+                f"{cands} —— 拒绝静默降级为 UNKNOWN（OI-PF-128）")
         txt = str(raw)
         if "PROHIBITED" in txt:
             return PROHIBITED
@@ -93,7 +114,8 @@ class RightsGuard:
             return UNKNOWN
         if "ALLOWED" in txt:
             return ALLOWED
-        return UNKNOWN
+        raise ValueError(
+            f"E-G2-03-006: 源 {source_key} 动作 {action} 的矩阵取值无法判定: {txt[:40]}")
 
     # ── 2. 先于任何副作用产出 RightsDecision（无调用方状态参数）─────
     def decide(self, source_key: str, action: str, scope: str) -> RightsDecision:

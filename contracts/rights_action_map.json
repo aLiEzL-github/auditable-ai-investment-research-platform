@@ -1,0 +1,40 @@
+{
+  "schema": "rights-action-map/1.0",
+  "purpose": "守卫词汇（FETCH/IMPORT/PARSE/EXPORT）→ rights-matrix 领域动作键的显式映射。OI-PF-128：二者原本不相交，导致 _status_of 恒返回 UNKNOWN、矩阵实际未被咨询。",
+  "resolution_rule": "按 candidates 顺序取**第一个在该源 actions 中存在的键**；若该源一个候选都没有 → **抛 E-G2-03-005，不得静默降级为 UNKNOWN**",
+  "map": {
+    "FETCH": [
+      "automated_acquisition",
+      "automated_bulk_acquisition",
+      "acquire_public_statistics"
+    ],
+    "IMPORT": [
+      "manual_download_by_human"
+    ],
+    "PARSE": [
+      "parse",
+      "parse_manually_obtained_files"
+    ],
+    "EXPORT": [
+      "redistribute_in_public_repo"
+    ]
+  },
+  "matrix_action_keys_observed": [
+    "acquire_public_statistics",
+    "attribution",
+    "automated_acquisition",
+    "automated_bulk_acquisition",
+    "cache_for_research",
+    "circumvent_technical_controls",
+    "commercial_use",
+    "connectivity_probe",
+    "copy_platform_pages_layout_or_program",
+    "copy_site_program_or_layout",
+    "manual_download_by_human",
+    "modify_meaning",
+    "parse",
+    "parse_manually_obtained_files",
+    "read_terms",
+    "redistribute_in_public_repo"
+  ]
+}

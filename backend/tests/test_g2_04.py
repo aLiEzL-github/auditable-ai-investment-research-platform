@@ -80,7 +80,7 @@ class TestSSEAdapter(unittest.TestCase):
         mx = copy.deepcopy(MATRIX)
         for d in mx["data_sources"]:
             if d["source_key"] == "SRC_SSE":
-                d["actions"]["FETCH"] = status_text
+                d["actions"]["automated_acquisition"] = status_text  # OI-PF-128：领域键
         return SSEAdapter(RightsGuard(matrix=mx), min_interval=0.0)
 
     def test_unknown_zero_network(self):
