@@ -1,0 +1,16 @@
+{
+  "schema": "akshare-use-policy/1.0",
+  "basis": "ADR-018 §4 —— 「持有但不使用」的机器强制。三道守卫缺一不可。",
+  "note": "白名单与禁用清单写在契约里，不写死在代码；改动须走 ADR。",
+  "forbidden_imports": [
+    "curl_cffi",
+    "akshare.economic.macro_china_nbs",
+    "akshare.economic.macro_china",
+    "akshare.news.news_baidu",
+    "akshare.news.news_stock",
+    "akshare.stock_feature.stock_hk_valuation_baidu"
+  ],
+  "forbidden_reason": "上述 5 个 akshare 子模块直接 from curl_cffi import requests（实测 2026-08-10）",
+  "allowed_akshare_functions": [],
+  "allowed_note": "**当前为空** —— OI-PF-124 未闭合，上游全部未判权，权利门返回 UNKNOWN。上游判权通过后方可逐个加入，每次新增须走 ADR。"
+}
