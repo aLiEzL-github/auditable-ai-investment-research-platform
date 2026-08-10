@@ -163,6 +163,31 @@ class TestSSEAdapter(unittest.TestCase):
         n = self.s.query(AcquisitionEvent).filter_by(id="EVT_IDEMP").count()
         self.assertEqual(n, 1, "重试不得产生重复 AcquisitionEvent")
 
+    # ── BF-04：重试 —— 失败后的再次取得是独立事件，不产生重复 ────────
+    def test_retry_after_failure_new_event(self):
+        """取得器级重试语义：首次取得失败（网络错误）→ 失败关闭并记录
+        ok=False 事件；调用方以**新** event_id 重试 → 成功记录 ok=True。
+        两次事件各自唯一，失败事件不得被重试覆盖或重复。"""
+        with mock.patch("sse_adapter.urllib.request.urlopen",
+                        side_effect=__import__("urllib.error").error.URLError(
+                            "connection refused")):
+            with self.assertRaises(RuntimeError):
+                self.ad.fetch("/disclosure/",
+                              record_event=self._record_event, event_id="EVT_RETRY_1")
+        with mock.patch("sse_adapter.urllib.request.urlopen",
+                        return_value=_resp(200)):
+            r = self.ad.fetch("/disclosure/",
+                              record_event=self._record_event, event_id="EVT_RETRY_2")
+        self.assertEqual(r["status"], 200)
+        ev1 = self.s.query(AcquisitionEvent).filter_by(id="EVT_RETRY_1").first()
+        ev2 = self.s.query(AcquisitionEvent).filter_by(id="EVT_RETRY_2").first()
+        self.assertEqual(ev1.ok, False)
+        self.assertEqual(ev2.ok, True)
+        self.assertEqual(
+            self.s.query(AcquisitionEvent).filter(
+                AcquisitionEvent.id.in_(["EVT_RETRY_1", "EVT_RETRY_2"])).count(), 2,
+            "重试各事件须唯一：失败 1 条 + 成功 1 条，无重复")
+
     # ── BF-04：来源权利失效后新请求为零 ─────────────────────────────
     def test_rights_revoked_zero_requests(self):
         """条款变化（source 转 PROHIBITED）后，新请求/缓存为零。"""

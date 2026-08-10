@@ -160,6 +160,22 @@ class TestMacroAdapter(unittest.TestCase):
         n = self.s.query(AcquisitionEvent).filter_by(id="EVT_IDEM").count()
         self.assertEqual(n, 1, "重试不得产生重复 AcquisitionEvent")
 
+    # ── BF-04：重试 —— 失败后再次取得是独立事件（OI-PF-014）─────────
+    def test_retry_after_failure_new_event(self):
+        with mock.patch("macro_adapter.urllib.request.urlopen",
+                        side_effect=__import__("urllib.error").error.URLError(
+                            "refused")):
+            with self.assertRaises(RuntimeError):
+                self.ad.fetch("/sj/",
+                              record_event=self._record_event, event_id="EVT_R1")
+        with mock.patch("macro_adapter.urllib.request.urlopen",
+                        return_value=_resp(200)):
+            self.ad.fetch("/sj/",
+                          record_event=self._record_event, event_id="EVT_R2")
+        n = self.s.query(AcquisitionEvent).filter(
+            AcquisitionEvent.id.in_(["EVT_R1", "EVT_R2"])).count()
+        self.assertEqual(n, 2, "失败 1 条 + 成功 1 条，各自唯一，无重复")
+
     def test_rights_revoked_zero_requests(self):
         ad = self._denied_adapter("PROHIBITED（测试）")
         with mock.patch("macro_adapter.urllib.request.urlopen") as m:

@@ -15,6 +15,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Contract coverage (GG-1/OI-PF-121)
         run: python3 backend/tools/contract_coverage_check.py .
+
+  test-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Test integrity (A2-1/OI-PF-012)
         run: python3 backend/tools/test_integrity_check.py .
 
