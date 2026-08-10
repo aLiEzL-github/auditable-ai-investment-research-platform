@@ -29,7 +29,22 @@ class _Interdictor(importlib.abc.MetaPathFinder):
 
 
 def install() -> bool:
-    """装入拦截器（幂等）。返回是否新装。"""
+    """装入拦截器（幂等）。返回是否新装。
+
+    OI-PF-135：`sys.meta_path` 只在模块**尚未导入**时被咨询。若 curl_cffi 已在
+    `sys.modules` 中，拦截器装了也拦不住 —— 实测 install() 返回 True 之后
+    `import curl_cffi` 仍拿到 0.16.0，`import akshare` 照样成功。
+    故此处**失败关闭**：已被导入即抛错，不假装拦截成功。
+    清 sys.modules 不足以补救 —— 先前导入者手里已经握有模块对象。
+    """
+    already = sorted(m for m in sys.modules
+                     if m == BLOCKED or m.startswith(BLOCKED + "."))
+    if already:
+        raise InterdictError(
+            f"E-ADR018-C-LATE: {BLOCKED} 在拦截器装入前已被导入（{already[:3]}）。"
+            f"拦截器对已缓存模块无效，且先前导入者已持有模块对象 —— "
+            f"拒绝以「已装入」之名给出虚假保证（OI-PF-135）。"
+            f"install() 须在进程入口、任何业务导入之前调用。")
     if any(isinstance(f, _Interdictor) for f in sys.meta_path):
         return False
     sys.meta_path.insert(0, _Interdictor())

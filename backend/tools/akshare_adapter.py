@@ -19,9 +19,22 @@ import sys
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 
+# ADR-018 §4 守卫 C —— 在 rights_guard 等业务模块之前装入（OI-PF-135）。
+import curl_cffi_interdict  # noqa: E402
+
+curl_cffi_interdict.install()
+
 from rights_guard import RightsGuard, GuardDenied  # noqa: E402
 
 AKSHARE_SOURCE_ID = "SRC_AKSHARE"
+_POLICY = os.path.join(os.path.dirname(__file__), "..", "..",
+                       "contracts", "akshare_use_policy.json")
+
+
+def _allowed_functions():
+    """ADR-018 §4 守卫 B 的白名单 —— 单一来源是**契约**，不写死在代码。"""
+    with open(_POLICY, encoding="utf-8") as fh:
+        return list(json.load(fh).get("allowed_akshare_functions", []))
 
 
 class AKShareAdapter:
@@ -35,6 +48,12 @@ class AKShareAdapter:
         try:
             import akshare  # noqa: F401
             return akshare
+        except curl_cffi_interdict.InterdictError as e:
+            # ADR-018 §4 守卫 C。实测：import akshare 会即时加载 curl_cffi，
+            # 故拦截器一装，整个 akshare 即不可导入。与「未安装」都是失败关闭，
+            # 但原因不同 —— 不得混为一谈，否则诊断信息是错的。
+            raise RuntimeError(
+                f"E-G2-06-004: akshare 已安装但被守卫 C 拦截（持有不使用）: {e}")
         except ImportError:
             raise RuntimeError(
                 "E-G2-06-002: akshare 库未安装（副源不可用，诚实标注；"
@@ -52,7 +71,20 @@ class AKShareAdapter:
         return self._do_fetch(scope, record_event, event_id)
 
     def _do_fetch(self, scope: str, record_event, event_id: str) -> list:
+        # 顺序有约束：ADR-017 §3.3（该条未被 ADR-018 解除）明写「缺库时诚实拒绝
+        # E-G2-06-002 的行为**不变**」，故库可用性判定必须**先于**白名单判定，
+        # 否则缺库场景会被 E-ADR018-B 掩盖 —— 回归实测已证实会掩盖。
         ak = self._akshare_module()
+        # OI-PF-136：守卫 B 原为**静态**扫描属性字面量写法，而本处是
+        # getattr(ak, scope) 动态派发，scope 是运行期字符串 —— 静态检查看不见。
+        # 实测三种写法：属性直调被抓；getattr 带字面量、getattr 带变量，两者均漏网。
+        # 故白名单必须在**这个调用点**再判一次，否则它在唯一真实路径上不生效。
+        allowed = _allowed_functions()
+        if scope not in allowed:
+            raise RuntimeError(
+                f"E-ADR018-B: AKShare 接口 {scope!r} 不在白名单（当前白名单 "
+                f"{len(allowed)} 项，契约 contracts/akshare_use_policy.json）—— "
+                f"ADR-018 §4 守卫 B 运行期拒绝（OI-PF-136）")
         # AKShare 风格调用：scope → DataFrame（按列名日期/值契约消费）
         fn = getattr(ak, scope, None)
         if fn is None:

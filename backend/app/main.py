@@ -13,10 +13,17 @@
 import argparse
 import os
 import sys
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from logging_conf import setup_logging
-from settings import get_settings
+# ADR-018 §4 守卫 C —— 必须在**任何**业务导入之前装入：拦截器只对尚未导入的
+# 模块生效（OI-PF-135）。此前 install() 只在测试里被调用过，生产路径为空。
+import curl_cffi_interdict  # noqa: E402
+
+curl_cffi_interdict.install()
+
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: E402
+
+from logging_conf import setup_logging  # noqa: E402
+from settings import get_settings  # noqa: E402
 
 
 class HealthHandler(BaseHTTPRequestHandler):

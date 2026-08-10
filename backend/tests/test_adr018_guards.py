@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(__file__)
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -57,4 +58,24 @@ class TestGuardC(unittest.TestCase):
             __import__("json")
             __import__("urllib.request")
         finally:
+            I.uninstall()
+
+
+class TestGuardCLateInstall(unittest.TestCase):
+    """OI-PF-135：sys.meta_path 只对**尚未导入**的模块生效。"""
+
+    def test_install_fails_closed_if_already_imported(self):
+        import curl_cffi_interdict as I
+        with mock.patch.dict("sys.modules", {"curl_cffi": mock.Mock()}):
+            with self.assertRaises(I.InterdictError) as ctx:
+                I.install()
+        self.assertIn("E-ADR018-C-LATE", str(ctx.exception))
+
+    def test_install_ok_when_not_imported(self):
+        import curl_cffi_interdict as I
+        mods = {k: v for k, v in sys.modules.items() if not k.startswith("curl_cffi.")}
+        mods.pop("curl_cffi", None)
+        with mock.patch.dict("sys.modules", mods, clear=True):
+            I.uninstall()
+            self.assertTrue(I.install())
             I.uninstall()
