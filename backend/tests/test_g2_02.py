@@ -119,8 +119,13 @@ class TestArtifactStore(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             self.store.store("ART_SYM2", b"probe")
         self.assertIn("E-G2-02-001", str(ctx.exception))
-        # 失败关闭：库外不得出现任何由本次写入产生的文件
-        self.assertFalse(os.path.exists(marker), "symlink 载荷写入必须失败关闭")
+        # 失败关闭：写原语不得经 symlink 写出 —— 库外既无新文件、也无改写
+        self.assertEqual(
+            open(marker).read(), "escaped",
+            "symlink 载荷下写原语不得改写到库外（内容不变 = 未写出）")
+        self.assertEqual(
+            sorted(os.listdir(outside_dir)), ["marker.txt"],
+            "库外目录不得出现由写原语产生的任何新文件")
 
     # ── BF-03 负例 3：超长/深度嵌套名 ────────────────────────────────
     def test_overlong_name_rejected(self):
