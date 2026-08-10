@@ -65,7 +65,7 @@ class TestAKShareAdapter(unittest.TestCase):
         mx = copy.deepcopy(MATRIX)
         for d in mx["data_sources"]:
             if d["source_key"] == "SRC_AKSHARE":
-                d["actions"]["FETCH"] = "UNKNOWN（测试）"
+                d["actions"]["automated_acquisition"] = "UNKNOWN（测试）"  # OI-PF-128：领域键
         ad = AKShareAdapter(RightsGuard(matrix=mx))
         with mock.patch("akshare_adapter.AKShareAdapter._do_fetch") as m:
             with self.assertRaises(GuardDenied):
