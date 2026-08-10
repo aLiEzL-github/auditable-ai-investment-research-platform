@@ -1,7 +1,7 @@
 {
   "schema": "akshare-use-policy/1.0",
   "basis": "ADR-018 §4 —— 「持有但不使用」的机器强制。三道守卫缺一不可。",
-  "note": "白名单与禁用清单写在契约里，不写死在代码；改动须走 ADR。",
+  "note": "白名单与禁用清单写在契约里，不写死在代码；改动须走 ADR。\nV8（mini-racer）受限（ADR-020）：依赖闭包内的 V8 引擎不得用于处理任何不可信披露文件；白名单当前为空即含全部 V8 接口的排除。",
   "forbidden_imports": [
     "curl_cffi",
     "akshare.economic.macro_china_nbs",

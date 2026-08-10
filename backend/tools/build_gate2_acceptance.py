@@ -55,22 +55,28 @@ def main() -> int:
     L.append(f"生成时刻   = {NOW}")
     L.append("生成方式   = tools/build_gate2_acceptance.py（全部数据实时采集）")
     L.append("依据       = G2-执行流程.md §3（Gate 2 验收）+ ADR-017（F1 读法 (c) + 副源挂起）")
-    L.append("结论       = READY_FOR_APPROVAL（FF/GG 组修复后，F1 前提重新实测成立）")
+    L.append("结论       = " + ("**READY_FOR_APPROVAL**（ADR-019 F1 论证更正 + ADR-010 §3.1 债务清点①为零）"
+                             if not g2_mat else
+                             f"**NOT_READY** —— Gate 2 范围内材料性开放项 {len(g2_mat)} 项 ≠ 0，"
+                             f"ADR-010 §4 不得 PASS"))
     L.append("independent_reviewer_present = false（VD-02 = 1 名自然人）")
     L.append("```\n")
     L.append("> **本包不是 Gate 2 PASS。** 供批准人审阅的冻结材料；签署按 ADR-016 S1—S5。\n")
 
     # ── §1 退出条件 F1—F7 逐条核验（实时采集） ─────────────────────
     L.append("## 1. 退出条件 F1—F7（基线 B 原文，逐条实测）\n")
-    L.append("### F1 · 官方主源和 AKShare 副源均有真实冒烟（ADR-017 读法 (c)）\n")
+    L.append("### F1 · 官方主源和 AKShare 副源均有真实冒烟（ADR-017 读法 (c)，ADR-019 更正）\n")
     L.append("```text")
     L.append("读法 (c)：失败关闭计入「已冒烟」，不计入「已取得」（ADR-017，2026-08-08T19:41Z）")
-    L.append("II-1 重新实测（读数时刻见头部生成时刻）：")
-    L.append("  官方主源路径（矩阵驱动）：SRC_CNINFO FETCH → UNKNOWN → GuardDenied（0 请求）")
-    L.append("  上交所：2026-08-08T14:54-55Z 两次独立真实请求均 HTTP 403 → 失败关闭（E-G2-04-002）")
+    L.append("论证断裂与更正（B2-1 证据 + ADR-019，U 裁定读法二）：")
+    L.append("  签署当刻（189ee52）权利门因动作词汇不相交恒返回 UNKNOWN —— 阻断原因")
+    L.append("  曾为「查询不命中」而非「fail-closed 判定」；矩阵从未被咨询（B2-1 实测）")
+    L.append("  修复后（PR #42）实测：SRC_SSE FETCH → ALLOWED · SRC_NBS → ALLOWED")
+    L.append("  · SRC_CNINFO → UNKNOWN（矩阵明判）· AKShare 上游未登记 → UNKNOWN（fail-closed）")
+    L.append("  上交所：2026-08-08T14:54-55Z 两次独立真实请求均 HTTP 403 → C1 失败关闭（E-G2-04-002）")
     L.append("  600089 真实数据 = U 人工提供（xlsx）→ G2-03 人工导入 → golden baseline COMPLETE（8/8 回源）")
-    L.append("  AKShare 副源：NOT_APPLICABLE_PENDING_RIGHTS（ADR-017 挂起，Z1 禁装验证通过）")
-    L.append("⇒ F1 按读法 (c) 成立（失败关闭计入已冒烟；零自动取得如实载明）")
+    L.append("  AKShare 副源：NOT_APPLICABLE_PENDING_RIGHTS（ADR-019 重新论证，三条重开条件不变）")
+    L.append("⇒ F1 按读法 (c) 成立（依据按 ADR-019 更正；失败关闭计入已冒烟；零自动取得如实载明）")
     L.append("```\n")
 
     L.append("### F2 · 主源缺失/接口漂移/同源镜像/口径冲突测试全部失败关闭\n")
