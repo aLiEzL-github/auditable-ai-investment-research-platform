@@ -227,7 +227,14 @@ py-mini-racer  0.6.0    ISC     platform_system == "Linux"   最后发布 2021-0
 akracer        0.0.14   MIT     platform_system == "Linux"   akfamily 发布
 ```
 
-`akshare` 的元数据把三者按平台分支声明，故任一环境下只装其中一到两个。
+`akshare` 的元数据把三者按平台分支声明，`requirements.txt` 沿用同一组标记，
+故任一环境下只装其中一到两个：**macOS 装 `mini-racer`；Linux 装
+`py-mini-racer` + `akracer`**。
+
+> 首轮 CI 实测（2026-08-11）曾三者全装 —— 因 `mini-racer` 当时未带标记。
+> 安装序位为 py-mini-racer(2) → mini-racer(14) → **akracer(23)**，
+> 即 `akracer` 最后写入并**覆盖** `py-mini-racer` 的 Python 入口，
+> 而后者 5.4 MB 的 `libmini_racer.glibc.so` 仍留在磁盘上。已补标记修正。
 
 **`akracer` 的许可**：`METADATA` 的 `License-Expression: MIT`；
 作者 `Alert King <albertandking@gmail.com>`；源码 `github.com/akfamily/akracer`。

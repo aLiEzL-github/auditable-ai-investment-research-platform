@@ -51,7 +51,9 @@ jsonpath==0.82.2 \
 lxml==6.1.1 \
     --hash=sha256:db1d75f6617a49c1c01bc7023713e0ff59ab32c9579ae62a7674c0e34f3b0b0a \
     --hash=sha256:53b7d2b7a10b1c35c0a5e21e9224accf60c1bbfba523990732e521b2b73adef2
-mini-racer==0.14.1 \
+# OI-PF-147：补 akshare 声明里的同一条标记。原先无标记，导致 Linux 上三个 V8
+# 实现全部安装（22.2 + 5.4 + 10.1 MB），而 akshare 在 Linux 上只用后两个。
+mini-racer==0.14.1 ; platform_system != "Linux" \
     --hash=sha256:cdf3a088e1363f16a695288f882abf76b3705b8e1df21418208b87ed010037a4 \
     --hash=sha256:56cc6965a1665a50d8d613bc43aa83b4cec6b1f09acc69dc4c2845dacb201463
 numpy==2.4.6 \
