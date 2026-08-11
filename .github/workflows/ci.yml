@@ -167,6 +167,12 @@ jobs:
       - name: Build image (digest-pinned base, non-root)
         run: |
           docker build -t bootstrap-smoke .
+      # OI-PF-064：经典 Docker 构建器**静默忽略 --platform**，产出错架构镜像
+      # 并报 Successfully built / Successfully tagged —— 只有 docker run 时才
+      # 暴露。故构建步骤须显式断言产物架构，**不得以 docker build 退出码 0
+      # 作为跨架构构建成功的证据**。runner 为 ubuntu-latest（amd64/linux）。
+      - name: Assert image architecture (OI-PF-064)
+        run: python3 backend/tools/image_arch_check.py bootstrap-smoke amd64/linux
       - name: Verify health endpoints
         run: |
           id=$(docker run -d -p 18080:8080 bootstrap-smoke)
