@@ -12,6 +12,12 @@
   M6    无批准不得提升 current（release 语义，代码层检查见写权矩阵）
   M7    前端不得绕过后端直连数据层（UI 门，属 G5 检查）
 
+B-2a（G4 修复）：可信内核不得 import network_probe —— 断网探针只能
+以回调注入（offline_probe 豁免的理由须机器化，不靠人读注释）。
+B-2c（G4 修复）：每条 LAYER_EXEMPT 豁免条目须带一条**可执行断言**，
+断言不成立即 FAIL —— 豁免即削弱控制，理由须可证伪（OI-PF-119 之后
+的第二道豁免纪律：前一道修匹配方式，这一道修理由的可验证性）。
+
 命中即退出码 1（CI required check 失败）。
 """
 
@@ -37,9 +43,11 @@ LAYER_EXEMPT = {
     # （CI 只跑离线的 wheel_policy_check）。检查器本身刻意做成离线的，
     # 就是为了不让「守卫自己出网」成为常态 —— 故此处只豁免刷新工具一个文件。
     "supply_chain_refresh": ["backend/tools/wheel_manifest_refresh.py"],
-    # G4：发布/冻结层（L7）。经 L2 persistence 事务写 release/approval/pointer
-    # （与 repository.py/jobs.py 的 L2_persistence 豁免同类）；M5 语义由
-    # writers.json 写权矩阵 + assert_writer 机器强制，本层不直写外设。
+    # G4（B-2b (i) 裁定，U，2026-08-11）：发布/冻结层（L7）。写 release/
+    # approval/pointer 均经 assert_writer 走 writers.json 写权矩阵
+    # （L11_release / L12_approval_endpoint + 前置条件机器强制）；
+    # M5「无批准不得提升 current」由该矩阵的 never 名单 + publish_release
+    # 的批准校验承担 —— 豁免理由已与实现一致（EXEMPT_ASSERTS 断言）。
     "L7_publish": ["backend/app/publish_engine.py"],
     # G4-08：离线断网断言探针（唯一职责 = 证明网络不可达，探测失败即拒绝，
     # **不是出网能力**；可信内核不 import 本模块，由调用方注入回调）。
@@ -76,6 +84,57 @@ APPROVAL_WRITERS = {"approval", "approve", "release", "current_pointer"}
 # 允许自身持有的网络面（服务端监听，非出网）：app/main.py 的 http.server
 SERVER_ALLOWLIST = {"app.main"}
 
+# ── B-2c（G4 修复）：豁免理由须可机检 ────────────────────────────
+# 每条 LAYER_EXEMPT 条目须在此带一条可执行断言（路径 → 说明 → 判定）。
+# 判定对豁免文件的源码文本执行；不成立即 FAIL —— 豁免理由不再靠人读注释。
+# 变异注入：把任一断言改成不成立（如删掉 assert_writer、删掉 socket），
+# 本守卫必须转红。
+EXEMPT_ASSERTS = {
+    "L2_persistence": [
+        ("backend/app/repository.py", "persistence 层须引入 sqlalchemy",
+         lambda src: "sqlalchemy" in src),
+        ("backend/app/jobs.py", "persistence 层须引入 sqlalchemy",
+         lambda src: "sqlalchemy" in src),
+    ],
+    "migrations": [
+        ("backend/migrations", "迁移文件须引入 alembic",
+         lambda src: "alembic" in src),
+    ],
+    "L3_fetch": [
+        ("backend/tools/import_guard.py", "取数层须持有网络面（NETWORK_LIBS 之一）",
+         lambda src: any(lib in src for lib in NETWORK_LIBS)),
+        ("backend/tools/sse_adapter.py", "取数层须持有网络面（NETWORK_LIBS 之一）",
+         lambda src: any(lib in src for lib in NETWORK_LIBS)),
+        ("backend/tools/macro_adapter.py", "取数层须持有网络面（NETWORK_LIBS 之一）",
+         lambda src: any(lib in src for lib in NETWORK_LIBS)),
+        ("backend/tools/akshare_adapter.py",
+         "AKShare 适配器的网络面经 curl_cffi_interdict（受管拦截）",
+         lambda src: "curl_cffi_interdict" in src),
+        ("backend/tools/cninfo_adapter.py", "取数层须持有网络面（NETWORK_LIBS 之一）",
+         lambda src: any(lib in src for lib in NETWORK_LIBS)),
+    ],
+    "tools_internal": [
+        ("backend/tools/migration_check.py", "内部工具须经 subprocess 驱动 alembic",
+         lambda src: "subprocess" in src),
+        ("backend/tools/vertical_smoke.py", "内部工具须经 subprocess 驱动",
+         lambda src: "subprocess" in src),
+    ],
+    "supply_chain_refresh": [
+        ("backend/tools/wheel_manifest_refresh.py",
+         "供应链刷新工具须有网络面（出网范围 = pypi 元数据端点）",
+         lambda src: any(lib in src for lib in NETWORK_LIBS)),
+    ],
+    "L7_publish": [
+        ("backend/app/publish_engine.py",
+         "发布层写 release/approval/pointer 须经 assert_writer（B-2b (i)）",
+         lambda src: "assert_writer" in src),
+    ],
+    "offline_probe": [
+        ("backend/app/network_probe.py", "断网探针须使用 socket（真 TCP 断言）",
+         lambda src: "import socket" in src),
+    ],
+}
+
 
 def _all_exempt_files(ROOT):
     """全部豁免文件（精确路径 → 模块名），供传递性检查与计数。"""
@@ -101,8 +160,70 @@ def module_name_of(node: ast.AST) -> str:
     return []
 
 
-def main() -> int:
+def check_kernel_no_probe_import(ROOT):
+    """B-2a：可信内核不得 import network_probe —— 断网探针只经回调注入。
+
+    该不变量独立于 LAYER_EXEMPT（offline_probe 豁免的理由即「内核不
+    import 本模块」）：backend/app/ 下除 network_probe.py 自身外的任何
+    文件（含 L7_publish 等已豁免层）import network_probe 即 FAIL。
+    变异注入：publish_engine.py 顶部加 import network_probe → 必须 FAIL。
+    """
     bad = []
+    appdir = os.path.join(ROOT, "backend", "app")
+    for dp, _, fns in os.walk(appdir):
+        for fn in fns:
+            if not fn.endswith(".py"):
+                continue
+            fp = os.path.join(dp, fn)
+            rel = os.path.relpath(fp, ROOT).replace(os.sep, ".")
+            if rel == "backend.app.network_probe":
+                continue
+            if ".tests." in rel:
+                continue
+            try:
+                tree = ast.parse(open(fp, encoding="utf-8").read(), filename=fp)
+            except (OSError, SyntaxError):
+                continue
+            for node in ast.walk(tree):
+                for mod in module_name_of(node):
+                    if mod.split(".")[0] == "network_probe":
+                        bad.append(f"{rel}: B-2a 可信内核引入 network_probe —— "
+                                   f"探针只得以回调注入（offline_probe 豁免边界）")
+    return bad
+
+
+def check_exemption_asserts(ROOT):
+    """B-2c：逐条执行 EXEMPT_ASSERTS —— 豁免理由须可机检，不成立即 FAIL。"""
+    bad = []
+    for layer, asserts in EXEMPT_ASSERTS.items():
+        for pth, desc, pred in asserts:
+            if pth.endswith(".py"):
+                fp = os.path.join(ROOT, pth)
+                if not os.path.exists(fp):
+                    bad.append(f"{layer} {pth}: 断言对象文件不存在")
+                    continue
+                if not pred(open(fp, encoding="utf-8").read()):
+                    bad.append(f"{layer} {pth}: 豁免断言不成立 —— {desc}")
+            else:
+                d = os.path.join(ROOT, pth)
+                if not os.path.isdir(d):
+                    bad.append(f"{layer} {pth}: 断言对象目录不存在")
+                    continue
+                n = 0
+                for dp, _, fns in os.walk(d):
+                    for fn in fns:
+                        if not fn.endswith(".py"):
+                            continue
+                        n += 1
+                        if not pred(open(os.path.join(dp, fn), encoding="utf-8").read()):
+                            bad.append(f"{layer} {pth}/{fn}: 豁免断言不成立 —— {desc}")
+                if n == 0:
+                    bad.append(f"{layer} {pth}: 豁免断言无对象可检查（⑨）")
+    return bad
+
+
+def main() -> int:
+    bad = check_kernel_no_probe_import(ROOT)
     checked = 0
     SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__"}
     for dirpath, dirnames, filenames in os.walk(ROOT):
@@ -117,7 +238,7 @@ def main() -> int:
                 continue
             layer = exempt_layer_of(rel)
             if layer is not None:
-                continue  # 显式层豁免（精确路径，非子串）
+                continue  # 显式层豁免（精确路径，非子串）；其理由由 B-2c 断言承担
             # FF-3/U-1（OI-PF-126）：禁止硬编码 source_status="ALLOWED" 字面量
             # （测试夹具白名单：_matrix_fixture.py 等显式允许，报数）
             _src_text = open(fp, encoding="utf-8").read()
@@ -145,14 +266,15 @@ def main() -> int:
                         bad.append(f"{rel}: M3 引入 persistence {mod}")
                     if base in APPROVAL_WRITERS:
                         bad.append(f"{rel}: M5 直写批准/发布对象 {mod}")
+    bad += check_exemption_asserts(ROOT)
     if bad:
         print("❌ 架构导入边界违规：")
         for b in bad:
             print("  -", b)
         return 1
     exempt_n = len(_all_exempt_files(ROOT))
-    print(f"✅ 检查对象 {checked} 个 .py，无违规（M1—M7 骨架级）"
-          f"；豁免文件 {exempt_n} 个")
+    print(f"✅ 检查对象 {checked} 个 .py，无违规（M1—M7 骨架级 + B-2a 内核不引探针）"
+          f"；豁免文件 {exempt_n} 个（B-2c 断言逐条通过）")
     return 0
 
 

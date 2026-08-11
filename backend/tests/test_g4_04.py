@@ -133,6 +133,31 @@ class TestApprovalFlow(unittest.TestCase):
                             released_at="2026-08-11T07:01:00Z")
         self.assertIn("E-G4-03-004", str(cm.exception))
 
+    # ── B-2b (i)：写权矩阵机器强制（M5 负测）────────────────────────
+    def test_write_gate_matrix_enforced(self):
+        """发布/指针/批准写权须经 assert_writer —— 矩阵 never 名单必拒。
+
+        变异注入：移除 assert_writer 调用 → 本用例 FAIL；
+        arch_import_check 的 B-2c 断言（publish_engine 须含 assert_writer）亦 FAIL。
+        """
+        from schema_validate import SchemaError
+        m = self._m()
+        appr = create_approval(self.store, self.s, m, "U-fixture",
+                               RESEARCH_600089_KEY,
+                               approved_at="2026-08-11T07:00:00Z")
+        # LLM 永远不能写 release/current_pointer（writers.json never 名单）
+        with self.assertRaises(SchemaError) as cm:
+            publish_release(self.store, self.s, m, RESEARCH_600089_KEY, appr,
+                            writer="LLM", released_at="2026-08-11T07:01:00Z")
+        self.assertEqual(cm.exception.code, "E-WRITE-002")
+        # MANUAL 前置（人工发起）未经确认 → 批准写不得放行
+        with self.assertRaises(SchemaError) as cm2:
+            create_approval(self.store, self.s, m, "U-fixture",
+                            RESEARCH_600089_KEY,
+                            approved_at="2026-08-11T07:00:00Z",
+                            acknowledged=False)
+        self.assertEqual(cm2.exception.code, "E-PRECOND-002")
+
     # ── 未批准不得发布 ─────────────────────────────────────────────
     def test_unapproved_cannot_publish(self):
         from datetime import datetime
