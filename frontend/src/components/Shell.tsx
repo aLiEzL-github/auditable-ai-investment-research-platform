@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: "/metrics", label: "MetricSpec" },
   { to: "/macro", label: "宏观与计算" },
   { to: "/claims", label: "Claim 与假设" },
+  { to: "/scenarios", label: "三情景" },
   { to: "/audit", label: "审计与发布" },
 ];
 

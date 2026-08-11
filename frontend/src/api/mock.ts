@@ -3,18 +3,24 @@
 // MOCK 模式下 UI 可独立开发，但 E-1/E-3 验收必须切回真实后端断言。
 
 import type {
+  AssumptionsView,
+  CalcView,
   Claim,
+  ClaimsView,
   EvidenceRecord,
   EvidenceLedger,
   FactRecord,
+  MacroView,
   MetricSpecView,
   OpenItem,
+  OpenItemsView,
   ReleaseEligibility,
   ReleaseRecord,
   ResearchContract,
   ResearchContractStatus,
   ResearchLaunchResult,
   RulesView,
+  ScenariosView,
   SourceRecord,
 } from "../types";
 import type { EvidenceView, WorkbenchApi } from "./client";
@@ -221,6 +227,194 @@ const MOCK_METRIC_SPEC: MetricSpecView = {
   ],
 };
 
+// —— G5-04 mock fixture（形状对齐 G3 各模块）——
+
+const MOCK_MACRO: MacroView = {
+  snapshot: {
+    spec_sha256: "f9e8d7c6b5a4938271605f4e3d2c1b0a99887766554433221100ffeeddccbbaa",
+    published_at: "2026-08-01T00:00:00Z",
+    effective_date: "2026-08-01",
+    retrieved_at: "2026-08-10T08:00:00Z",
+    cutoff_at: "2026-07-31T00:00:00Z",
+    state: "FROZEN",
+    gate: { verdict: "MACRO_GATE_PASS", failures: [] },
+    series: [
+      { series_id: "GDP", name: "国内生产总值", material: true, vintage: "2026Q2", rows: 4, status: "OK" },
+      { series_id: "CPI", name: "居民消费价格指数", material: false, vintage: "2026Q2", rows: 4, status: "OK" },
+    ],
+  },
+  transmission: [
+    {
+      macro_series_id: "GDP",
+      transmission: "宏观增长 → 行业需求 → 公司收入增速",
+      target_metric: "营业收入",
+    },
+  ],
+};
+
+const MOCK_CALC: CalcView = {
+  entries: [
+    {
+      entry_id: "CALC-001",
+      formula_id: "FCFF",
+      formula_version: "1.0",
+      inputs: [
+        { input_key: "营业收入", kind: "EXTERNAL_FACT", value: "5230.00", input_sha256: "aaaa" },
+        { input_key: "OCF", kind: "EXTERNAL_FACT", value: "810.00", input_sha256: "bbbb" },
+      ],
+      result: "810.00",
+      result_sha256: "cccc",
+      unit: "CNY_million",
+    },
+    {
+      entry_id: "CALC-002",
+      formula_id: "FCFE",
+      formula_version: "1.0",
+      inputs: [
+        { input_key: "FCFF", kind: "DERIVED", value: "810.00", input_sha256: "cccc" },
+        { input_key: "净负债", kind: "EXTERNAL_FACT", value: "150.00", input_sha256: "dddd" },
+      ],
+      result: "660.00",
+      result_sha256: "eeee",
+      unit: "CNY_million",
+    },
+  ],
+};
+
+const MOCK_CLAIMS_VIEW: ClaimsView = {
+  unbound_count: 1,
+  nodes: [
+    {
+      node_type: "F",
+      ref_id: "C-001",
+      rendered_value: "2026 年营业收入 5230 亿元（合并）",
+      materiality: "MATERIAL",
+      evidence_refs: ["E-001"],
+      formula_ref: null,
+      assumption_ref: null,
+      falsifier: "年报重述",
+      visible_span: "para-3:12-28",
+      bound: true,
+    },
+    {
+      node_type: "D",
+      ref_id: "C-002",
+      rendered_value: "自由现金流 810 亿元（由 OCF 与资本开支计算）",
+      materiality: "MATERIAL",
+      evidence_refs: ["E-003"],
+      formula_ref: "FCFF",
+      assumption_ref: null,
+      falsifier: "OCF 口径变更",
+      visible_span: "para-5:2-18",
+      bound: true,
+    },
+    {
+      node_type: "A",
+      ref_id: "C-003",
+      rendered_value: "维持性资本开支约为折旧的 90%",
+      materiality: "MATERIAL",
+      evidence_refs: [],
+      formula_ref: null,
+      assumption_ref: "ASM-001",
+      falsifier: "—",
+      visible_span: "para-7:1-16",
+      bound: true,
+    },
+    {
+      node_type: "L",
+      ref_id: "UNBOUND-001",
+      rendered_value: "段落文本「行业竞争格局向好」",
+      materiality: "MATERIAL",
+      evidence_refs: [],
+      formula_ref: null,
+      assumption_ref: null,
+      falsifier: "—",
+      visible_span: "para-9:1-10",
+      bound: false, // 无 Claim 绑定 —— 醒目异常
+    },
+  ],
+};
+
+const MOCK_ASSUMPTIONS: AssumptionsView = {
+  rows: [
+    {
+      proposal_id: "ASM-001",
+      payload_summary: "维持性资本开支 = 折旧 × 90%",
+      status: "PENDING", // 未批准 —— 醒目
+      proposed_by: "analyst",
+      approved_at: null,
+      snapshot_sha256: null,
+    },
+    {
+      proposal_id: "ASM-002",
+      payload_summary: "WACC 基准 = 8.5%",
+      status: "APPROVED",
+      proposed_by: "analyst",
+      approved_at: "2026-08-05T10:00:00Z",
+      snapshot_sha256: "11aa22bb33cc44dd55ee66ff77889900aabbccddeeff00112233445566778899",
+    },
+  ],
+};
+
+const MOCK_SCENARIOS: ScenariosView = {
+  rows: [
+    {
+      scenario: "PESSIMISTIC",
+      method: "FCFF",
+      low: "18.5",
+      high: "21.0",
+      per_share: "19.8",
+      triggers: "WACC 变动 +50bp；FCFF 下修",
+      notes: "需求走弱",
+    },
+    {
+      scenario: "BASE",
+      method: "FCFF",
+      low: "22.0",
+      high: "25.5",
+      per_share: "23.8",
+      triggers: "WACC 变动 ±50bp；FCFF 上/下修",
+      notes: "基准",
+    },
+    {
+      scenario: "OPTIMISTIC",
+      method: "FCFF",
+      low: "26.0",
+      high: "30.0",
+      per_share: "28.1",
+      triggers: "WACC 变动 -50bp；FCFF 上修",
+      notes: "需求超预期",
+    },
+  ],
+};
+
+const MOCK_OPEN_ITEMS_VIEW: OpenItemsView = {
+  rows: [
+    {
+      open_item_id: "OI-9001",
+      description: "副源权利判定待补充书面依据",
+      material: true, // 材料性 —— 醒目
+      owner_role: "DEV",
+      due_date: "2026-09-01",
+      blocks_gate: "G5-05",
+      closure_evidence: null,
+      status: "OPEN",
+      record_sha256: "1111",
+    },
+    {
+      open_item_id: "OI-9002",
+      description: "非材料性格式项",
+      material: false,
+      owner_role: "DEV",
+      due_date: null,
+      blocks_gate: null,
+      closure_evidence: null,
+      status: "OPEN",
+      record_sha256: "2222",
+    },
+  ],
+};
+
 function resolve<T>(value: T, ms = 0): Promise<T> {
   return new Promise((r) => setTimeout(() => r(value), ms));
 }
@@ -265,6 +459,30 @@ export class MockApi implements WorkbenchApi {
 
   getMetricSpecView(): Promise<MetricSpecView> {
     return resolve(structuredClone(MOCK_METRIC_SPEC));
+  }
+
+  getMacroView(): Promise<MacroView> {
+    return resolve(structuredClone(MOCK_MACRO));
+  }
+
+  getCalcView(): Promise<CalcView> {
+    return resolve(structuredClone(MOCK_CALC));
+  }
+
+  getClaimsView(): Promise<ClaimsView> {
+    return resolve(structuredClone(MOCK_CLAIMS_VIEW));
+  }
+
+  getAssumptionsView(): Promise<AssumptionsView> {
+    return resolve(structuredClone(MOCK_ASSUMPTIONS));
+  }
+
+  getScenariosView(): Promise<ScenariosView> {
+    return resolve(structuredClone(MOCK_SCENARIOS));
+  }
+
+  getOpenItemsView(): Promise<OpenItemsView> {
+    return resolve(structuredClone(MOCK_OPEN_ITEMS_VIEW));
   }
 
   launchResearch(form: ResearchContract): Promise<ResearchLaunchResult> {

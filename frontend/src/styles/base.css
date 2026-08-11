@@ -279,3 +279,19 @@ body {
 .na-basis__text {
   color: #b91c1c;
 }
+
+/* G5-04 醒目异常（未批准假设/无绑定/材料性开放项/宏观门失败） */
+.alert-item {
+  border: 2px solid #dc2626;
+  background: #fef2f2;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  margin: 0.25rem 0;
+}
+
+.macro-gate-fail {
+  border: 2px solid #dc2626;
+  background: #fef2f2;
+  padding: 0.75rem;
+  border-radius: 6px;
+}

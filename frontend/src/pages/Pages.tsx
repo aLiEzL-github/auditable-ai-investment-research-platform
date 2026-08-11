@@ -7,24 +7,9 @@ export { ResearchNewPage } from "./ResearchNewPage";
 export { EvidenceLedgerPage as EvidencePage } from "./EvidenceLedgerPage";
 export { RulesPage } from "./RulesPage";
 export { MetricSpecPage } from "./MetricSpecPage";
-
-export function MacroPage() {
-  return (
-    <div className="page">
-      <h1>宏观与计算（G5-04 交付）</h1>
-      <EmptyState label="待 G3 产出 CalcLedger / MacroSnapshot 后启用" />
-    </div>
-  );
-}
-
-export function ClaimsPage() {
-  return (
-    <div className="page">
-      <h1>Claim 与假设（G5-04 交付）</h1>
-      <EmptyState label="待 G3 产出 Claim 图与 AssumptionSnapshot 后启用" />
-    </div>
-  );
-}
+export { MacroPage } from "./MacroPage";
+export { ClaimsPage } from "./ClaimsPage";
+export { ScenariosPage } from "./ScenariosPage";
 
 export function AuditPage() {
   return (

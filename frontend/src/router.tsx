@@ -10,6 +10,7 @@ import {
   MetricSpecPage,
   ResearchNewPage,
   RulesPage,
+  ScenariosPage,
 } from "./pages/Pages";
 
 export const router = createBrowserRouter([
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
       { path: "metrics", element: <MetricSpecPage /> },
       { path: "macro", element: <MacroPage /> },
       { path: "claims", element: <ClaimsPage /> },
+      { path: "scenarios", element: <ScenariosPage /> },
       { path: "audit", element: <AuditPage /> },
       { path: "audit/eligibility", element: <AuditPage /> },
     ],
