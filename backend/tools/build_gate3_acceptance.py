@@ -52,11 +52,21 @@ def main() -> int:
     other_mat = [i for i in mat if not in_gate3(i)]
 
     # ㉑：结论由范围内计数决定（不得硬编码字符串）
+    # 另：**工程测试失败也须使结论转 NOT_READY**。初版只看范围内计数，于是
+    # §6 记着「工程测试: FAILED (errors=1)」而结论照常输出 —— 一个记着测试
+    # 失败的验收包不该被当作可审阅材料。基线 §9 的 G1 一票否决含「空测试」，
+    # 测试失败比空测试更直接。
+    _tests_out = status_of(".venv/bin/python -m unittest discover "
+                           "-s backend/tests 2>&1 | tail -1")
+    _tests_ok = _tests_out.strip().startswith("OK")
+    _blockers = []
     if g3_mat:
-        verdict = (f"**NOT_READY** —— Gate 3 范围内材料性开放项 "
-                   f"{len(g3_mat)} 项 ≠ 0（ADR-010 §4 不得 PASS）")
-    else:
-        verdict = "**READY_FOR_APPROVAL**（ADR-010 §3.1 债务清点①为零）"
+        _blockers.append(f"Gate 3 范围内材料性开放项 {len(g3_mat)} 项 ≠ 0"
+                         f"（ADR-010 §4 不得 PASS）")
+    if not _tests_ok:
+        _blockers.append(f"**工程测试未全过**：{_tests_out.strip()[:70]}")
+    verdict = ("**NOT_READY** —— " + "；".join(_blockers) if _blockers
+               else "**READY_FOR_APPROVAL**（ADR-010 §3.1 债务清点①为零；工程测试全过）")
 
     L.append("# Gate 3 验收包\n")
     L.append("```text")
@@ -157,8 +167,17 @@ def main() -> int:
     for i in unclosed:
         L.append(f"   {i['open_item_id']} | {i.get('category','')} | "
                  f"阻断={i.get('blocks_decisions') or '无'} | 数据面={i.get('blocks_data_flow') or '—'}")
-    L.append("③ 债务趋势：本 Gate 范围内开放项新增/关闭/净变化 "
-             "（首次实现 ADR-010 §3.1 的 G3 包，趋势自本包起逐 Gate 对比）")
+    # ADR-010 §3.1 第 3 条原文要求「本 Gate **新增了几项、关闭了几项、净变化**」——
+    # 初版只写了一句说明而没有数字，等于该义务未落地。数字按 source 字段的
+    # 日期归属统计，口径与 build_gate2_acceptance 一致。
+    _g3_added = [i for i in items if any(dd in str(i.get("source", ""))
+                                         for dd in ("2026-08-10", "2026-08-11"))]
+    _g3_closed = [i for i in items if i.get("status") == "CLOSED"
+                  and any(dd in str(i.get("closure_evidence") or "")
+                          for dd in ("2026-08-10", "2026-08-11"))]
+    L.append(f"③ 债务趋势（ADR-010 §3.1 第 3 条）：G3 期间新增 {len(_g3_added)} 项 · "
+             f"关闭 {len(_g3_closed)} 项 · 净变化 {len(_g3_added) - len(_g3_closed):+d} 项"
+             f"（负数 = 债务净减少）")
     L.append("```\n")
 
     # ── §6 测试基线 ───────────────────────────────────────────────
@@ -168,7 +187,7 @@ def main() -> int:
         rc, out, err = run(f"python3 {shlex.quote(os.path.join(PORTFOLIO, 'tools', script))} "
                            f"{shlex.quote(PORTFOLIO)}")
         L.append(f"{name}: 退出码 {rc} | {out.splitlines()[-1] if out else err}")
-    L.append(f"工程测试: {status_of('.venv/bin/python -m unittest discover -s backend/tests 2>&1 | tail -1')}")
+    L.append(f"工程测试: {_tests_out}")
     L.append(f"test-integrity: {status_of('.venv/bin/python backend/tools/test_integrity_check.py . 2>&1 | tail -1')}")
     for t in ("rights_action_map_check", "fixture_shape_check", "contract_coverage_check",
               "arch_import_check"):
@@ -192,7 +211,11 @@ def main() -> int:
     L.append("```text")
     L.append("· 系统自动取得能力为零（ADR-017 §4.1 放弃的保证在 G3 显现）：")
     L.append("  600089 全部输入经人工导入路径；vertical_candidate 已按此保持 PARTIAL")
-    L.append("· 材料性开放项 OI-600089-SUB-SOURCE（全人工导入）OPEN → 候选不得转 eligible")
+    # 原文引用的编号 OI-600089-SUB-SOURCE **在 risk/open-items.json 中不存在** ——
+    # 验收包不得引用不可解析的编号（守卫 B1 的同类要求）。改为陈述事实本身。
+    L.append("· 600089 的全部输入经人工导入路径（ADR-017 §2.2 逐字载明零自动取得）；")
+    L.append("  候选据此保持 PARTIAL_NOT_RELEASE_ELIGIBLE，不得转 eligible。")
+    L.append("  **本条不引用开放项编号** —— 该约束的载体是 ADR-017 本身，非某个开放项。")
     L.append("· 「适用」「材料性」判定已落库可机检（macro_spec.json + RuleRegistry），"
              "变异注入证明判定与材料性相关")
     L.append("· G3 是首个产出研究结论的 Gate —— 结论为候选级（CANDIDATE_NOT_RELEASED），"
