@@ -19,6 +19,8 @@ from rights_guard import ACTIONS  # noqa: E402
 def main() -> int:
     amp = json.load(open(os.path.join(ROOT, "contracts", "rights_action_map.json"),
                          encoding="utf-8"))["map"]
+    declared = json.load(open(os.path.join(ROOT, "contracts", "rights_action_map.json"),
+                              encoding="utf-8")).get("declared_no_auth", {})
     mx = json.load(open(os.path.join(ROOT, "contracts", "rights_matrix.json"),
                         encoding="utf-8"))["data_sources"]
     bad, checked = [], 0
@@ -30,6 +32,17 @@ def main() -> int:
         hits = [s.get("source_key") for s in mx
                 if any(c in s.get("actions", {}) for c in cands)]
         checked += 1
+        if act in declared:
+            # G3-01/POD-08：声明为「无授权」的动作 —— 矩阵中必须**零命中**。
+            # 零命中 = UNKNOWN = 零外发（fail-closed 预期形态，非配置缺陷）；
+            # 意外命中 = 权利已登记但声明未更新 —— 必须转红要求重审。
+            if hits:
+                bad.append(f"动作 {act} 声明为 declared_no_auth，但矩阵中已有源命中 "
+                           f"{hits} —— 权利已登记，须更新声明与 rights_guard 语义")
+            else:
+                print(f"  · {act}: declared_no_auth（{declared[act].get('reason', '')[:60]}…）"
+                      f"—— 矩阵零命中为预期，零外发")
+            continue
         if not hits:
             bad.append(f"动作 {act} 的候选键 {cands} 在矩阵中**零源命中** —— 该动作查询永不生效")
     # 反向：矩阵中每个源，对每个动作至少要么命中要么显式缺席（缺席会被 E-G2-03-005 拦）

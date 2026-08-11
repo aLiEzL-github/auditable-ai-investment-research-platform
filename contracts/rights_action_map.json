@@ -1,7 +1,14 @@
 {
   "schema": "rights-action-map/1.0",
-  "purpose": "守卫词汇（FETCH/IMPORT/PARSE/EXPORT）→ rights-matrix 领域动作键的显式映射。OI-PF-128：二者原本不相交，导致 _status_of 恒返回 UNKNOWN、矩阵实际未被咨询。",
-  "resolution_rule": "按 candidates 顺序取**第一个在该源 actions 中存在的键**；若该源一个候选都没有 → **抛 E-G2-03-005，不得静默降级为 UNKNOWN**",
+  "purpose": "守卫词汇（FETCH/IMPORT/PARSE/EXPORT/LLM_OUTBOUND）→ rights-matrix 领域动作键的显式映射。OI-PF-128：二者原本不相交，导致 _status_of 恒返回 UNKNOWN、矩阵实际未被咨询。",
+  "resolution_rule": "按 candidates 顺序取**第一个在该源 actions 中存在的键**；若该源一个候选都没有 → **抛 E-G2-03-005，不得静默降级为 UNKNOWN**（LLM_OUTBOUND 除外：POD-08 未裁定 → 恒 UNKNOWN → 零外发，见 declared_no_auth）",
+  "declared_no_auth": {
+    "LLM_OUTBOUND": {
+      "matrix_key": "llm_outbound",
+      "reason": "POD-08（LLM provider、外发字段、预算和密钥托管）为 OPEN —— 矩阵尚未登记任何源的 LLM 外发权利。故 llm_outbound 键在矩阵中**必须零命中**：命中即守卫转红要求重审（权利已登记但声明未更新）。零命中 = UNKNOWN = 零外发（G3-01 验收：UNKNOWN/PROHIBITED 零外发）",
+      "rights_guard_behavior": "E-G2-03-005 豁免：对 LLM_OUTBOUND，raw 无候选键时返回 UNKNOWN 而非抛错（POD-08 未裁定为正当 UNKNOWN，fail-closed）"
+    }
+  },
   "map": {
     "FETCH": [
       "automated_acquisition",
@@ -17,6 +24,9 @@
     ],
     "EXPORT": [
       "redistribute_in_public_repo"
+    ],
+    "LLM_OUTBOUND": [
+      "llm_outbound"
     ]
   },
   "matrix_action_keys_observed": [

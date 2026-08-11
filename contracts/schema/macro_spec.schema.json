@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0.0",
+  "title": "MacroSpec canonical schema",
+  "description": "G3-03 宏观序列规格：取数前冻结的必需/可选序列、频率、vintage、时效、材料性判定、传导链与聚合规则。",
+  "type": "object",
+  "required": ["schema_version", "series", "frozen_sha256"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "title": {"type": "string"},
+    "description": {"type": "string"},
+    "updated_at": {"type": "string"},
+    "freeze_semantics": {"type": "string"},
+    "aggregation": {"type": "object"},
+    "frozen_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "series": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["series_id", "required", "frequency", "staleness_days",
+                     "vintage_policy", "unit", "scope", "direction",
+                     "material", "aggregation_rule"],
+        "properties": {
+          "series_id": {"type": "string"},
+          "name": {"type": "string"},
+          "required": {"type": "boolean"},
+          "frequency": {"enum": ["MONTHLY", "QUARTERLY", "ANNUAL"]},
+          "staleness_days": {"type": "integer", "minimum": 1},
+          "vintage_policy": {"type": "string"},
+          "unit": {"type": "string"},
+          "scope": {"type": "string"},
+          "direction": {"enum": ["POSITIVE", "NEGATIVE", "NEUTRAL"]},
+          "material": {"type": "boolean"},
+          "materiality_basis": {"type": "string"},
+          "aggregation_rule": {"type": "string"},
+          "transmission_chain": {"type": "array", "items": {"type": "string"}},
+          "notes": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": true
+}
