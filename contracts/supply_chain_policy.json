@@ -1,0 +1,28 @@
+{
+  "schema": "supply-chain-policy/1.0",
+  "rationale": "OI-PF-131：--require-hashes 只保证下载字节与登记哈希一致，**不保证该字节是预构建 wheel 而非源码包 sdist**。sdist 在安装时会在本机与 CI 上执行上游的构建脚本（setup.py / PEP 517 后端），是一条哈希锁定完全覆盖不到的代码执行路径。故要求每个依赖至少登记一条 .whl 哈希；确实无 wheel 可用的，须在本契约中逐个列明并写下理由——沉默不算决定。",
+  "require_wheel_for_all": true,
+  "sdist_only_allowlist": [
+    {
+      "name": "jsonpath",
+      "version": "0.82.2",
+      "reason": "PyPI 上仅有 sdist，无任何 wheel（实测 2026-08-10）。akshare 的直接依赖。该包长期无维护。",
+      "open_item": "OI-PF-132",
+      "status": "REVIEWED_PENDING_ACCEPTANCE",
+      "note": "审阅已完成并留档于下（OI-PF-132 处置路径 (i) 的前半）。**接受与否是 SEC 角色的决定，尚未作出** —— 本条不构成批准。",
+      "source_review": {
+        "reviewed_at": "2026-08-10",
+        "artifact_sha256": "d87ef2bcbcded68ee96bc34c1809b69457ecec9b0c4dd471658a12bd391002d1",
+        "sha256_matches_pinned_hash": true,
+        "setup_py_lines": 46,
+        "install_time_verdict": "无害。setup.py 为纯声明式 distutils.core.setup 调用，无网络、无子进程、无 os.system、无构建期文件写。它 `import jsonpath` 以读取 __version__ 与 __doc__，故模块代码在安装期执行；该模块层只有赋值、`import re`、`import sys` 与一个版本门控的 xrange 别名。",
+        "runtime_residual": "jsonpath.py:297 `eval(loc, caller_globals, {'__obj': obj})` —— 在运行期解析路径表达式时执行任意 Python。仅当有人调用 jsonpath() 才可达。实测：akshare 的 405 个 .py 中对 'jsonpath' **零命中**（对照组 curl_cffi 命中 5，证明检索有效），本仓亦零引用。即该包是 akshare 元数据里声明却从不使用的依赖。",
+        "forward_compat": "`from distutils.core import setup` —— distutils 已在 Python 3.12 移除，届时该 sdist 将无法构建。当前锁定 3.11，不阻断。",
+        "not_claimed": [
+          "不声称该包无漏洞 —— 只声称其安装期行为已逐行审阅",
+          "不声称 eval 路径不可利用 —— 只声称当前无任何调用点可达"
+        ]
+      }
+    }
+  ]
+}

@@ -32,6 +32,11 @@ LAYER_EXEMPT = {
                  "backend/tools/macro_adapter.py", "backend/tools/akshare_adapter.py",
                  "backend/tools/cninfo_adapter.py"],
     "tools_internal": ["backend/tools/migration_check.py", "backend/tools/vertical_smoke.py"],
+    # OI-PF-141：供应链清单刷新工具。出网范围仅 pypi.org 的 JSON 元数据端点，
+    # **只读元数据、不下载分发包、不执行任何上游代码**，且**不在 CI 中运行**
+    # （CI 只跑离线的 wheel_policy_check）。检查器本身刻意做成离线的，
+    # 就是为了不让「守卫自己出网」成为常态 —— 故此处只豁免刷新工具一个文件。
+    "supply_chain_refresh": ["backend/tools/wheel_manifest_refresh.py"],
 }
 # 出网授权模块（L3 取数层）：非豁免模块 import 它们 = 传递性出网，必须抓
 EGRESS_MODULES = {"import_guard", "sse_adapter", "macro_adapter", "akshare_adapter",

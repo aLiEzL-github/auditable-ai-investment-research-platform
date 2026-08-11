@@ -1,7 +1,8 @@
-# G1-03 依赖锁定（M2/OI-PF-102）：--require-hashes 形式，锁全部传递依赖
-# 平台：CI = linux x86_64（manylinux2014），本机开发 = macOS arm64（cp311）
-# 哈希来自 PyPI JSON API 实测（2026-08-07）；VD-17 锁定工具落地后迁移
-# 编译包（SQLAlchemy/MarkupSafe）列双平台哈希，pip 按当前平台匹配
+# 依赖锁定（--require-hashes）。ADR-018：akshare 全量依赖已纳入。
+# 平台：CI = linux x86_64（manylinux）；本机开发 = macOS arm64
+# 哈希来自 PyPI JSON API **逐条回源核对**（2026-08-10），并抽样下载实算复验
+# ⚠️ curl_cffi 在场但**禁止使用** —— ADR-018 §4 三道守卫（A 静态 / B 白名单 / C 运行期）
+#    ADR-008 C2「不规避任何反爬机制」永久有效
 
 SQLAlchemy==2.0.51 \
     --hash=sha256:436728ce18a80f6951a1e11cc6112c2ede9faf20766f1a26195a7c441ca12dbd \
@@ -13,8 +14,6 @@ Mako==1.4.1 \
 MarkupSafe==3.0.3 \
     --hash=sha256:0bf2a864d67e76e5c9a34dc26ec616a66b9888e25e7b9460e1c76d3293bd9dbf \
     --hash=sha256:4bd4cd07944443f5a265608cc6aab442e4f74dff8088b0dfc8238647b8f6ae9a
-typing_extensions==4.16.0 \
-    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
 greenlet==3.5.4 \
     --hash=sha256:c3fe76c2cac86b4f7a1e92865ac0a54384deb05c92986287c1a7110d9bd53071 \
     --hash=sha256:e883de250e299654b1f1680f72a1a9f9ba62c9bd1bce84099c90657349a8dfbb
@@ -23,3 +22,84 @@ psycopg[binary]==3.3.4 \
 psycopg-binary==3.3.4 \
     --hash=sha256:ab8cca8ef8fb1ccf5b048ae5bd78ba55b9e4b5d472e3ce5ca39ff4d2a9c249e4 \
     --hash=sha256:13a7f380824c35896dcac7fe0f61440f7ca49d6dc73f3c13a9a4471e6a3b302e
+
+# ── ADR-018：akshare 及其传递依赖 ──
+akshare==1.18.84 \
+    --hash=sha256:3919e1d6297a8ef65b16171163b61ee77b4c509111fb5f816be76660235a08df
+beautifulsoup4==4.15.0 \
+    --hash=sha256:d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9
+certifi==2026.7.22 \
+    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775
+cffi==2.1.1 \
+    --hash=sha256:34e261f78cb6ceaaa36f42f2613f4380d94d9c759a9c73c769ee6e0247364632 \
+    --hash=sha256:398aff33cee2767e3e781d2554c54bd0dff386bb437581e0d8011fde1a942ec1
+charset-normalizer==3.4.9 \
+    --hash=sha256:68e5f26a1ad57ded6d1cfb85331d1c1a195314756471d97758c48498bb4dcdf5
+curl_cffi==0.16.0 \
+    --hash=sha256:182416f07d71a342240554fa62c22e591999b78c225b21d3fe27d9f807420dd6 \
+    --hash=sha256:edd5f6e8f122157f4d2351b0b5e48e6a1c0677a2064da71451bb30ef57af19ba
+decorator==5.3.1 \
+    --hash=sha256:f47fe6fdbd2edd623ecfe36875d37aba411624e2670dd395dddae1358689bb3c
+et_xmlfile==2.0.0 \
+    --hash=sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa
+html5lib==1.1 \
+    --hash=sha256:0d78f8fde1c230e99fe37986a60526d7049ed4bf8a9fadbad5f00e22e58e041d
+idna==3.18 \
+    --hash=sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2
+jsonpath==0.82.2 \
+    --hash=sha256:d87ef2bcbcded68ee96bc34c1809b69457ecec9b0c4dd471658a12bd391002d1
+lxml==6.1.1 \
+    --hash=sha256:db1d75f6617a49c1c01bc7023713e0ff59ab32c9579ae62a7674c0e34f3b0b0a \
+    --hash=sha256:53b7d2b7a10b1c35c0a5e21e9224accf60c1bbfba523990732e521b2b73adef2
+# OI-PF-147：补 akshare 声明里的同一条标记。原先无标记，导致 Linux 上三个 V8
+# 实现全部安装（22.2 + 5.4 + 10.1 MB），而 akshare 在 Linux 上只用后两个。
+mini-racer==0.14.1 ; platform_system != "Linux" \
+    --hash=sha256:cdf3a088e1363f16a695288f882abf76b3705b8e1df21418208b87ed010037a4 \
+    --hash=sha256:56cc6965a1665a50d8d613bc43aa83b4cec6b1f09acc69dc4c2845dacb201463
+numpy==2.4.6 \
+    --hash=sha256:89cd468399cfd2504718f0ba50e410dca55a170b61a02ad92bb18c8a65186e93 \
+    --hash=sha256:110f8b71aacb688ec69062bb7f6938a0f8acb01b7c1c4beb453c65b6d234584d
+openpyxl==3.1.5 \
+    --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
+pandas==3.0.5 \
+    --hash=sha256:2c0cf1dd9b55a22d105fc46c1b489af3bd42264fcba7c66297bf47a9a1d9c78a \
+    --hash=sha256:71ecc8fb7ed1a7aa4392316b5309a6347e8e7f832f38fd897846b3a1457a9298
+pycparser==3.0 \
+    --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
+python-dateutil==2.9.0.post0 \
+    --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
+requests==2.34.2 \
+    --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+six==1.17.0 \
+    --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+soupsieve==2.9.2 \
+    --hash=sha256:8089a26fd974ca7a1f30276d3d8492ab266ab15af581642dfe8aa162e0c1c823
+tabulate==0.10.0 \
+    --hash=sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3
+tqdm==4.70.0 \
+    --hash=sha256:7f585706bfddbdebf89daac705b2dfcc16890130727d3197ca62c732b4310953
+typing_extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+urllib3==2.7.0 \
+    --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
+webencodings==0.5.1 \
+    --hash=sha256:a0af1213f3c2226497a97e2b3aa01a7e4bee4f403f95be16fc9acd2947514a78
+xlrd==2.0.2 \
+    --hash=sha256:ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9
+
+# ── OI-PF-147：akshare 的**平台条件依赖**（Linux 侧）──
+# akshare 元数据声明三条按平台分支的依赖：
+#   mini-racer>=0.12.4;    platform_system != "Linux"   ← 上面已固定
+#   py-mini-racer>=0.6.0;  platform_system == "Linux"   ← 下面两条
+#   akracer>=0.0.13;       platform_system == "Linux"
+# 清单原在 macOS 上生成，只拿到第一条，CI（linux）因此 --require-hashes 失败。
+# ⚠️ 二者均为 V8 引擎，且**都写入 py_mini_racer 命名空间**
+#   （共同占用 py_mini_racer/__init__.py 与 py_mini_racer.py）——
+#   最终生效的实现取决于安装顺序。ADR-020 的 V8 裁定原只涵盖 mini-racer。
+# ⚠️ akracer 的 wheel 标签为 py3-none-any 且 Root-Is-Purelib: true，
+#   却内含 32MB 原生二进制（.dylib + .glibc.so）—— pip 不会做平台校验。
+# 哈希已下载实算复验（2026-08-11）。
+py-mini-racer==0.6.0 ; platform_system == "Linux" \
+    --hash=sha256:42896c24968481dd953eeeb11de331f6870917811961c9b26ba09071e07180e2
+akracer==0.0.14 ; platform_system == "Linux" \
+    --hash=sha256:629eaccd0e1d18366804b797eb2692ed47bed0028f55b5a5af3cc277d521df04

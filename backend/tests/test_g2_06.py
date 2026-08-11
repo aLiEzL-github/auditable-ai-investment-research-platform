@@ -25,6 +25,14 @@ sys.path.insert(0, TOOLS)
 from rights_guard import RightsGuard, GuardDenied  # noqa: E402
 from akshare_adapter import AKShareAdapter, AKSHARE_SOURCE_ID  # noqa: E402
 
+# ADR-018 §4 守卫 B（OI-PF-136）：生产白名单为 **0 项**，故适配器的数据路径
+# 在默认契约下不可达。下列测试验的是 SECONDARY 强制 / 故障隔离 / F3，**不是**
+# 白名单本身，故显式注入一个临时白名单以行使被验行为 —— 沿用 tests/ 作为
+# 验证方的既有先例。白名单本身的红态由 test_whitelist_blocks_by_default 覆盖。
+def _wl(*fns):
+    return mock.patch("akshare_adapter._allowed_functions", return_value=list(fns))
+
+
 
 class _FakeDF:
     """模拟 DataFrame（日期/值列契约），不依赖 pandas。"""
@@ -53,7 +61,7 @@ class TestAKShareAdapter(unittest.TestCase):
             {"date": "2026-08-01", "value": 12.5},
             {"date": "2026-08-02", "value": 12.7},
         ]))
-        with mock.patch.dict("sys.modules", {"akshare": fake_ak}):
+        with _wl("stock_zh_a_spot"), mock.patch.dict("sys.modules", {"akshare": fake_ak}):
             rows = self.ad.fetch("stock_zh_a_spot")
         self.assertEqual(len(rows), 2)
         for r in rows:
@@ -85,7 +93,7 @@ class TestAKShareAdapter(unittest.TestCase):
     def test_failure_does_not_pollute_primary(self):
         fake_ak = mock.Mock()
         fake_ak.stock_zh_a_spot = mock.Mock(side_effect=RuntimeError("akshare 挂了"))
-        with mock.patch.dict("sys.modules", {"akshare": fake_ak}):
+        with _wl("stock_zh_a_spot"), mock.patch.dict("sys.modules", {"akshare": fake_ak}):
             with self.assertRaises(RuntimeError) as ctx:
                 self.ad.fetch("stock_zh_a_spot")
         self.assertIn("E-G2-06-003", str(ctx.exception))
@@ -98,7 +106,7 @@ class TestAKShareAdapter(unittest.TestCase):
         fake_ak = mock.Mock()
         fake_ak.stock_zh_a_spot = mock.Mock(return_value=_FakeDF([
             {"date": "2026-08-01", "value": 12.5}]))
-        with mock.patch.dict("sys.modules", {"akshare": fake_ak}):
+        with _wl("stock_zh_a_spot"), mock.patch.dict("sys.modules", {"akshare": fake_ak}):
             rows = self.ad.fetch("stock_zh_a_spot")
         # F3 可执行断言：副源行（__secondary=True）不可提升为主源数据
         for r in rows:
@@ -115,3 +123,26 @@ class TestAKShareAdapter(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestADR018GuardBRuntime(unittest.TestCase):
+    """OI-PF-136：守卫 B 在**动态派发点**的运行期效力（静态检查对此形态无效）。"""
+
+    def test_whitelist_blocks_by_default(self):
+        """不注入临时白名单时，默认契约（0 项）须拒绝任何接口。"""
+        ad = AKShareAdapter(RightsGuard(matrix=MATRIX))
+        fake_ak = mock.Mock()
+        with mock.patch.dict("sys.modules", {"akshare": fake_ak}):
+            with self.assertRaises(RuntimeError) as ctx:
+                ad._do_fetch("stock_zh_a_spot", None, "EVT_T")
+        self.assertIn("E-ADR018-B", str(ctx.exception))
+        fake_ak.stock_zh_a_spot.assert_not_called()
+
+    def test_dynamic_dispatch_still_checked(self):
+        """scope 为运行期变量（适配器真实形态）时同样被拦。"""
+        ad = AKShareAdapter(RightsGuard(matrix=MATRIX))
+        scope = "".join(["stock", "_zh_a_hist"])   # 静态分析无法求值
+        with mock.patch.dict("sys.modules", {"akshare": mock.Mock()}):
+            with self.assertRaises(RuntimeError) as ctx:
+                ad._do_fetch(scope, None, "EVT_T")
+        self.assertIn("E-ADR018-B", str(ctx.exception))

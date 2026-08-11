@@ -211,3 +211,58 @@ HKUDS/Vibe-Trading
 - 不声称本草案已构成分发 —— 它在台账内，仓库尚未创建。
 
 **研究信息不构成投资建议。**
+
+---
+
+## 7. `ADR-018` 引入的依赖闭包（2026-08-11 补，`OI-PF-147`）
+
+`ADR-018 §2` 解除禁装后，`requirements.txt` 由 8 包扩至 **36 包**（含平台条件依赖）。
+本节只列**须逐字载明许可义务**的项；完整清单与哈希见 `requirements.txt` 与 `sbom.json`。
+
+### 7.1 三个 V8 引擎实现（**按平台分支，互斥安装**）
+
+```text
+mini-racer     0.14.1   ISC     platform_system != "Linux"
+py-mini-racer  0.6.0    ISC     platform_system == "Linux"   最后发布 2021-04-22
+akracer        0.0.14   MIT     platform_system == "Linux"   akfamily 发布
+```
+
+`akshare` 的元数据把三者按平台分支声明，`requirements.txt` 沿用同一组标记，
+故任一环境下只装其中一到两个：**macOS 装 `mini-racer`；Linux 装
+`py-mini-racer` + `akracer`**。
+
+> 首轮 CI 实测（2026-08-11）曾三者全装 —— 因 `mini-racer` 当时未带标记。
+> 安装序位为 py-mini-racer(2) → mini-racer(14) → **akracer(23)**，
+> 即 `akracer` 最后写入并**覆盖** `py-mini-racer` 的 Python 入口，
+> 而后者 5.4 MB 的 `libmini_racer.glibc.so` 仍留在磁盘上。已补标记修正。
+
+**`akracer` 的许可**：`METADATA` 的 `License-Expression: MIT`；
+作者 `Alert King <albertandking@gmail.com>`；源码 `github.com/akfamily/akracer`。
+**其 wheel 内不含许可文本文件**（0 个 `LICENSE`/`COPYING`/`NOTICE`），
+而 MIT 要求分发时保留版权声明与许可全文 —— 本项为**已知缺口**，
+须在首次分发含该包的制品前解决（取得上游许可文本并随附）。
+
+`py-mini-racer` 的 wheel 内含 `LICENSE`（ISC）与 `AUTHORS.rst`，无此缺口。
+
+### 7.2 两项须记载的技术事实
+
+```text
+① akracer 与 py-mini-racer **共同占用 py_mini_racer 命名空间**
+   （同写 py_mini_racer/__init__.py 与 py_mini_racer.py）
+   而 akshare 在 Linux 上同时要求二者 —— 最终生效的实现取决于安装顺序
+② akracer 的 wheel 标签为 py3-none-any 且 Root-Is-Purelib: true，
+   却内含约 32 MB 原生二进制（armlibmini_racer.dylib / .glibc.so）
+   —— pip 不会对其做平台或 ABI 校验
+```
+
+### 7.3 `curl_cffi`
+
+`curl_cffi 0.16.0` 已在闭包内。`ADR-018 §4` 三道守卫使其**持有但不使用**：
+静态禁用导入、调用白名单（当前为空）、运行期 `sys.meta_path` 拦截。
+`ADR-008 C2`「绝不绕过技术管控」不变。
+
+### 7.4 本节明确不声称
+
+- 不声称三个 V8 实现的安全面已评估 —— `ADR-020` 的裁定原只涵盖 `mini-racer`，
+  `py-mini-racer` 与 `akracer` **尚未按同等标准评估**（`OI-PF-147`）；
+- 不声称 `akracer` 的许可义务已履行 —— `§7.1` 已写明许可文本缺口。
