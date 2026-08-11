@@ -26,7 +26,7 @@ from typing import Callable, Optional
 ALLOWED = "ALLOWED"
 PROHIBITED = "PROHIBITED"
 UNKNOWN = "UNKNOWN"
-ACTIONS = ("FETCH", "IMPORT", "PARSE", "EXPORT")
+ACTIONS = ("FETCH", "IMPORT", "PARSE", "EXPORT", "LLM_OUTBOUND")
 
 @dataclass
 class RightsDecision:
@@ -104,6 +104,11 @@ class RightsGuard:
                 f"E-G2-03-004: 动作 {action} 在 rights_action_map.json 中无映射")
         raw = next((actions[c] for c in cands if c in actions), None)
         if raw is None:
+            # G3-01/POD-08：LLM_OUTBOUND 权利未登记（declared_no_auth）→
+            # 返回 UNKNOWN 而非抛错 —— 这是**正当的 UNKNOWN**（fail-closed 零外发）。
+            # 其余动作维持 OI-PF-128 的抛错语义：映射存在但矩阵无键 = 配置错误。
+            if action == "LLM_OUTBOUND":
+                return UNKNOWN
             raise ValueError(
                 f"E-G2-03-005: 源 {source_key} 的 actions 中无 {action} 的任何候选键 "
                 f"{cands} —— 拒绝静默降级为 UNKNOWN（OI-PF-128）")

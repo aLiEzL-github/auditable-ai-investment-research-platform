@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0.0",
+  "title": "MacroSpec —— 取数前冻结的宏观必需/可选序列",
+  "description": "G3-03 宏观先行：取数前冻结必需/可选序列、频率、vintage、时效（G0-05 §6：月 45/季 100/年 400 天）、材料性判定、传导链与聚合规则。一经冻结不得在看到结果后修改（G0-05 §5.2/§6 签署）。",
+  "updated_at": "2026-08-11T06:00:00Z",
+  "freeze_semantics": "SNAPSHOT_AT_TIME；frozen_sha256 锚定本文件规范化 JSON（逐字节）",
+  "aggregation": {
+    "deterministic": true,
+    "rule": "对每个序列取最后一个 vintage 的唯一值；同 vintage 多值按 spec 声明方向取确定聚合（LAST/SINGLE）；跨进程字节一致",
+    "denominator": "各序列口径与单位在 series 中显式声明，聚合不得改分母"
+  },
+  "series": [
+    {
+      "series_id": "GDP_YOY",
+      "name": "GDP 同比",
+      "required": true,
+      "frequency": "QUARTERLY",
+      "staleness_days": 100,
+      "vintage_policy": "ORIGINAL/REVISED",
+      "unit": "percent",
+      "scope": "CN",
+      "direction": "POSITIVE",
+      "material": true,
+      "materiality_basis": "进入估值路由的宏观输入（G0-05 §5.1 第一层：任何进入估值路由的输入）",
+      "aggregation_rule": "LAST_VINTAGE_SINGLE_VALUE",
+      "transmission_chain": [
+        "GDP_YOY -> 行业需求增速假设 -> FCFF 增速"
+      ],
+      "notes": "材料性：影响行业增速假设进而影响终值增速"
+    },
+    {
+      "series_id": "CPI_YOY",
+      "name": "CPI 同比",
+      "required": false,
+      "frequency": "MONTHLY",
+      "staleness_days": 45,
+      "vintage_policy": "ORIGINAL/REVISED",
+      "unit": "percent",
+      "scope": "CN",
+      "direction": "NEUTRAL",
+      "material": false,
+      "materiality_basis": "装饰性背景（G0-05 §5.2 第二层），不进入计算",
+      "aggregation_rule": "LAST_VINTAGE_SINGLE_VALUE",
+      "transmission_chain": [
+        "CPI_YOY -> 无（背景描述）"
+      ]
+    },
+    {
+      "series_id": "LPR_1Y",
+      "name": "1 年期 LPR",
+      "required": true,
+      "frequency": "MONTHLY",
+      "staleness_days": 45,
+      "vintage_policy": "ORIGINAL/REVISED",
+      "unit": "percent",
+      "scope": "CN",
+      "direction": "NEGATIVE",
+      "material": true,
+      "materiality_basis": "进入估值路由的宏观输入：贴现率/无风险利率锚（G0-05 §5.1 第一层）",
+      "aggregation_rule": "LAST_VINTAGE_SINGLE_VALUE",
+      "transmission_chain": [
+        "LPR_1Y -> 无风险利率 -> WACC -> FCFF 现值"
+      ]
+    },
+    {
+      "series_id": "PPI_YOY",
+      "name": "PPI 同比",
+      "required": false,
+      "frequency": "MONTHLY",
+      "staleness_days": 45,
+      "vintage_policy": "ORIGINAL/REVISED",
+      "unit": "percent",
+      "scope": "CN",
+      "direction": "POSITIVE",
+      "material": true,
+      "materiality_basis": "进入估值路由的宏观输入：行业价格环境（G0-05 §5.1 第一层）",
+      "aggregation_rule": "LAST_VINTAGE_SINGLE_VALUE",
+      "transmission_chain": [
+        "PPI_YOY -> 产品价格假设 -> 收入假设"
+      ]
+    },
+    {
+      "series_id": "M2_YOY",
+      "name": "M2 同比",
+      "required": false,
+      "frequency": "MONTHLY",
+      "staleness_days": 45,
+      "vintage_policy": "ORIGINAL/REVISED",
+      "unit": "percent",
+      "scope": "CN",
+      "direction": "NEUTRAL",
+      "material": false,
+      "materiality_basis": "装饰性背景（G0-05 §5.2 第二层）",
+      "aggregation_rule": "LAST_VINTAGE_SINGLE_VALUE",
+      "transmission_chain": [
+        "M2_YOY -> 无（背景描述）"
+      ]
+    }
+  ],
+  "frozen_sha256": "58cfd21d66fb33e4026f3499c80bcced5d74bc91955135df8102481dbb5bb5f6"
+}
