@@ -222,11 +222,35 @@ def main() -> int:
              "不写 release/current，不构成任何投资决策")
     L.append("```\n")
 
+    # ── §9 A-2 数据源声明（合成 fixture 逐字载明，A-2d）────────────
+    L.append("## 9. 数据源声明（A-2 合成 fixture，逐字载明）\n")
+    L.append("```text")
+    L.append("· 以下用例在 CI 上使用**合成 golden baseline fixture**"
+             "（backend/tests/fixtures/g3-08-synthetic-golden.json，"
+             "SYNTHETIC_FIXTURE 标记）：")
+    L.append("  test_g3_08.py 全部 8 个用例（台账不可达时回退合成；"
+             "台账可达时用真实数据并标注 data_source=REAL）")
+    L.append("· **其结论不构成对真实 600089 的任何断言** —— 数值全部虚构，")
+    L.append("  只验证全流程机械正确性（合同→宏观门→规则→公式→估值→Claim→"
+             "emission→OpenItem 的字节可复现性）")
+    L.append("· 合成与真实两条路径的结论不得互相冒充：输出强制标注 "
+             "data_source=SYNTHETIC/REAL（变异注入：静默回退 → 测试 FAIL）")
+    L.append("· 合成数据跑通**不等于**真实路径被验证 —— 真实 600089 的")
+    L.append("  材料性事实回源与结论验证须待 Gate 7（G7-02）以人工导入")
+    L.append("  的真实披露完成")
+    L.append("```\n")
+
     pkg = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         PORTFOLIO, "Gate3-验收包.md")
+    # A-2d：数据源声明（SYNTHETIC 载明）缺失即生成失败 —— 防「删掉载明」变异
+    _acc_text = "\n".join(L)
+    if "SYNTHETIC" not in _acc_text:
+        raise SystemExit(
+            "E-A2D: Gate3-验收包.md 缺 SYNTHETIC 数据源声明（A-2d）—— "
+            "删掉载明即生成失败")
     with open(pkg, "w", encoding="utf-8") as f:
-        f.write("\n".join(L))
-    assert open(pkg, encoding="utf-8").read() == "\n".join(L)
+        f.write(_acc_text)
+    assert open(pkg, encoding="utf-8").read() == _acc_text
 
     sub_lines = [ln for ln in L if not any(x in ln for x in EXCLUDE)]
     substantive = hashlib.sha256("\n".join(sub_lines).encode("utf-8")).hexdigest()

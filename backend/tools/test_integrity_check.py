@@ -98,12 +98,33 @@ def main() -> int:
     if stat != len(found):
         bad.append(f"T-4: 静态 {stat} ≠ 被发现 {len(found)}（写了但从不运行）")
 
+    # T-5（A-2c）：白名单不得留死条目 —— 白名单里的 key 若对应文件/行
+    # 实际已无跳过，即为死条目（「保留旧白名单而实际已不跳过」须 FAIL）
+    _dead_whitelist = []
+    for key in sorted(skip_allow):
+        _fn, _ln = key.split(":")[0], int(key.split(":")[1])
+        _fp = os.path.join(TESTS, _fn)
+        if not os.path.isfile(_fp):
+            _dead_whitelist.append(f"{key}（文件不存在）")
+            continue
+        _lines = open(_fp, encoding="utf-8").read().splitlines()
+        if _ln > len(_lines) or not any(k in _lines[_ln - 1] for k in
+                                        ("@skip", "@unittest.skip",
+                                         "@pytest.mark.skip", "@expectedFailure",
+                                         "@unittest.expectedFailure",
+                                         "self.skipTest(",
+                                         "raise unittest.SkipTest")):
+            _dead_whitelist.append(f"{key}（该行已无跳过标记）")
+    if _dead_whitelist:
+        bad.append(f"T-5: 白名单死条目 {len(_dead_whitelist)} 处（A-2c，"
+                   f"白名单不得留死条目）: {_dead_whitelist[:3]}…")
+
     if bad:
         print("❌ 测试完整性违规：")
         for b in bad:
             print("  -", b)
         return 1
-    print(f"✅ 检查对象 {len(found)} 个用例：T-1~T-4 全部通过（静态 {stat} == 发现）")
+    print(f"✅ 检查对象 {len(found)} 个用例：T-1~T-5 全部通过（静态 {stat} == 发现）")
     return 0
 
 

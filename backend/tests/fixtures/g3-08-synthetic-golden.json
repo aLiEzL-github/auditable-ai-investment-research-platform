@@ -1,0 +1,125 @@
+{
+ "baseline_id": "SYNTH-600089-G3-08",
+ "ticker": "SYNTH",
+ "period": "2026",
+ "source_docs": [
+  {
+   "locator": "synthetic://fixtures/g3-08-synthetic",
+   "registered_at": "2026-08-11T10:20:00Z"
+  }
+ ],
+ "facts": {
+  "营业收入": {
+   "value": "123456789.00",
+   "unit": "CNY_million",
+   "locator": "synthetic://facts/revenue",
+   "material": true
+  },
+  "归母净利润": {
+   "value": "10000000.00",
+   "unit": "CNY_million",
+   "locator": "synthetic://facts/net_profit",
+   "material": true
+  },
+  "货币资金": {
+   "value": "50000000.00",
+   "unit": "CNY_million",
+   "locator": "synthetic://facts/cash",
+   "material": true
+  },
+  "存货": {
+   "value": "20000000.00",
+   "unit": "CNY_million",
+   "locator": "synthetic://facts/inventory",
+   "material": true
+  },
+  "在建工程": {
+   "value": "10000000.00",
+   "unit": "CNY_million",
+   "locator": "synthetic://facts/cip",
+   "material": true
+  },
+  "商誉": {
+   "value": "1000000.00",
+   "unit": "CNY_million",
+   "locator": "synthetic://facts/goodwill",
+   "material": true
+  },
+  "总股本": {
+   "value": "1000",
+   "unit": "shares",
+   "locator": "synthetic://facts/shares",
+   "material": true
+  },
+  "经营活动现金流净额": {
+   "value": "15000000.00",
+   "unit": "CNY_million",
+   "locator": "synthetic://facts/ocf",
+   "material": true
+  }
+ },
+ "back_source": {
+  "营业收入": {
+   "locator": "synthetic://facts/revenue",
+   "reviewed_by": "SYNTH",
+   "state": "VERIFIED_SYNTHETIC",
+   "at": "2026-08-11T10:20:00Z"
+  },
+  "归母净利润": {
+   "locator": "synthetic://facts/net_profit",
+   "reviewed_by": "SYNTH",
+   "state": "VERIFIED_SYNTHETIC",
+   "at": "2026-08-11T10:20:00Z"
+  },
+  "货币资金": {
+   "locator": "synthetic://facts/cash",
+   "reviewed_by": "SYNTH",
+   "state": "VERIFIED_SYNTHETIC",
+   "at": "2026-08-11T10:20:00Z"
+  },
+  "存货": {
+   "locator": "synthetic://facts/inventory",
+   "reviewed_by": "SYNTH",
+   "state": "VERIFIED_SYNTHETIC",
+   "at": "2026-08-11T10:20:00Z"
+  },
+  "在建工程": {
+   "locator": "synthetic://facts/cip",
+   "reviewed_by": "SYNTH",
+   "state": "VERIFIED_SYNTHETIC",
+   "at": "2026-08-11T10:20:00Z"
+  },
+  "商誉": {
+   "locator": "synthetic://facts/goodwill",
+   "reviewed_by": "SYNTH",
+   "state": "VERIFIED_SYNTHETIC",
+   "at": "2026-08-11T10:20:00Z"
+  },
+  "总股本": {
+   "locator": "synthetic://facts/shares",
+   "reviewed_by": "SYNTH",
+   "state": "VERIFIED_SYNTHETIC",
+   "at": "2026-08-11T10:20:00Z"
+  },
+  "经营活动现金流净额": {
+   "locator": "synthetic://facts/ocf",
+   "reviewed_by": "SYNTH",
+   "state": "VERIFIED_SYNTHETIC",
+   "at": "2026-08-11T10:20:00Z"
+  }
+ },
+ "status": "COMPLETE",
+ "registered_at": "2026-08-11T10:20:00Z",
+ "back_source_note": "SYNTHETIC_FIXTURE —— 数值全部虚构，不构成对真实 600089 的任何断言",
+ "metric_coverage": {
+  "商誉": 1,
+  "在建工程": 1,
+  "存货": 1,
+  "归母净利润": 1,
+  "总股本": 1,
+  "经营活动现金流净额": 1,
+  "营业收入": 1,
+  "货币资金": 1
+ },
+ "SYNTHETIC_FIXTURE": true
+}
