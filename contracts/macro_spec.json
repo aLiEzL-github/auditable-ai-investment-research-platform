@@ -1,5 +1,5 @@
 {
-  "$schema": "contracts/macro_spec.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "schema_version": "1.0.0",
   "title": "MacroSpec —— 取数前冻结的宏观必需/可选序列",
   "description": "G3-03 宏观先行：取数前冻结必需/可选序列、频率、vintage、时效（G0-05 §6：月 45/季 100/年 400 天）、材料性判定、传导链与聚合规则。一经冻结不得在看到结果后修改（G0-05 §5.2/§6 签署）。",
@@ -98,5 +98,5 @@
       ]
     }
   ],
-  "frozen_sha256": "f253095c934392967ad5e458c83c321371134a1a722132f8f1821e5d2685b1d7"
+  "frozen_sha256": "58cfd21d66fb33e4026f3499c80bcced5d74bc91955135df8102481dbb5bb5f6"
 }
