@@ -124,17 +124,35 @@ def main() -> int:
     L.append("```\n")
 
     # ── §1.5 ADR-010 §3.1 三条债务清点义务（OI-PF-142 同款）────────
-    oi = json.load(open("/Users/li/Documents/Claudetext/portfolio/risk/open-items.json", encoding="utf-8"))
-    items = oi["items"]
+    # OI-PF-153：此处原**写死**台账绝对路径，无视 PORTFOLIO_ROOT，
+    # 于是同一次生成中 §1.5 读真实台账、§4.1 读 PORTFOLIO_ROOT 指向的副本 ——
+    # 两节可给出互相矛盾的数（实测：副本注入探针后 §4.1 报 1 项而 §1.5 报 0 项）。
+    # 后果更广：**任何在临时副本上做的验证，在 §1.5 这一节都是假的**，
+    # 而通用验收 ⑭ 恰恰要求只读审核须用临时副本。改为复用 §1 已加载的 OI。
+    items = OI["items"]
     L.append("## 1.5 债务清点（ADR-010 §3.1，三条）\n")
     L.append("```text")
-    gate2 = [i for i in items if "Gate 2" in str(i.get("blocks_decisions", ""))]
-    gate2_mat = [i for i in gate2 if i.get("material") and i.get("status") != "CLOSED"]
+    # ADR-021 §2（U 裁定 2026-08-11，OI-PF-151）：「本 Gate 范围内」的判定
+    # **必须包含 blocks_development**。原实现只查 blocks_decisions，而该字段是
+    # 自指的 —— 一项开放项只有被人主动写上「阻断 Gate N 验收签署」才算范围内，
+    # 于是「范围内为零」取决于登记时怎么填字段，而非该 Gate 的工程实质。
+    # 按 MR-1 严格者胜取并集（与 build_gate0_acceptance.py 的 in_g0() 同构）：
+    # 删掉 blocks_decisions 会撤销 OI-PF-082 的修复（§2(c) 覆盖），故保留。
+    def _in_g2(i):
+        _s = " ".join(str(i.get(k) or "") for k in
+                      ("blocks_development", "blocks_data_flow",
+                       "blocks_decisions", "deprecated_blocks_gate"))
+        return bool(re.search(r"\bG2-\d\d\b|Gate 2", _s))
+    gate2 = [i for i in items if _in_g2(i)]
+    # 签署前置条件单列：这类项只能由签署关闭，计入阻断即成循环（ADR-021 §2.4）
+    gate2_mat = [i for i in gate2 if i.get("material") and i.get("status") == "OPEN"
+                 and i.get("category") != "签署前置条件"]
     L.append(f"Gate 2 范围内的材料性开放项：{len(gate2_mat)} 项（须为零）"
+             f"［范围判定：blocks_development 含 G2-xx，ADR-021 §2 并集口径］"
              + (f" —— 非零: {[i['open_item_id'] for i in gate2_mat]}" if gate2_mat else ""))
     for i in gate2:
         L.append(f"   {i['open_item_id']}: {i.get('status')} 材料性={i.get('material')} "
-                 f"阻断={i.get('blocks_decisions')}")
+                 f"阻断任务={i.get('blocks_development')} 阻断决策={i.get('blocks_decisions')}")
     unclosed = [i for i in items if i.get("status") == "OPEN" and i.get("material")]
     L.append(f"② 全部未闭材料性开放项 —— {len(unclosed)} 项")
     for i in unclosed:
