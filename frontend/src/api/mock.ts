@@ -9,6 +9,9 @@ import type {
   OpenItem,
   ReleaseEligibility,
   ReleaseRecord,
+  ResearchContract,
+  ResearchContractStatus,
+  ResearchLaunchResult,
 } from "../types";
 import type { EvidenceView, WorkbenchApi } from "./client";
 
@@ -77,6 +80,19 @@ const MOCK_ELIGIBILITY: ReleaseEligibility = {
   source: "MOCK",
 };
 
+const MOCK_CONTRACT: ResearchContract = {
+  scope: "600089",
+  period: "2026",
+  unit: "CNY_million",
+  vintage: "2026-08",
+  snapshot: "SNAP-001",
+  security_code: "600089.SH",
+  company_id: "600089",
+  as_of: "2026-08-11",
+  version: "v0.1.0",
+  workflow: "a-share-single-company-research",
+};
+
 function resolve<T>(value: T, ms = 0): Promise<T> {
   return new Promise((r) => setTimeout(() => r(value), ms));
 }
@@ -97,6 +113,41 @@ export class MockApi implements WorkbenchApi {
 
   getReleases(): Promise<ReleaseRecord[]> {
     return resolve(MOCK_RELEASES);
+  }
+
+  getResearchContract(): Promise<{
+    status: ResearchContractStatus;
+    contract: ResearchContract | null;
+    missing_fields: string[];
+  }> {
+    return resolve({
+      status: "VALID",
+      contract: MOCK_CONTRACT,
+      missing_fields: [],
+    });
+  }
+
+  launchResearch(form: ResearchContract): Promise<ResearchLaunchResult> {
+    const missing = Object.entries(form)
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    if (missing.length > 0) {
+      return resolve({
+        ok: false,
+        error: `E-G5-02-001: 缺 ResearchContract 字段: ${missing.join(", ")}`,
+      });
+    }
+    if (form.workflow !== "a-share-single-company-research") {
+      return resolve({
+        ok: false,
+        error: `E-G3-02-004: workflow 不在白名单: ${form.workflow}`,
+      });
+    }
+    return resolve({
+      ok: true,
+      run_id: `run-${Date.now()}-mock-0001`,
+      state: "DRAFT",
+    });
   }
 
   async ping(): Promise<boolean> {

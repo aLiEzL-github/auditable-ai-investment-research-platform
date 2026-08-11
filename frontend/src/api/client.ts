@@ -9,6 +9,9 @@ import type {
   OpenItem,
   ReleaseEligibility,
   ReleaseRecord,
+  ResearchContract,
+  ResearchContractStatus,
+  ResearchLaunchResult,
 } from "../types";
 
 export interface EvidenceView {
@@ -22,5 +25,11 @@ export interface WorkbenchApi {
   getEvidenceView(): Promise<EvidenceView>;
   getReleaseEligibility(): Promise<ReleaseEligibility>;
   getReleases(): Promise<ReleaseRecord[]>;
+  getResearchContract(): Promise<{
+    status: ResearchContractStatus;
+    contract: ResearchContract | null;
+    missing_fields: string[];
+  }>;
+  launchResearch(form: ResearchContract): Promise<ResearchLaunchResult>;
   ping(): Promise<boolean>;
 }

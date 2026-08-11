@@ -32,8 +32,14 @@ export interface WorkbenchState {
 
 const WorkbenchContext = createContext<WorkbenchState | null>(null);
 
-export function WorkbenchProvider({ children }: { children: ReactNode }) {
-  const api = useMemo(() => createApi(), []);
+export function WorkbenchProvider({
+  children,
+  api: injectedApi,
+}: {
+  children: ReactNode;
+  api?: WorkbenchApi;
+}) {
+  const api = useMemo(() => injectedApi ?? createApi(), [injectedApi]);
   const [eligibility, setEligibility] = useState<EligibilityLoad>({
     phase: "NOT_CHECKED",
   });

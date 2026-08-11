@@ -4,16 +4,7 @@ import { Link } from "react-router-dom";
 import { Card, EmptyState } from "../components/Basic";
 import { useWorkbench } from "../state/WorkbenchContext";
 
-export function ResearchNewPage() {
-  return (
-    <div className="page">
-      <h1>新建研究</h1>
-      <Card title="研究参数（G5-02 交付）">
-        <EmptyState label="待 G3-02 提供 ResearchContract 后启用（G5-02）" />
-      </Card>
-    </div>
-  );
-}
+export { ResearchNewPage } from "./ResearchNewPage";
 
 export function EvidencePage() {
   const { evidence, evidenceError } = useWorkbench();

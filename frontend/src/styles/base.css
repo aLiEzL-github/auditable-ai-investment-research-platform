@@ -175,3 +175,62 @@ body {
   border-color: #dc2626;
   color: #b91c1c;
 }
+
+/* G5-02 新建研究页 */
+.form-field {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.form-field__label {
+  width: 6rem;
+  text-align: right;
+}
+
+.form-field__input {
+  flex: 1;
+  max-width: 24rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border, #ccc);
+}
+
+.launch-gate {
+  padding: 0.6rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 6px;
+  border: 1px solid;
+  max-width: 900px;
+}
+
+.launch-gate[data-state="INCOMPLETE"] {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+
+.launch-gate[data-state="FAILED"] {
+  border-color: #d97706;
+  background: #fffbeb;
+}
+
+.launch-gate[data-state="COMPLETE"],
+.launch-gate[data-state="LAUNCHED"] {
+  border-color: #22c55e;
+  background: #f0fdf4;
+}
+
+.launch-button {
+  padding: 0.5rem 1.25rem;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #fff;
+  cursor: pointer;
+}
+
+.launch-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

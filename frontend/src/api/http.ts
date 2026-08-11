@@ -1,7 +1,15 @@
 // 真实后端实现 —— 只做传输，不做判定（E-1/E-2/E-3）。
 // 后端拒绝即透传错误，前端绝不自行构造 BLOCKED/CLEAR 结论。
+// G5-02：launchResearch 的后端判定（缺 contract 拒绝）一律透传，
+// 前端不得自行决定「可以启动」。
 
-import type { ReleaseEligibility, ReleaseRecord } from "../types";
+import type {
+  ReleaseEligibility,
+  ReleaseRecord,
+  ResearchContract,
+  ResearchContractStatus,
+  ResearchLaunchResult,
+} from "../types";
 import type { EvidenceView, WorkbenchApi } from "./client";
 
 export class HttpApi implements WorkbenchApi {
@@ -9,6 +17,18 @@ export class HttpApi implements WorkbenchApi {
 
   private async getJson<T>(path: string): Promise<T> {
     const res = await fetch(`${this.base}${path}`);
+    if (!res.ok) {
+      throw new Error(`backend rejected ${path}: HTTP ${res.status}`);
+    }
+    return (await res.json()) as T;
+  }
+
+  private async postJson<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${this.base}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
     if (!res.ok) {
       throw new Error(`backend rejected ${path}: HTTP ${res.status}`);
     }
@@ -25,6 +45,18 @@ export class HttpApi implements WorkbenchApi {
 
   getReleases(): Promise<ReleaseRecord[]> {
     return this.getJson<ReleaseRecord[]>("/api/releases");
+  }
+
+  getResearchContract(): Promise<{
+    status: ResearchContractStatus;
+    contract: ResearchContract | null;
+    missing_fields: string[];
+  }> {
+    return this.getJson("/api/research/contract");
+  }
+
+  launchResearch(form: ResearchContract): Promise<ResearchLaunchResult> {
+    return this.postJson<ResearchLaunchResult>("/api/research/launch", form);
   }
 
   async ping(): Promise<boolean> {
