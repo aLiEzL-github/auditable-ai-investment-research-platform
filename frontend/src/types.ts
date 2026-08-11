@@ -335,3 +335,117 @@ export interface OpenItemRow {
 export interface OpenItemsView {
   rows: OpenItemRow[];
 }
+
+// —— G5-05 审计/预测/校准/闭包/批准/发布/版本差异（基线 B §8）——
+// 与 backend/app/publish_engine.py（AuditResult/CurrentKey/closure）、
+// contracts/schema/{approval,release,prediction}.schema.json 对齐（规则 ⑱）。
+// E-1/E-2/E-3：release_eligible 只能由后端返回，前端不计算不改写。
+
+export interface AuditGateRow {
+  gate: string; // completeness / 材料性 / 规则门 / …
+  verdict: "PASS" | "FAIL";
+  checked: number; // 覆盖门报告适用门数（⑨）
+}
+
+export interface AuditView {
+  gates: AuditGateRow[];
+  release_eligible: boolean; // 后端唯一来源
+  failures: string[];
+  source: "BACKEND" | "MOCK";
+}
+
+// 预测预登记（prediction.schema.json：permanent CALIBRATION_PENDING）
+export type PredictionStatus =
+  | "REGISTERED" // 已登记（未到期）
+  | "DUE" // 已到期
+  | "PENDING_DECISION" // 到期未决
+  | "UNDECIDABLE"; // 不可裁决
+
+export interface PredictionRow {
+  id: string;
+  claim_id: string;
+  horizon: string;
+  probability: number;
+  calibration_pending: boolean;
+  registered_at: string;
+  status: PredictionStatus;
+}
+
+export interface PredictionsView {
+  rows: PredictionRow[];
+  calibration_sufficient: boolean; // 校准充分性
+  calibration_note: string;
+}
+
+// 批准（approval.schema.json）
+export type ApprovalStatus = "ACTIVE" | "REVOKED" | "PENDING";
+
+export interface ApprovalRow {
+  id: string;
+  object_ref: string;
+  approver: string;
+  approved_at: string | null;
+  subject_root_hash: string;
+  workflow: string;
+  scope_id: string;
+  current_key: string;
+  inputs_hash: string;
+  status: ApprovalStatus;
+  token: string;
+}
+
+export interface ApprovalsView {
+  rows: ApprovalRow[];
+}
+
+// 发布（release.schema.json）+ CurrentKey + UpdateDiff
+export interface ReleaseRowView {
+  id: string;
+  version: string;
+  parent_cas: string;
+  subject_root_hash: string;
+  manifest_hash: string;
+  released_at: string;
+  approval_id: string;
+  current_pointer: boolean;
+}
+
+export interface CurrentKeyView {
+  key: string; // 如 a-share-single-company-research/600089.SH
+  current: ReleaseRowView | null;
+}
+
+export interface UpdateDiffView {
+  from_version: string | null;
+  to_version: string;
+  changed_objects: { id: string; kind: string; from_hash: string; to_hash: string }[];
+}
+
+export interface ReleaseView {
+  keys: CurrentKeyView[];
+  diffs: UpdateDiffView[];
+}
+
+// 对象闭包（closure map）
+export interface ClosureObject {
+  id: string;
+  kind: string;
+  sha256: string;
+}
+
+export interface ClosureView {
+  subject_root: string;
+  complete: boolean;
+  count: number;
+  dangling: number;
+  objects: ClosureObject[];
+}
+
+export interface AuditOverview {
+  audit: AuditView;
+  approvals: ApprovalsView;
+  releases: ReleaseView;
+  predictions: PredictionsView;
+  closure: ClosureView;
+  gate7_reached: boolean; // Gate 7 前真实研究发布控件强制禁用
+}

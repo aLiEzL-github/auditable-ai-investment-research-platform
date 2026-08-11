@@ -4,15 +4,20 @@
 // 前端不得自行决定「可以启动」。
 
 import type {
+  ApprovalsView,
   AssumptionsView,
+  AuditOverview,
   CalcView,
   ClaimsView,
+  ClosureView,
   EvidenceLedger,
   MacroView,
   MetricSpecView,
   OpenItemsView,
+  PredictionsView,
   ReleaseEligibility,
   ReleaseRecord,
+  ReleaseView,
   ResearchContract,
   ResearchContractStatus,
   ResearchLaunchResult,
@@ -102,6 +107,26 @@ export class HttpApi implements WorkbenchApi {
 
   getOpenItemsView(): Promise<OpenItemsView> {
     return this.getJson<OpenItemsView>("/api/open-items");
+  }
+
+  getAuditOverview(): Promise<AuditOverview> {
+    return this.getJson<AuditOverview>("/api/audit");
+  }
+
+  getReleasesView(): Promise<ReleaseView> {
+    return this.getJson<ReleaseView>("/api/releases");
+  }
+
+  getClosureView(): Promise<ClosureView> {
+    return this.getJson<ClosureView>("/api/closure");
+  }
+
+  getPredictionsView(): Promise<PredictionsView> {
+    return this.getJson<PredictionsView>("/api/predictions");
+  }
+
+  getApprovalsView(): Promise<ApprovalsView> {
+    return this.getJson<ApprovalsView>("/api/approvals");
   }
 
   async ping(): Promise<boolean> {

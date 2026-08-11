@@ -3,10 +3,13 @@
 // MOCK 模式下 UI 可独立开发，但 E-1/E-3 验收必须切回真实后端断言。
 
 import type {
+  ApprovalsView,
   AssumptionsView,
+  AuditOverview,
   CalcView,
   Claim,
   ClaimsView,
+  ClosureView,
   EvidenceRecord,
   EvidenceLedger,
   FactRecord,
@@ -14,8 +17,10 @@ import type {
   MetricSpecView,
   OpenItem,
   OpenItemsView,
+  PredictionsView,
   ReleaseEligibility,
   ReleaseRecord,
+  ReleaseView,
   ResearchContract,
   ResearchContractStatus,
   ResearchLaunchResult,
@@ -508,7 +513,95 @@ export class MockApi implements WorkbenchApi {
     });
   }
 
+  getAuditOverview(): Promise<AuditOverview> {
+    return resolve(structuredClone(MOCK_AUDIT_OVERVIEW));
+  }
+
+  getReleasesView(): Promise<ReleaseView> {
+    return resolve(structuredClone(MOCK_AUDIT_OVERVIEW.releases));
+  }
+
+  getClosureView(): Promise<ClosureView> {
+    return resolve(structuredClone(MOCK_AUDIT_OVERVIEW.closure));
+  }
+
+  getPredictionsView(): Promise<PredictionsView> {
+    return resolve(structuredClone(MOCK_AUDIT_OVERVIEW.predictions));
+  }
+
+  getApprovalsView(): Promise<ApprovalsView> {
+    return resolve(structuredClone(MOCK_AUDIT_OVERVIEW.approvals));
+  }
+
   async ping(): Promise<boolean> {
     return true;
   }
 }
+
+// —— G5-05 mock fixture（形状对齐 publish_engine / approval/release/prediction schema）——
+
+const MOCK_AUDIT_OVERVIEW: AuditOverview = {
+  audit: {
+    gates: [
+      { gate: "completeness", verdict: "PASS", checked: 11 },
+      { gate: "materiality", verdict: "PASS", checked: 3 },
+      { gate: "rules", verdict: "PASS", checked: 4 },
+      { gate: "open_items", verdict: "FAIL", checked: 1 },
+    ],
+    release_eligible: false,
+    failures: ["E-G4-02-005: 未关材料性开放项 OI-9001"],
+    source: "MOCK",
+  },
+  approvals: {
+    rows: [
+      {
+        id: "APR-001",
+        object_ref: "candidate-600089",
+        approver: "U",
+        approved_at: "2026-08-11T10:00:00Z",
+        subject_root_hash: "aa11bb22cc33dd44ee55ff6677889900aabbccddeeff001122334455667788",
+        workflow: "a-share-single-company-research",
+        scope_id: "600089",
+        current_key: "a-share-single-company-research/600089.SH",
+        inputs_hash: "11223344556677889900aabbccddeeff00112233445566778899aabbccddeeff",
+        status: "PENDING",
+        token: "REVIEWED",
+      },
+    ],
+  },
+  releases: {
+    keys: [
+      {
+        key: "a-share-single-company-research/600089.SH",
+        current: null, // 尚未发布（Gate 7 前禁止）
+      },
+    ],
+    diffs: [],
+  },
+  predictions: {
+    rows: [
+      {
+        id: "PRED-001",
+        claim_id: "C-002",
+        horizon: "2027-06-30T00:00:00Z",
+        probability: 0.7,
+        calibration_pending: true,
+        registered_at: "2026-08-01T00:00:00Z",
+        status: "REGISTERED",
+      },
+    ],
+    calibration_sufficient: false,
+    calibration_note: "预测样本数不足 —— 校准充分性未建立（永久 CALIBRATION_PENDING，VD-26）",
+  },
+  closure: {
+    subject_root: "candidate-600089",
+    complete: true,
+    count: 11,
+    dangling: 0,
+    objects: [
+      { id: "candidate-600089", kind: "candidate", sha256: "aa11bb22cc33dd44ee55ff6677889900aabbccddeeff001122334455667788" },
+      { id: "ART-001", kind: "raw_artifact", sha256: "bb22cc33dd44ee55ff6677889900aabbccddeeff00112233445566778899" },
+    ],
+  },
+  gate7_reached: false, // Gate 7 未达 —— 真实研究发布控件强制禁用
+};

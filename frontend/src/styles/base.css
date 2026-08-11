@@ -295,3 +295,18 @@ body {
   padding: 0.75rem;
   border-radius: 6px;
 }
+
+/* G5-05 审计与发布 */
+.eligible-ok {
+  border: 2px solid #22c55e;
+  background: #f0fdf4;
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+}
+
+.eligible-fail {
+  border: 2px solid #dc2626;
+  background: #fef2f2;
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+}
