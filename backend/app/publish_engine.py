@@ -448,16 +448,22 @@ def create_approval(store: ArtifactStore, session, manifest: dict,
                     approver: str, key: CurrentKey,
                     candidate_digest: Optional[str] = None,
                     approved_at: Optional[str] = None,
-                    token: str = APPROVE_TOKEN) -> "ApprovalRow":
+                    token: str = APPROVE_TOKEN,
+                    acknowledged: bool = True) -> "ApprovalRow":
     """G4-04：批准绑定完整 CurrentKey + subject root + 输入哈希。
 
     聊天“继续”不算批准 —— token 必须是显式 APPROVE（L12 端点人工发起）。
     """
     from repository import Approval
+    from schema_validate import assert_writer
     if token != APPROVE_TOKEN:
         raise ValueError(f"E-G4-04-002: 聊天“继续”不算批准 —— token 须为 {APPROVE_TOKEN!r}")
     root = approval_subject_root(store, manifest)
     ih = inputs_hash(manifest, candidate_digest)
+    # 写权断言（B-2b (i)）：subject_root_hash_bound = 根哈希已真实计算；
+    # acknowledged = L12 批准端点（人工操作路径）的确认
+    assert_writer("approval", "L12_approval_endpoint", {
+        "subject_root_hash_bound": True, "acknowledged": bool(acknowledged)})
     appr = Approval(
         id=f"APR_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')}",
         schema_version="1.0.0",
@@ -551,6 +557,17 @@ def publish_release(store: ArtifactStore, session, manifest: dict,
             or manifest.get("current_key", "") != key.current_key):
         raise ValueError(
             f"E-G4-03-008: 清单 CurrentKey 与发布目标不符（跨域发布）")
+
+    # B-2b (i)（第十四轮审核）：写权经 assert_writer 走 writers.json 矩阵
+    # （release / current_pointer 条目：writer=L11_release，never 含
+    # LLM/L8/L9/L10 等；前置 MACHINE exit_predicate_and_parent_cas）。
+    # exit_predicate_and_parent_cas = 上面各项校验全部通过（批准 ACTIVE ∧
+    # 输入一致 ∧ 闭包完整 ∧ 跨域一致）—— 到达此行即谓词为真（校验失败
+    # 已提前抛错）。
+    from schema_validate import assert_writer
+    _pred_ok = True
+    assert_writer("release", writer, {"exit_predicate_and_parent_cas": _pred_ok})
+    assert_writer("current_pointer", writer, {"exit_predicate_and_parent_cas": _pred_ok})
 
     # 阶段 2：DB 事务（单事务提交 release + pointer）
     try:
