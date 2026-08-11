@@ -1,7 +1,7 @@
 {
   "schema": "test-baseline/1.0",
-  "declared_test_count": 212,
+  "declared_test_count": 223,
   "skip_whitelist": [],
-  "note": "T-1 精确匹配基线；增删用例须在 PR 显式更新（G2 修复批次 B4：+3 用例，205→208）",
-  "notes": "【2026-08-11】208→212：本 PR 新增 4 个用例 —— test_adr018_guards.py 的 test_install_fails_closed_if_already_imported / test_install_ok_when_not_imported（守卫 C 运行期拦截的失败关闭与正常路径），test_g2_06.py 的 test_whitelist_blocks_by_default / test_dynamic_dispatch_still_checked（守卫 B 白名单默认阻断与 getattr 动态派发仍受检）。"
+  "note": "T-1 精确匹配基线；增删用例须在 PR 显式更新（G3-01：212→223，+11 用例）",
+  "notes": "【2026-08-11】208→212：本 PR 新增 4 个用例 —— test_adr018_guards.py 的 test_install_fails_closed_if_already_imported / test_install_ok_when_not_imported（守卫 C 运行期拦截的失败关闭与正常路径），test_g2_06.py 的 test_whitelist_blocks_by_default / test_dynamic_dispatch_still_checked（守卫 B 白名单默认阻断与 getattr 动态派发仍受检）。\n【2026-08-11】212→223：本 PR 新增 11 个用例 —— test_g3_01.py（LLMProviderPort：可替换模型 / 权利门零外发 / 结构化输出 / 预算超时 / 失败不写事实表 / 来源边界 / 篡改哈希）。"
 }

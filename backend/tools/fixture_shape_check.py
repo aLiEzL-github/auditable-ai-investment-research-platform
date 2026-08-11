@@ -61,13 +61,22 @@ def check_matrix_source_fields():
 
 def check_action_map():
     """rights_action_map 的候选键须全部是真实矩阵里出现过的领域键 ——
-    这正是 OI-PF-128 的根因所在：两套词汇不相交而无人察觉。"""
+    这正是 OI-PF-128 的根因所在：两套词汇不相交而无人察觉。
+
+    **例外（G3-01/POD-08）**：declared_no_auth 声明的动作（如 LLM_OUTBOUND）
+    其候选键在矩阵中**故意不存在** —— 权利未裁定 = 恒 UNKNOWN = 零外发，
+    是预期的 fail-closed 形态，而非词汇不相交缺陷。此类键从比对集中扣除；
+    但扣除**仅允许**该声明列出的键，且零命中由 rights_action_map_check.py
+    单独守卫（若矩阵将来登记了该键，守卫转红要求重审声明）。"""
     amap = _load_real("contracts/rights_action_map.json")
+    declared = amap.get("declared_no_auth", {})
     real = _matrix_keys(_load_real("contracts/rights_matrix.json"))
     cands = set()
-    for v in amap.get("map", {}).values():
+    for act, v in amap.get("map", {}).items():
+        if act in declared:
+            continue  # 预期零命中：键可不在矩阵（另由 rights_action_map_check 守卫）
         cands |= set(v)
-    return ("rights_action_map.json 的候选键", cands, real,
+    return ("rights_action_map.json 的候选键（不含 declared_no_auth）", cands, real,
             "contracts/rights_matrix.json 的 actions 键集")
 
 
