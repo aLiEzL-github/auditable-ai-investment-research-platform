@@ -203,6 +203,77 @@ class ClaimEvidenceLink(Base):
     direction = Column(String(16), nullable=False)  # SUPPORT / REFUTE
 
 
+class Approval(Base):
+    """G4-04 批准事件：哈希绑定完整 CurrentKey 与输入（contracts/schema/approval.schema.json）。
+
+    任一输入变化批准失效（inputs_hash 重算不符 → INVALIDATED）；
+    token 必须是显式 APPROVE —— 聊天“继续”不算批准（LLM 不得写入）。
+    """
+    __tablename__ = "approval"
+
+    id = Column(String(64), primary_key=True)
+    schema_version = Column(String(16), nullable=False)
+    object_ref = Column(String(64), nullable=False)
+    approver = Column(String(64), nullable=False)
+    approved_at = Column(DateTime, nullable=False)
+    subject_root_hash = Column(String(64), nullable=False)
+    workflow = Column(String(64), nullable=False)
+    scope_id = Column(String(64), nullable=False)
+    current_key = Column(String(64), nullable=False, default="")
+    inputs_hash = Column(String(64), nullable=False)
+    status = Column(String(16), nullable=False, default="ACTIVE")
+    token = Column(String(16), nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+
+
+class Release(Base):
+    """G4-03 发布：父版本 CAS + 唯一准出谓词；id = 内容哈希（不可变）。
+
+    contracts/schema/release.schema.json。版本号（semver）与 CAS 乐观锁分离：
+    version = 语义版本；version_cas = 乐观锁。
+    """
+    __tablename__ = "release"
+    __table_args__ = (UniqueConstraint("workflow", "scope_id", "current_key",
+                                       "version", name="uq_release_domain_version"),)
+
+    id = Column(String(64), primary_key=True)
+    schema_version = Column(String(16), nullable=False)
+    workflow = Column(String(64), nullable=False)
+    scope_id = Column(String(64), nullable=False)
+    current_key = Column(String(64), nullable=False, default="")
+    version = Column(String(32), nullable=False)          # semver 1.0.0 / 1.1.0
+    parent_cas = Column(String(64), nullable=True)        # 父 manifest 内容哈希
+    subject_root_hash = Column(String(64), nullable=False)
+    manifest_hash = Column(String(64), nullable=False)
+    approval_id = Column(String(64), ForeignKey("approval.id"), nullable=False)
+    released_at = Column(DateTime, nullable=False)
+    version_cas = Column(Integer, nullable=False, default=1)
+
+
+class CurrentPointer(Base):
+    """G4-03 CurrentKey 指针：按 workflow/scope_id/current_key 分域；追加式。
+
+    seq 域内单调递增；unique(workflow,scope_id,current_key,seq) 承担并发 CAS：
+    同一 seq 二次提交（并发发布）必冲突。每次变更留痕（D-6）：
+    谁（changed_by）· 何时（changed_at）· 依据哪个批准（approval_id）。
+    """
+    __tablename__ = "current_pointer"
+    __table_args__ = (UniqueConstraint("workflow", "scope_id", "current_key", "seq",
+                                       name="uq_pointer_domain_seq"),)
+
+    id = Column(String(64), primary_key=True)
+    schema_version = Column(String(16), nullable=False)
+    workflow = Column(String(64), nullable=False)
+    scope_id = Column(String(64), nullable=False)
+    current_key = Column(String(64), nullable=False, default="")
+    release_id = Column(String(64), ForeignKey("release.id"), nullable=False)
+    seq = Column(Integer, nullable=False)
+    changed_by = Column(String(64), nullable=False)
+    changed_at = Column(DateTime, nullable=False)
+    approval_id = Column(String(64), ForeignKey("approval.id"), nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+
+
 class Repository:
     """Repository 基类：事务、CAS（版本乐观锁）、有限重试。"""
 

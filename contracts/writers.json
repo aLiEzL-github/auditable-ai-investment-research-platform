@@ -355,6 +355,18 @@
           "description": "双录复核完成（G2-13）"
         }
       ]
+    },
+    "manifest": {
+      "any_of": true,
+      "never": [
+        "LLM"
+      ],
+      "preconditions": [
+        {
+          "check": "NONE",
+          "description": "G4-01 发布清单（L7_freeze/L11_release 域；LLM 禁）"
+        }
+      ]
     }
   },
   "section2_mapping": [
