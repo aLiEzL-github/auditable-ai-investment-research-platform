@@ -74,10 +74,17 @@ def main() -> int:
     L.append("范围口径   = ADR-021 §2 并集：material ∧ OPEN ∧ category != 签署前置条件；"
              "blocks_development 含 G4-xx 必含 | blocks_data_flow/blocks_decisions/"
              "deprecated_blocks_gate 含 G4/Gate 4 —— blocks_development 含 G4-xx，ADR-021")
-    L.append("结论       = " + ("**READY_FOR_APPROVAL**（G4 范围内材料性开放项为零）"
-                             if not g4_mat else
-                             f"**NOT_READY** —— G4 范围内材料性开放项 "
-                             f"{len(g4_mat)} 项 ≠ 0，ADR-010 §4 不得 PASS"))
+    # 结论除范围内计数外，**工程测试未全过亦须转 NOT_READY**（与 G3 包一致）——
+    # 一个记着测试失败的验收包不该被当作可审阅材料。
+    _tests_out = status_of(".venv/bin/python -m unittest discover "
+                           "-s backend/tests 2>&1 | tail -1")
+    _blockers = []
+    if g4_mat:
+        _blockers.append(f"G4 范围内材料性开放项 {len(g4_mat)} 项 ≠ 0，ADR-010 §4 不得 PASS")
+    if not _tests_out.strip().startswith("OK"):
+        _blockers.append(f"**工程测试未全过**：{_tests_out.strip()[:70]}")
+    L.append("结论       = " + ("**READY_FOR_APPROVAL**（G4 范围内材料性开放项为零；工程测试全过）"
+                             if not _blockers else "**NOT_READY** —— " + "；".join(_blockers)))
     L.append("independent_reviewer_present = false（VD-02 = 1 名自然人）")
     L.append("```\n")
     L.append("> **本包不是 Gate 4 PASS。** 供批准人审阅的冻结材料；签署按 ADR-016 S1—S5。\n")
@@ -141,15 +148,30 @@ def main() -> int:
     L.append("```text")
     L.append(f"Gate 4 范围内的材料性开放项（ADR-021 §2 口径）：{len(g4_mat)} 项（须为零）"
              + (f" —— 非零: {[i['open_item_id'] for i in g4_mat]}" if g4_mat else ""))
+    # ADR-021 §2 的范围口径是**四字段并集**，故清单也须按并集显示阻断关系。
+    # 初版只显示 blocks_development，于是 OI-PF-147（blocks_decisions 非空、
+    # blocks_development 为 None）显示「阻断=无」—— 与 Gate 3 包对同一项的
+    # 记载矛盾，而两包读的是同一份台账。
+    def _blk(i):
+        _parts = []
+        if i.get("blocks_development"):
+            _parts.append(f"任务={i['blocks_development']}")
+        if i.get("blocks_decisions"):
+            _parts.append(f"决策={i['blocks_decisions']}")
+        if i.get("blocks_data_flow"):
+            _parts.append(f"数据面={i['blocks_data_flow']}")
+        return " · ".join(_parts) or "无"
     for i in g4_mat:
         L.append(f"   {i['open_item_id']}: {i.get('status')} 材料性={i.get('material')} "
-                 f"阻断={i.get('blocks_development')}")
+                 f"阻断={_blk(i)}")
     L.append(f"② 全部未闭材料性开放项 —— {len(mat)} 项")
     for i in mat:
-        L.append(f"   {i['open_item_id']} | {i.get('category','')} | "
-                 f"阻断={i.get('blocks_development') or '无'}")
-    L.append("③ 债务趋势：G4 期间新增开放项 "
-             + f"{len(g4_added)} · 关闭 {oi_closed} · 净变化 {oi_closed - len(g4_added)}")
+        L.append(f"   {i['open_item_id']} | {i.get('category','')} | 阻断={_blk(i)}")
+    # 净变化 = 新增 - 关闭。初版写成 关闭 - 新增，于是「新增 3 · 关闭 21」
+    # 得出「净变化 18」—— 债务净减少 18 却显示为正数，读者会读成净增加。
+    _net = len(g4_added) - oi_closed
+    L.append(f"③ 债务趋势（ADR-010 §3.1 第 3 条）：G4 期间新增 {len(g4_added)} 项 · "
+             f"关闭 {oi_closed} 项 · 净变化 {_net:+d} 项（负数 = 债务净减少）")
     L.append("```\n")
 
     # ── §2 测试基线 ────────────────────────────────────────────
@@ -159,11 +181,16 @@ def main() -> int:
         rc, out, err = run(f"python3 {shlex.quote(os.path.join(PORTFOLIO, 'tools', script))} "
                            f"{shlex.quote(PORTFOLIO)}")
         L.append(f"{name}: 退出码 {rc} | {out.splitlines()[-1] if out else err}")
-    L.append(f"工程测试: {status_of('.venv/bin/python -m unittest discover -s backend/tests 2>&1 | tail -1')}")
+    L.append(f"工程测试: {_tests_out}")
+    # 初版用系统 python3 跑守卫，而工程测试用 .venv/bin/python —— 同一段代码
+    # 两套解释器，于是 migration_check 报 ModuleNotFoundError: sqlalchemy，
+    # 却与其他守卫并列显示，读者会以为它检查过了。改为统一用 venv，
+    # 且**退出码非 0 时显式标注「未通过/未跑起来」**（没检查 ≠ 检查通过）。
     for t in ("arch_import_check", "contract_coverage_check", "migration_check",
               "data_ingress_scan"):
-        rc, out, _ = run(f"python3 backend/tools/{t}.py . 2>&1 | tail -1")
-        L.append(f"{t}: {out}")
+        rc, out, err = run(f".venv/bin/python backend/tools/{t}.py . 2>&1 | tail -1")
+        _mark = "" if rc == 0 else f"  ← **rc={rc}，未通过或未跑起来**"
+        L.append(f"{t}: {out or err}{_mark}")
     L.append("```\n")
 
     # ── §3 签署前置 ────────────────────────────────────────────
