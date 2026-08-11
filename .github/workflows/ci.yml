@@ -97,6 +97,10 @@ jobs:
         run: python backend/tools/wheel_policy_check.py .
       - name: Fixture shape check (OI-PF-129)
         run: python backend/tools/fixture_shape_check.py .
+      # OI-PF-022：VD-20 = 仅内部。.gitignore 按扩展名/目录禁入，挡不住
+      # .json 形态的研究产出，且只防误加不防 git add -f。本守卫做内容层拦截。
+      - name: Research data interdiction (OI-PF-022 / VD-20)
+        run: python backend/tools/research_data_interdict.py .
       # OI-PF-012 由 main 的独立 test-integrity 作业承担（PR #44，已是 required
       # check）。此处不再重复接线 —— 同一守卫挂两处会让「哪一处是 required」
       # 变得含糊，而 required 与否正是 OI-PF-140 的教训所在。
