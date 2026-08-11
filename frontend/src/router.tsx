@@ -5,6 +5,7 @@ import { Shell } from "./components/Shell";
 import {
   AuditPage,
   ClaimsPage,
+  EligibilityPage,
   EvidencePage,
   MacroPage,
   MetricSpecPage,
@@ -27,7 +28,7 @@ export const router = createBrowserRouter([
       { path: "claims", element: <ClaimsPage /> },
       { path: "scenarios", element: <ScenariosPage /> },
       { path: "audit", element: <AuditPage /> },
-      { path: "audit/eligibility", element: <AuditPage /> },
+      { path: "audit/eligibility", element: <EligibilityPage /> },
     ],
   },
 ]);
