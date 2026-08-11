@@ -100,6 +100,17 @@ class TestSnapshot(unittest.TestCase):
             self.svc.bind_fact("SNAP_F", f)
         self.assertIn("E-G2-08-005", str(ctx.exception))
 
+    # ── OI-PF-031：未冻结对象参与下游计算必须失败关闭 ───────────────
+    def test_unfrozen_rejected_for_computation(self):
+        snap = self.svc.create_snapshot("SNAP_C", self.cutoff, scope_set=["600089"])
+        with self.assertRaises(ValueError) as ctx:
+            self.svc.snapshot_for_computation("SNAP_C")
+        self.assertIn("E-G2-08-007", str(ctx.exception))
+        # 冻结后即可供计算层读取
+        self.svc.freeze("SNAP_C")
+        got = self.svc.snapshot_for_computation("SNAP_C")
+        self.assertTrue(got.frozen)
+
     # ── 离线 CI 可复跑（OI-PF-038：同 seed 同字节）─────────────────
     def test_fixture_reproducible_offline(self):
         """gen_fixtures 同 seed 产出同字节（黄金 fixture 集成，离线可复跑）。"""

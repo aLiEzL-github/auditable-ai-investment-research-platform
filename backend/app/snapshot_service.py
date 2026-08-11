@@ -37,6 +37,23 @@ class SnapshotService:
         self.s.commit()
         return snap
 
+    # ── 计算入口：未冻结对象参与下游计算必须失败关闭（OI-PF-031）───
+    def snapshot_for_computation(self, snapshot_id: str) -> Snapshot:
+        """计算层读取 snapshot 的**唯一入口**（ADR-002 核心验收）。
+
+        未冻结（frozen=False）的 snapshot 参与下游计算必须失败关闭：
+        冻结是对「同一运行不混用事后数据」的机器保证，绕过它等于
+        把未冻结（可仍在写入）的快照当作已定稿数据使用。
+        """
+        snap = self.s.query(Snapshot).filter_by(id=snapshot_id).first()
+        if snap is None:
+            raise ValueError(f"E-G2-08-004: snapshot 不存在: {snapshot_id}")
+        if not snap.frozen:
+            raise ValueError(
+                f"E-G2-08-007: 未冻结 snapshot 不得参与下游计算: {snapshot_id} "
+                f"frozen=False —— 先 freeze 再计算")
+        return snap
+
     # ── 绑定事实：cutoff / scope / 漂移 三重校验 ────────────────────
     def bind_fact(self, snapshot_id: str, fact: FactRecord) -> Snapshot:
         snap = self.s.query(Snapshot).filter_by(id=snapshot_id).first()

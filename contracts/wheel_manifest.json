@@ -1,7 +1,7 @@
 {
  "schema": "wheel-manifest/1.0",
- "rationale": "OI-PF-131/OI-PF-141：wheel_policy_check 须离线运行——守卫自身不得出网（M1/M4）。本清单把「哈希 → PyPI 上的文件名」固化为**已提交、经 PR 评审**的制品，检查器只读它。刷新须显式运行 backend/tools/wheel_manifest_refresh.py，其出网行为在 arch_import_check 中单列豁免并写明理由。",
- "refreshed_at": "2026-08-10T12:19:32Z",
+ "rationale": "OI-PF-131/OI-PF-141：wheel_policy_check 须离线运行 —— 守卫自身不得出网（M1/M4）。本清单把「哈希 → PyPI 上的文件名」固化为已提交、经 PR 评审的制品，检查器只读它。",
+ "refreshed_at": "2026-08-11T01:05:27Z",
  "source": "https://pypi.org/pypi/{name}/{version}/json",
  "files": {
   "436728ce18a80f6951a1e11cc6112c2ede9faf20766f1a26195a7c441ca12dbd": "sqlalchemy-2.0.51-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",

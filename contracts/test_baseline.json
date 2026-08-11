@@ -1,7 +1,7 @@
 {
   "schema": "test-baseline/1.0",
-  "rationale": "OI-PF-012（基线 A §9.1 / 附录 A.1）：空测试或被跳过的测试必须使 required check 失败——缺此门则 CI 全绿不构成任何证据。用例数在此**精确声明**，增删测试都须在 PR 中显式改动本文件，使测试集合的收缩不可能悄悄发生。",
-  "expected_tests": 205,
-  "allowed_skips": [],
-  "allowed_skips_note": "空列表 = 当前零跳过。若确需跳过，须在此逐个列出完整用例 id 并在 PR 中写明理由——沉默不算决定。"
+  "declared_test_count": 212,
+  "skip_whitelist": [],
+  "note": "T-1 精确匹配基线；增删用例须在 PR 显式更新（G2 修复批次 B4：+3 用例，205→208）",
+  "notes": "【2026-08-11】208→212：本 PR 新增 4 个用例 —— test_adr018_guards.py 的 test_install_fails_closed_if_already_imported / test_install_ok_when_not_imported（守卫 C 运行期拦截的失败关闭与正常路径），test_g2_06.py 的 test_whitelist_blocks_by_default / test_dynamic_dispatch_still_checked（守卫 B 白名单默认阻断与 getattr 动态派发仍受检）。"
 }

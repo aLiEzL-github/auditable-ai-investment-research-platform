@@ -16,6 +16,13 @@ jobs:
       - name: Contract coverage (GG-1/OI-PF-121)
         run: python3 backend/tools/contract_coverage_check.py .
 
+  test-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Test integrity (A2-1/OI-PF-012)
+        run: python3 backend/tools/test_integrity_check.py .
+
   lint-typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -90,10 +97,9 @@ jobs:
         run: python backend/tools/wheel_policy_check.py .
       - name: Fixture shape check (OI-PF-129)
         run: python backend/tools/fixture_shape_check.py .
-      # OI-PF-012：本步骤须与测试作业**并列为 required** —— 它保证的是
-      # 「那个绿色的测试作业不是空跑」，而不是测试本身通过。
-      - name: Test integrity - no empty/skipped tests (OI-PF-012)
-        run: python backend/tools/test_integrity_check.py .
+      # OI-PF-012 由 main 的独立 test-integrity 作业承担（PR #44，已是 required
+      # check）。此处不再重复接线 —— 同一守卫挂两处会让「哪一处是 required」
+      # 变得含糊，而 required 与否正是 OI-PF-140 的教训所在。
 
   migration-check:
     runs-on: ubuntu-latest
