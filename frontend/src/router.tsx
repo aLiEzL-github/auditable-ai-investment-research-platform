@@ -2,7 +2,15 @@
 
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Shell } from "./components/Shell";
-import { AuditPage, ClaimsPage, EvidencePage, MacroPage, ResearchNewPage } from "./pages/Pages";
+import {
+  AuditPage,
+  ClaimsPage,
+  EvidencePage,
+  MacroPage,
+  MetricSpecPage,
+  ResearchNewPage,
+  RulesPage,
+} from "./pages/Pages";
 
 export const router = createBrowserRouter([
   {
@@ -12,6 +20,8 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/research/new" replace /> },
       { path: "research/new", element: <ResearchNewPage /> },
       { path: "evidence", element: <EvidencePage /> },
+      { path: "rules", element: <RulesPage /> },
+      { path: "metrics", element: <MetricSpecPage /> },
       { path: "macro", element: <MacroPage /> },
       { path: "claims", element: <ClaimsPage /> },
       { path: "audit", element: <AuditPage /> },
