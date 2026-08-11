@@ -27,8 +27,13 @@ import json
 import os
 import sys
 
-PORTFOLIO = sys.argv[1] if len(sys.argv) > 1 else \
-    "/Users/li/Documents/Claudetext/portfolio"
+# OI-PF-153 同类：原默认值写死本机绝对路径，CI 上不存在该目录，
+# 工具崩溃且 stdout 非 JSON —— test_g3_08 的 5 个用例因此在 CI 上全部
+# ERROR/FAIL，而本机全过。**本机通过不构成 CI 通过。**
+# 优先级：显式参数 > PORTFOLIO_ROOT 环境变量 > 本机默认值。
+PORTFOLIO = (sys.argv[1] if len(sys.argv) > 1
+             else os.environ.get("PORTFOLIO_ROOT")
+             or "/Users/li/Documents/Claudetext/portfolio")
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "backend", "app"))

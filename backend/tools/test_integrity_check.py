@@ -76,7 +76,12 @@ def main() -> int:
             continue
         src = open(os.path.join(TESTS, fn), encoding="utf-8").read()
         for i, ln in enumerate(src.splitlines(), 1):
-            if "@skip" in ln or "@expectedFailure" in ln:
+            # 原判据只匹配字面 "@skip"，**抓不到** @unittest.skipUnless /
+            # @unittest.skipIf（其 @ 后面是 "u"），也抓不到运行期 self.skipTest()。
+            # 一个专为捕获跳过而设的检查，捕获不到最常见的跳过写法。
+            if any(k in ln for k in ("@skip", "@unittest.skip", "@pytest.mark.skip",
+                                     "@expectedFailure", "@unittest.expectedFailure",
+                                     "self.skipTest(", "raise unittest.SkipTest")):
                 key = f"{fn}:{i}"
                 if key not in skip_allow:
                     skipped.append(key)
