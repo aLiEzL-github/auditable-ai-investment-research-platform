@@ -5,13 +5,16 @@
 import type {
   Claim,
   EvidenceRecord,
+  EvidenceLedger,
   FactRecord,
+  MetricSpecView,
   OpenItem,
   ReleaseEligibility,
   ReleaseRecord,
   ResearchContract,
   ResearchContractStatus,
   ResearchLaunchResult,
+  RulesView,
 } from "../types";
 
 export interface EvidenceView {
@@ -31,5 +34,8 @@ export interface WorkbenchApi {
     missing_fields: string[];
   }>;
   launchResearch(form: ResearchContract): Promise<ResearchLaunchResult>;
+  getEvidenceLedger(): Promise<EvidenceLedger>;
+  getRulesView(): Promise<RulesView>;
+  getMetricSpecView(): Promise<MetricSpecView>;
   ping(): Promise<boolean>;
 }

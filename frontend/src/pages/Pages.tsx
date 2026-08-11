@@ -1,33 +1,12 @@
-// 各 Gate 页面的骨架占位（G5-01 只交付外壳；G5-03/04/05 填充内容）
+// 各 Gate 页面的骨架占位与导出
 
 import { Link } from "react-router-dom";
 import { Card, EmptyState } from "../components/Basic";
-import { useWorkbench } from "../state/WorkbenchContext";
 
 export { ResearchNewPage } from "./ResearchNewPage";
-
-export function EvidencePage() {
-  const { evidence, evidenceError } = useWorkbench();
-  return (
-    <div className="page">
-      <h1>证据台账（G5-03 交付）</h1>
-      {evidenceError != null ? (
-        <Card title="证据加载失败（E-8：显式报错，不得静默）">
-          <EmptyState label={evidenceError} />
-        </Card>
-      ) : (
-        <Card title="证据视图">
-          <ul data-testid="evidence-summary">
-            <li>Claim 数：{evidence?.claims.length ?? "—"}</li>
-            <li>证据片段数：{evidence?.evidence.length ?? "—"}</li>
-            <li>事实数：{evidence?.facts.length ?? "—"}</li>
-            <li>开放项数：{evidence?.openItems.length ?? "—"}</li>
-          </ul>
-        </Card>
-      )}
-    </div>
-  );
-}
+export { EvidenceLedgerPage as EvidencePage } from "./EvidenceLedgerPage";
+export { RulesPage } from "./RulesPage";
+export { MetricSpecPage } from "./MetricSpecPage";
 
 export function MacroPage() {
   return (

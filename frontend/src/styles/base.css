@@ -234,3 +234,48 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* G5-03 证据台账 / Rule 状态 / MetricSpec */
+.rules-table {
+  width: 100%;
+  max-width: 1000px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.rules-table th,
+.rules-table td {
+  border: 1px solid var(--border, #ccc);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.rule-locator {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-left: 0.5rem;
+}
+
+.source-basis,
+.source-locator,
+.source-sha,
+.conflict-detail,
+.na-basis__text,
+.na-basis__sig {
+  font-size: 0.85rem;
+  color: #475569;
+  margin: 0.25rem 0;
+}
+
+.source-sha {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+.conflict-detail,
+.na-basis__text {
+  color: #b91c1c;
+}

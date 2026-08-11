@@ -9,6 +9,8 @@ import { useCallback } from "react";
 const NAV_ITEMS = [
   { to: "/research/new", label: "新建研究" },
   { to: "/evidence", label: "证据台账" },
+  { to: "/rules", label: "Rule 状态" },
+  { to: "/metrics", label: "MetricSpec" },
   { to: "/macro", label: "宏观与计算" },
   { to: "/claims", label: "Claim 与假设" },
   { to: "/audit", label: "审计与发布" },

@@ -4,11 +4,14 @@
 // 前端不得自行决定「可以启动」。
 
 import type {
+  EvidenceLedger,
+  MetricSpecView,
   ReleaseEligibility,
   ReleaseRecord,
   ResearchContract,
   ResearchContractStatus,
   ResearchLaunchResult,
+  RulesView,
 } from "../types";
 import type { EvidenceView, WorkbenchApi } from "./client";
 
@@ -57,6 +60,18 @@ export class HttpApi implements WorkbenchApi {
 
   launchResearch(form: ResearchContract): Promise<ResearchLaunchResult> {
     return this.postJson<ResearchLaunchResult>("/api/research/launch", form);
+  }
+
+  getEvidenceLedger(): Promise<EvidenceLedger> {
+    return this.getJson<EvidenceLedger>("/api/evidence/ledger");
+  }
+
+  getRulesView(): Promise<RulesView> {
+    return this.getJson<RulesView>("/api/rules");
+  }
+
+  getMetricSpecView(): Promise<MetricSpecView> {
+    return this.getJson<MetricSpecView>("/api/metrics");
   }
 
   async ping(): Promise<boolean> {

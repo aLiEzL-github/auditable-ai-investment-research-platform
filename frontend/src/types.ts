@@ -118,3 +118,92 @@ export type ResearchLaunchResult =
 export type ResearchContractStatus =
   | "MISSING" // 未取得契约 —— 不得启动
   | "VALID"; // 契约完整 —— 可启动
+
+// —— G5-03 证据台账 / MetricSpec / Rule 状态（基线 B §8）——
+// 与 backend/app/rule_registry.py（七态）、contracts/metric_spec.json、
+// contracts/rights_matrix.json、contracts/schema/source.schema.json 对齐（规则 ⑱）
+
+export type SourceKind = "PRIMARY" | "SECONDARY";
+export type SourceStatus = "ALLOWED" | "UNKNOWN" | "PROHIBITED";
+
+export interface SourceRecord {
+  id: string;
+  kind: SourceKind;
+  name: string;
+  status: SourceStatus;
+  legal_basis: string;
+  locator: string;
+  sha256: string;
+}
+
+export type EvidenceConflict =
+  | "NONE"
+  | "VALUE_CONFLICT" // 主副源数值冲突
+  | "RIGHTS_BLOCKED"; // 来源权利状态 UNKNOWN/PROHIBITED
+
+export interface EvidenceItem {
+  evidence_id: string;
+  artifact_id: string;
+  sha256: string;
+  source: SourceRecord;
+  snippet: string;
+  conflict: EvidenceConflict;
+  conflict_detail: string;
+}
+
+export interface EvidenceLedger {
+  items: EvidenceItem[];
+  sources: SourceRecord[];
+}
+
+// Rule 状态（G3-09 七态，逐字取用）
+export type RuleStatus =
+  | "PASS"
+  | "FAIL"
+  | "INPUT_MISSING"
+  | "NOT_COMPARABLE"
+  | "RESTATEMENT_PENDING"
+  | "NOT_RUN"
+  | "NOT_APPLICABLE";
+
+// 非 PASS 状态（BLOCKING，逐字取用 BLOCKING = FAIL/INPUT_MISSING/
+// NOT_COMPARABLE/RESTATEMENT_PENDING/NOT_RUN）
+export const RULE_BLOCKING: readonly RuleStatus[] = [
+  "FAIL",
+  "INPUT_MISSING",
+  "NOT_COMPARABLE",
+  "RESTATEMENT_PENDING",
+  "NOT_RUN",
+];
+
+export interface RuleStatusRow {
+  rule_id: string; // R01…R10
+  title: string;
+  definition: string;
+  version: string;
+  status: RuleStatus;
+  applicability: {
+    applicable: boolean;
+    basis: string; // N/A 必须显示的预冻结依据
+    signature: string;
+  };
+  denominator: string; // 冻结适用分母
+  inputs: string[]; // 输入
+  result: string; // 结果
+  locator: string;
+}
+
+export interface MetricSpecRow {
+  metric_id: string;
+  expected_origin: string;
+  caliber: string;
+}
+
+export interface RulesView {
+  rows: RuleStatusRow[];
+}
+
+export interface MetricSpecView {
+  rows: MetricSpecRow[]; // 20 项
+  frozen_sha256: string;
+}
