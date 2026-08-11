@@ -1,7 +1,7 @@
 {
  "schema": "wheel-manifest/1.0",
  "rationale": "OI-PF-131/OI-PF-141：wheel_policy_check 须离线运行 —— 守卫自身不得出网（M1/M4）。本清单把「哈希 → PyPI 上的文件名」固化为已提交、经 PR 评审的制品，检查器只读它。",
- "refreshed_at": "2026-08-11T01:05:27Z",
+ "refreshed_at": "2026-08-11T01:32:36Z",
  "source": "https://pypi.org/pypi/{name}/{version}/json",
  "files": {
   "436728ce18a80f6951a1e11cc6112c2ede9faf20766f1a26195a7c441ca12dbd": "sqlalchemy-2.0.51-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
@@ -47,6 +47,8 @@
   "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8": "typing_extensions-4.16.0-py3-none-any.whl",
   "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897": "urllib3-2.7.0-py3-none-any.whl",
   "a0af1213f3c2226497a97e2b3aa01a7e4bee4f403f95be16fc9acd2947514a78": "webencodings-0.5.1-py2.py3-none-any.whl",
-  "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9": "xlrd-2.0.2-py2.py3-none-any.whl"
+  "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9": "xlrd-2.0.2-py2.py3-none-any.whl",
+  "42896c24968481dd953eeeb11de331f6870917811961c9b26ba09071e07180e2": "py_mini_racer-0.6.0-py2.py3-none-manylinux1_x86_64.whl",
+  "629eaccd0e1d18366804b797eb2692ed47bed0028f55b5a5af3cc277d521df04": "akracer-0.0.14-py3-none-any.whl"
  }
 }

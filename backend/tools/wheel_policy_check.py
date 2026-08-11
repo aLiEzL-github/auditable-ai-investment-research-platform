@@ -28,15 +28,19 @@ POLICY = os.path.join(ROOT, "contracts", "supply_chain_policy.json")
 MANIFEST = os.path.join(ROOT, "contracts", "wheel_manifest.json")
 
 # PEP 508 extras：psycopg[binary]==3.3.4 —— 不认 extras 会整行漏掉（OI-PF-134）
+# OI-PF-147：依赖行可带 PEP 508 环境标记（`pkg==1.0 ; platform_system == "Linux"`）。
+# 初版正则不认标记，两条平台条件依赖被整行漏掉 —— 由 E-WHEEL-003 的逐行交叉
+# 核对当场抓出（逐行 36 vs 解析 34）。标记捕获为第 4 组，供 §平台闭包核对使用。
 PIN = re.compile(
-    r"^([A-Za-z0-9_.\-]+)(\[[^\]]*\])?==([^\s\\]+)"
+    r"^([A-Za-z0-9_.\-]+)(\[[^\]]*\])?==([^\s\\;]+)"
+    r"[ \t]*(;[^\\\n]*)?"
     r"((?:[ \t]*\\\n[ \t]*--hash=sha256:[0-9a-f]{64})+)", re.M)
 
 
 def parse(path):
     txt = open(path, encoding="utf-8").read()
     out = [(m.group(1), m.group(3),
-            re.findall(r"sha256:([0-9a-f]{64})", m.group(4)))
+            re.findall(r"sha256:([0-9a-f]{64})", m.group(5)))
            for m in PIN.finditer(txt)]
     # 交叉核对：逐行数出的固定行数须与解析结果一致（沿用 E-SBOM-001 的做法，
     # 避免「解析器漏认 → 检查范围静默缩小」）

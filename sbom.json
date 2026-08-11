@@ -423,6 +423,28 @@
      "content": "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9"
     }
    ]
+  },
+  {
+   "type": "library",
+   "name": "py-mini-racer",
+   "version": "0.6.0",
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "42896c24968481dd953eeeb11de331f6870917811961c9b26ba09071e07180e2"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "name": "akracer",
+   "version": "0.0.14",
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "629eaccd0e1d18366804b797eb2692ed47bed0028f55b5a5af3cc277d521df04"
+    }
+   ]
   }
  ]
 }

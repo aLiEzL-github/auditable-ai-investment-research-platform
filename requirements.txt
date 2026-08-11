@@ -84,3 +84,20 @@ webencodings==0.5.1 \
     --hash=sha256:a0af1213f3c2226497a97e2b3aa01a7e4bee4f403f95be16fc9acd2947514a78
 xlrd==2.0.2 \
     --hash=sha256:ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9
+
+# ── OI-PF-147：akshare 的**平台条件依赖**（Linux 侧）──
+# akshare 元数据声明三条按平台分支的依赖：
+#   mini-racer>=0.12.4;    platform_system != "Linux"   ← 上面已固定
+#   py-mini-racer>=0.6.0;  platform_system == "Linux"   ← 下面两条
+#   akracer>=0.0.13;       platform_system == "Linux"
+# 清单原在 macOS 上生成，只拿到第一条，CI（linux）因此 --require-hashes 失败。
+# ⚠️ 二者均为 V8 引擎，且**都写入 py_mini_racer 命名空间**
+#   （共同占用 py_mini_racer/__init__.py 与 py_mini_racer.py）——
+#   最终生效的实现取决于安装顺序。ADR-020 的 V8 裁定原只涵盖 mini-racer。
+# ⚠️ akracer 的 wheel 标签为 py3-none-any 且 Root-Is-Purelib: true，
+#   却内含 32MB 原生二进制（.dylib + .glibc.so）—— pip 不会做平台校验。
+# 哈希已下载实算复验（2026-08-11）。
+py-mini-racer==0.6.0 ; platform_system == "Linux" \
+    --hash=sha256:42896c24968481dd953eeeb11de331f6870917811961c9b26ba09071e07180e2
+akracer==0.0.14 ; platform_system == "Linux" \
+    --hash=sha256:629eaccd0e1d18366804b797eb2692ed47bed0028f55b5a5af3cc277d521df04

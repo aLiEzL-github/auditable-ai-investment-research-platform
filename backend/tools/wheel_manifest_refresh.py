@@ -22,8 +22,12 @@ ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
 REQ = os.path.join(ROOT, "requirements.txt")
 MANIFEST = os.path.join(ROOT, "contracts", "wheel_manifest.json")
 
+# OI-PF-147：依赖行可带 PEP 508 环境标记（`pkg==1.0 ; platform_system == "Linux"`）。
+# 初版正则不认标记，两条平台条件依赖被整行漏掉 —— 由 E-WHEEL-003 的逐行交叉
+# 核对当场抓出（逐行 36 vs 解析 34）。标记捕获为第 4 组，供 §平台闭包核对使用。
 PIN = re.compile(
-    r"^([A-Za-z0-9_.\-]+)(\[[^\]]*\])?==([^\s\\]+)"
+    r"^([A-Za-z0-9_.\-]+)(\[[^\]]*\])?==([^\s\\;]+)"
+    r"[ \t]*(;[^\\\n]*)?"
     r"((?:[ \t]*\\\n[ \t]*--hash=sha256:[0-9a-f]{64})+)", re.M)
 
 
@@ -39,7 +43,7 @@ def main() -> int:
     files, missing, n = {}, [], 0
     for m in PIN.finditer(txt):
         name, ver = m.group(1), m.group(3)
-        hashes = re.findall(r"sha256:([0-9a-f]{64})", m.group(4))
+        hashes = re.findall(r"sha256:([0-9a-f]{64})", m.group(5))
         url = f"https://pypi.org/pypi/{name}/{ver}/json"
         d = json.load(urllib.request.urlopen(url, timeout=30, context=ctx))
         fmap = {u["digests"]["sha256"]: u["filename"] for u in d["urls"]}
