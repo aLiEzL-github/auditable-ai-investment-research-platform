@@ -3,18 +3,24 @@
 // release_eligible 只能由后端返回，前端不做计算、不做改写。
 
 import type {
+  AssumptionsView,
+  CalcView,
   Claim,
+  ClaimsView,
   EvidenceRecord,
   EvidenceLedger,
   FactRecord,
+  MacroView,
   MetricSpecView,
   OpenItem,
+  OpenItemsView,
   ReleaseEligibility,
   ReleaseRecord,
   ResearchContract,
   ResearchContractStatus,
   ResearchLaunchResult,
   RulesView,
+  ScenariosView,
 } from "../types";
 
 export interface EvidenceView {
@@ -37,5 +43,11 @@ export interface WorkbenchApi {
   getEvidenceLedger(): Promise<EvidenceLedger>;
   getRulesView(): Promise<RulesView>;
   getMetricSpecView(): Promise<MetricSpecView>;
+  getMacroView(): Promise<MacroView>;
+  getCalcView(): Promise<CalcView>;
+  getClaimsView(): Promise<ClaimsView>;
+  getAssumptionsView(): Promise<AssumptionsView>;
+  getScenariosView(): Promise<ScenariosView>;
+  getOpenItemsView(): Promise<OpenItemsView>;
   ping(): Promise<boolean>;
 }

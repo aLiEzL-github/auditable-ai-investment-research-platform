@@ -4,14 +4,20 @@
 // 前端不得自行决定「可以启动」。
 
 import type {
+  AssumptionsView,
+  CalcView,
+  ClaimsView,
   EvidenceLedger,
+  MacroView,
   MetricSpecView,
+  OpenItemsView,
   ReleaseEligibility,
   ReleaseRecord,
   ResearchContract,
   ResearchContractStatus,
   ResearchLaunchResult,
   RulesView,
+  ScenariosView,
 } from "../types";
 import type { EvidenceView, WorkbenchApi } from "./client";
 
@@ -72,6 +78,30 @@ export class HttpApi implements WorkbenchApi {
 
   getMetricSpecView(): Promise<MetricSpecView> {
     return this.getJson<MetricSpecView>("/api/metrics");
+  }
+
+  getMacroView(): Promise<MacroView> {
+    return this.getJson<MacroView>("/api/macro");
+  }
+
+  getCalcView(): Promise<CalcView> {
+    return this.getJson<CalcView>("/api/calc");
+  }
+
+  getClaimsView(): Promise<ClaimsView> {
+    return this.getJson<ClaimsView>("/api/claims");
+  }
+
+  getAssumptionsView(): Promise<AssumptionsView> {
+    return this.getJson<AssumptionsView>("/api/assumptions");
+  }
+
+  getScenariosView(): Promise<ScenariosView> {
+    return this.getJson<ScenariosView>("/api/scenarios");
+  }
+
+  getOpenItemsView(): Promise<OpenItemsView> {
+    return this.getJson<OpenItemsView>("/api/open-items");
   }
 
   async ping(): Promise<boolean> {

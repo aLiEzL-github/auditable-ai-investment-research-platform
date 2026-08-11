@@ -207,3 +207,131 @@ export interface MetricSpecView {
   rows: MetricSpecRow[]; // 20 项
   frozen_sha256: string;
 }
+
+// —— G5-04 宏观/计算/Claim/假设/三情景（基线 B §8）——
+// 与 backend/app/macro_snapshot.py / formula_registry.py / claim_engine.py /
+// assumption_snapshot.py / valuation_engine.py / open_item_registry.py 对齐（规则 ⑱）
+
+// 宏观快照（G3-03：published/effective/retrieved/cutoff 分离）
+export interface MacroSnapshot {
+  spec_sha256: string;
+  published_at: string;
+  effective_date: string;
+  retrieved_at: string;
+  cutoff_at: string;
+  state: "FROZEN" | "PARTIAL" | "BLOCKED";
+  gate: {
+    verdict: "MACRO_GATE_PASS" | "MACRO_GATE_FAIL";
+    failures: string[]; // 门失败原因（不得输出当前估值）
+  };
+  series: MacroSeries[];
+}
+
+export interface MacroSeries {
+  series_id: string;
+  name: string;
+  material: boolean;
+  vintage: string;
+  rows: number;
+  status: "OK" | "MISSING" | "EXPIRED" | "FUTURE_VINTAGE" | "ZERO_ROWS";
+}
+
+// 传导链（宏观 → 公司分析）
+export interface TransmissionLink {
+  macro_series_id: string;
+  transmission: string; // 传导描述
+  target_metric: string; // 传导至哪个指标
+}
+
+export interface MacroView {
+  snapshot: MacroSnapshot;
+  transmission: TransmissionLink[];
+}
+
+// CalcLedger（G3-04：确定性计算账本 —— 每笔记录输入哈希 + 公式版本）
+export type CalcInputKind = "EXTERNAL_FACT" | "DERIVED";
+
+export interface CalcEntry {
+  entry_id: string;
+  formula_id: string;
+  formula_version: string;
+  inputs: { input_key: string; kind: CalcInputKind; value: string; input_sha256: string }[];
+  result: string;
+  result_sha256: string;
+  unit: string;
+}
+
+export interface CalcView {
+  entries: CalcEntry[];
+}
+
+// Claim 图与 emission map（G3-05：六类节点 [F]/[D]/[A]/[P]/[C]/[L]）
+export type ClaimNodeType = "F" | "D" | "A" | "P" | "C" | "L";
+
+export interface ClaimNodeRow {
+  node_type: ClaimNodeType;
+  ref_id: string;
+  rendered_value: string;
+  materiality: "MATERIAL" | "IMMATERIAL" | "UNCLASSIFIED";
+  evidence_refs: string[];
+  formula_ref: string | null;
+  assumption_ref: string | null;
+  falsifier: string;
+  visible_span: string; // emission map：可见内容字节区间
+  bound: boolean; // 是否已绑定可见内容（无绑定 = 醒目异常）
+}
+
+export interface ClaimsView {
+  nodes: ClaimNodeRow[];
+  unbound_count: number; // 无 Claim 绑定的可见内容数
+}
+
+// 假设（G3-13：PENDING → APPROVED/REJECTED，不可变快照）
+export type AssumptionStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface AssumptionRow {
+  proposal_id: string;
+  payload_summary: string;
+  status: AssumptionStatus;
+  proposed_by: string;
+  approved_at: string | null;
+  snapshot_sha256: string | null; // APPROVED 后不可变快照
+}
+
+export interface AssumptionsView {
+  rows: AssumptionRow[];
+}
+
+// 三情景与触发器（G3-06：PESSIMISTIC/BASE/OPTIMISTIC + 触发器）
+export type ScenarioName = "PESSIMISTIC" | "BASE" | "OPTIMISTIC";
+
+export interface ScenarioRow {
+  scenario: ScenarioName;
+  method: string;
+  low: string;
+  high: string;
+  per_share: string;
+  triggers: string; // 触发器
+  notes: string;
+}
+
+export interface ScenariosView {
+  rows: ScenarioRow[];
+}
+
+// 开放项（G3-14：材料性醒目标识）
+export interface OpenItemRow {
+  open_item_id: string;
+  description: string;
+  material: boolean;
+  owner_role: string;
+  due_date: string | null;
+  blocks_gate: string | null;
+  closure_evidence: string | null;
+  status: "OPEN" | "CLOSED" | "SUPERSEDED";
+  record_sha256: string;
+}
+
+export interface OpenItemsView {
+  rows: OpenItemRow[];
+}
