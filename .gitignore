@@ -52,3 +52,9 @@ htmlcov/
 .vscode/
 *.log
 .wheel_policy_cache.json
+
+# ── frontend（G5-01）────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo

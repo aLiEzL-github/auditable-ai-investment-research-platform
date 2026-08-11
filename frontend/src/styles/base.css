@@ -1,0 +1,177 @@
+:root {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  line-height: 1.5;
+}
+
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell__header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border, #ccc);
+  position: sticky;
+  top: 0;
+  background: var(--bg, #fff);
+  z-index: 10;
+}
+
+.shell__brand {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.shell__nav {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.shell__link {
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.shell__link--active {
+  background: #e2e8f0;
+  font-weight: 600;
+}
+
+.shell__check {
+  margin-left: auto;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--border, #ccc);
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+/* E-9：首屏可见（header 正下方，恒渲染） */
+.shell__attestation {
+  padding: 0.4rem 1.5rem;
+  font-size: 0.85rem;
+  background: #f1f5f9;
+  border-bottom: 1px solid var(--border, #ccc);
+}
+
+/* E-4/E-5/E-6：阻断态横幅 —— 恒渲染、不折叠、文本区分 */
+.release-banner {
+  padding: 0.75rem 1.5rem;
+  border-bottom: 2px solid;
+}
+
+.release-banner__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.release-banner__reasons {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.release-banner__code {
+  font-weight: 700;
+  margin-right: 0.5rem;
+}
+
+.release-banner--not_checked {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.release-banner--loading {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.release-banner--clear {
+  border-color: #22c55e;
+  background: #f0fdf4;
+}
+
+.release-banner--blocked {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+
+.release-banner--error {
+  border-color: #d97706;
+  background: #fffbeb;
+}
+
+.shell__main {
+  flex: 1;
+  padding: 1.5rem;
+}
+
+.page h1 {
+  margin-top: 0;
+}
+
+.card {
+  border: 1px solid var(--border, #ccc);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  max-width: 900px;
+}
+
+.card__title {
+  margin: 0 0 0.5rem;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid;
+  font-size: 0.85rem;
+}
+
+.status-badge--ok {
+  border-color: #22c55e;
+}
+
+.status-badge--warn {
+  border-color: #d97706;
+}
+
+.status-badge--fail {
+  border-color: #dc2626;
+}
+
+.status-badge--neutral {
+  border-color: #94a3b8;
+}
+
+.empty-state,
+.error-state {
+  padding: 1rem;
+  border: 1px dashed var(--border, #ccc);
+  border-radius: 6px;
+  color: #64748b;
+}
+
+.error-state {
+  border-color: #dc2626;
+  color: #b91c1c;
+}
