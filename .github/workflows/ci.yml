@@ -40,7 +40,7 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601866ffabccdb3 # v4
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0（SHA 经 GitHub API 实测）
         with:
           node-version: "20"
           cache: npm
