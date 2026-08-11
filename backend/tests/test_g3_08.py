@@ -4,6 +4,9 @@
   · 全流程可复现（两次运行字节一致）
   · 任一适用规则非 PASS 或材料性开放项未关 → PARTIAL（不得转 eligible）
   · 只生成 candidate，不写 release / current（Gate 3 退出条件第四条）
+  · A-2b：台账不可达时回退合成 fixture（SYNTHETIC_FIXTURE），
+    **0 skipped** —— 合成数据跑通不等于真实路径被验证，输出须标注
+    data_source（合成与真实不得互相冒充）
 """
 import json
 import os
@@ -13,13 +16,8 @@ import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(REPO, "tools", "vertical_candidate_g3_08.py")
-PORTFOLIO = os.path.join(REPO, "..", "..", "portfolio")
 
 
-# 台账（portfolio）是本仓之外的独立目录，**CI 检出中不存在**。
-# 本组用例驱动的工具须读台账，故在台账不可达时**显式跳过并说明原因** ——
-# 而不是让 json.loads 崩在非 JSON 的 stdout 上（那会把「测不了」
-# 报成「测失败」，两者须可分辨）。
 def _find_portfolio():
     """与 vertical_candidate_g3_08.py 相同的解析顺序，避免两处口径不一致。
 
@@ -34,17 +32,11 @@ def _find_portfolio():
     return None
 
 
-_PORTFOLIO = _find_portfolio()
-_PORTFOLIO_OK = _PORTFOLIO is not None
-_SKIP_WHY = (f"台账不可达（已探测 PORTFOLIO_ROOT / 仓库同级 / 本机既定位置三处）—— 本组用例须读 golden-baselines 与 "
-             f"open-items.json，二者不在本仓内。CI 检出无台账属**预期**；"
-             f"本机运行或设 PORTFOLIO_ROOT 后即执行。**跳过 ≠ 通过**。")
-
-
-@unittest.skipUnless(_PORTFOLIO_OK, _SKIP_WHY)
 class TestVerticalCandidate(unittest.TestCase):
-    def _run(self):
-        _env = dict(os.environ, PORTFOLIO_ROOT=_PORTFOLIO)
+    def _run(self, portfolio_root=None):
+        _env = dict(os.environ)
+        if portfolio_root is not None:
+            _env["PORTFOLIO_ROOT"] = portfolio_root
         r = subprocess.run([sys.executable, TOOL],
                            capture_output=True, text=True, cwd=REPO, env=_env)
         # 断言子进程成功后再解析 —— 否则 json.loads 会掩盖真实错因
@@ -52,6 +44,25 @@ class TestVerticalCandidate(unittest.TestCase):
             f"vertical_candidate_g3_08 退出码 {r.returncode}\n"
             f"stdout[:200]={r.stdout[:200]!r}\nstderr[:400]={r.stderr[:400]!r}")
         return r
+
+    # ── A-2b：台账不可达时回退合成（0 skipped，产物标注 data_source）──
+    def test_synthetic_fallback_when_portfolio_unreachable(self):
+        """PORTFOLIO_ROOT=/nonexistent → 回退合成 fixture，0 skipped、0 failed，
+        产物含 data_source=SYNTHETIC。"""
+        r = self._run(portfolio_root="/nonexistent")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertEqual(d["data_source"], "SYNTHETIC")
+        self.assertIn("不构成对真实 600089 的任何断言", d["data_source_note"])
+
+    def test_real_path_when_portfolio_available(self):
+        """台账可达 → data_source=REAL（本机验证；CI 无台账走合成）。"""
+        _pf = _find_portfolio()
+        r = self._run(portfolio_root=_pf)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        if _pf is not None:
+            self.assertEqual(d["data_source"], "REAL")
 
     def test_runs_and_produces_candidate(self):
         r = self._run()

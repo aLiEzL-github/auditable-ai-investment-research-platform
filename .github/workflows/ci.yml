@@ -97,6 +97,9 @@ jobs:
         run: python backend/tools/wheel_policy_check.py .
       - name: Fixture shape check (OI-PF-129)
         run: python backend/tools/fixture_shape_check.py .
+      # A-2a：研究数据隔离 —— 合成 fixture 不得冒充真实数据（G3-修复 A-2）
+      - name: Research data interdict (A-2a)
+        run: python backend/tools/research_data_interdict.py .
       # OI-PF-012 由 main 的独立 test-integrity 作业承担（PR #44，已是 required
       # check）。此处不再重复接线 —— 同一守卫挂两处会让「哪一处是 required」
       # 变得含糊，而 required 与否正是 OI-PF-140 的教训所在。

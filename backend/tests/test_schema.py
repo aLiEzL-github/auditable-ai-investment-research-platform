@@ -153,7 +153,8 @@ class TestContractMeta(unittest.TestCase):
         import json as _json
         dangling = []
         for dp, _dn, fns in os.walk(os.path.join(os.path.dirname(__file__), "..", "..")):
-            if ".git" in dp or ".venv" in dp or "site-packages" in dp:
+            if ".git" in dp or ".venv" in dp or "site-packages" in dp \
+                    or "node_modules" in dp:
                 continue
             for fn in fns:
                 if not fn.endswith(".json"):
