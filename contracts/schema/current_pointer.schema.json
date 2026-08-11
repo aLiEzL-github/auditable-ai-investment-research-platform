@@ -1,8 +1,8 @@
 {
  "$schema": "http://json-schema.org/draft-07/schema#",
  "schema_version": "1.0.0",
- "title": "release canonical schema",
- "description": "发布（父版本 CAS 成功 + 唯一准出谓词为真；LLM 不得写入）。G4-03：绑定完整 CurrentKey、subject root、manifest 与批准；id = 内容哈希（内容寻址，不可变）",
+ "title": "current_pointer canonical schema",
+ "description": "CurrentKey 指针（按 workflow/scope_id/current_key 分域；追加式 —— 每次变更留痕：谁、何时、依据哪个批准。LLM 不得写入）",
  "type": "object",
  "required": [
   "id",
@@ -10,11 +10,10 @@
   "workflow",
   "scope_id",
   "current_key",
-  "version",
-  "parent_cas",
-  "subject_root_hash",
-  "manifest_hash",
-  "released_at",
+  "release_id",
+  "seq",
+  "changed_by",
+  "changed_at",
   "approval_id"
  ],
  "properties": {
@@ -23,7 +22,7 @@
   },
   "id": {
    "type": "string",
-   "pattern": "^[0-9a-f]{64}$"
+   "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
   },
   "workflow": {
    "type": "string",
@@ -36,32 +35,25 @@
   "current_key": {
    "type": "string"
   },
-  "version": {
-   "type": "string",
-   "pattern": "^\\d+\\.\\d+\\.\\d+$"
-  },
-  "parent_cas": {
+  "release_id": {
    "type": "string",
    "pattern": "^[0-9a-f]{64}$"
   },
-  "subject_root_hash": {
-   "type": "string",
-   "pattern": "^[0-9a-f]{64}$"
+  "seq": {
+   "type": "integer",
+   "minimum": 1
   },
-  "manifest_hash": {
+  "changed_by": {
    "type": "string",
-   "pattern": "^[0-9a-f]{64}$"
+   "minLength": 1
   },
-  "released_at": {
+  "changed_at": {
    "type": "string",
    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
   },
   "approval_id": {
    "type": "string",
    "pattern": "^[A-Z0-9][A-Z0-9_\\-]{2,63}$"
-  },
-  "current_pointer": {
-   "type": "boolean"
   }
  },
  "additionalProperties": false

@@ -2,7 +2,7 @@
  "$schema": "http://json-schema.org/draft-07/schema#",
  "schema_version": "1.0.0",
  "title": "approval canonical schema",
- "description": "批准事件（唯一准出谓词的前提；LLM 不得写入）",
+ "description": "批准事件（唯一准出谓词的前提；LLM 不得写入）。G4-04：批准绑定完整 CurrentKey 与输入哈希 —— 任一输入变化批准失效；token 必须是显式 APPROVE（聊天“继续”不算批准）",
  "type": "object",
  "required": [
   "id",
@@ -10,7 +10,13 @@
   "object_ref",
   "approver",
   "approved_at",
-  "subject_root_hash"
+  "subject_root_hash",
+  "workflow",
+  "scope_id",
+  "current_key",
+  "inputs_hash",
+  "status",
+  "token"
  ],
  "properties": {
   "schema_version": {
@@ -35,6 +41,30 @@
   "subject_root_hash": {
    "type": "string",
    "pattern": "^[0-9a-f]{64}$"
+  },
+  "workflow": {
+   "type": "string",
+   "minLength": 1
+  },
+  "scope_id": {
+   "type": "string",
+   "minLength": 1
+  },
+  "current_key": {
+   "type": "string"
+  },
+  "inputs_hash": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "status": {
+   "enum": [
+    "ACTIVE",
+    "INVALIDATED"
+   ]
+  },
+  "token": {
+   "const": "APPROVE"
   }
  },
  "additionalProperties": false

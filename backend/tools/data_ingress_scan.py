@@ -89,6 +89,15 @@ TEXT_EXT = {".md", ".txt", ".json", ".yaml", ".yml", ".py", ".xml", ".html", ""}
 # E4 变异测试集豁免：tests/test_scanners_mutation.py 的合成载荷（格式真实、值随机，非真实凭据）会被扫描器命中——与 THIRD_PARTY_NOTICES 同类，豁免并注明理由（OI-PF-058 先例）
 MUTATION_TEST_EXEMPT = ('test_scanners_mutation.py', 'test_g2_11.py',
                          'rights_matrix.json')  # 契约镜像：含来源域名是职能性引用（OI-PF-058 模式）
+# G4（OI-PF-058 模式延续）：D-12/D-13 国家统计局强制署名守卫的职能性引用 ——
+# 引擎常数（NBS_DOMAIN）与合成 fixture/测试必须出现 stats.gov.cn 字样才能
+# 机检「署名在首屏前 N 行」义务；数值全部合成、无任何真实数据。缺失域名即
+# 守卫失效，故与 rights_matrix.json 同类豁免并注明理由。
+G4_ATTRIBUTION_EXEMPT = ('backend/app/publish_engine.py',
+                         'backend/app/network_probe.py',
+                         'backend/tests/_g4_fixtures.py',
+                         'backend/tests/test_g4_02.py',
+                         'backend/tools/build_gate4_acceptance.py')
 SKIP_DIR = {".git", "node_modules", "__pycache__", ".venv", "venv"}
 
 
@@ -174,6 +183,7 @@ def walk(root):
             fp = os.path.join(dp, fn)
             if os.path.abspath(fp) == SELF or any(e in fp for e in MUTATION_TEST_EXEMPT):
                 continue
+            if any(fp.endswith(e) for e in G4_ATTRIBUTION_EXEMPT):
                 continue
             n += 1
             hits += scan_file(fp, os.path.relpath(fp, root))

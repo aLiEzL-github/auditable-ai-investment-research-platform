@@ -37,6 +37,13 @@ LAYER_EXEMPT = {
     # （CI 只跑离线的 wheel_policy_check）。检查器本身刻意做成离线的，
     # 就是为了不让「守卫自己出网」成为常态 —— 故此处只豁免刷新工具一个文件。
     "supply_chain_refresh": ["backend/tools/wheel_manifest_refresh.py"],
+    # G4：发布/冻结层（L7）。经 L2 persistence 事务写 release/approval/pointer
+    # （与 repository.py/jobs.py 的 L2_persistence 豁免同类）；M5 语义由
+    # writers.json 写权矩阵 + assert_writer 机器强制，本层不直写外设。
+    "L7_publish": ["backend/app/publish_engine.py"],
+    # G4-08：离线断网断言探针（唯一职责 = 证明网络不可达，探测失败即拒绝，
+    # **不是出网能力**；可信内核不 import 本模块，由调用方注入回调）。
+    "offline_probe": ["backend/app/network_probe.py"],
 }
 # 出网授权模块（L3 取数层）：非豁免模块 import 它们 = 传递性出网，必须抓
 EGRESS_MODULES = {"import_guard", "sse_adapter", "macro_adapter", "akshare_adapter",

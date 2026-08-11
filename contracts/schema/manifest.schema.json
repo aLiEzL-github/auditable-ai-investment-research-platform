@@ -1,0 +1,108 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "schema_version": "1.0.0",
+ "title": "manifest canonical schema",
+ "description": "发布清单（G4-01/07）：单一 subject root + 对象闭包登记表（全量登记，闭包外为空）+ 全目录哈希 + 代码/配置版本。id = 内容哈希（改动后哈希与候选身份变化）",
+ "type": "object",
+ "required": [
+  "id",
+  "schema_version",
+  "workflow",
+  "scope_id",
+  "current_key",
+  "subject_root",
+  "parent",
+  "directory_hash",
+  "code_version",
+  "config_version",
+  "objects"
+ ],
+ "properties": {
+  "schema_version": {
+   "type": "string"
+  },
+  "id": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "workflow": {
+   "type": "string",
+   "minLength": 1
+  },
+  "scope_id": {
+   "type": "string",
+   "minLength": 1
+  },
+  "current_key": {
+   "type": "string"
+  },
+  "subject_root": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "subject_root_candidates": {
+   "type": "array",
+   "items": {
+    "type": "string",
+    "pattern": "^[0-9a-f]{64}$"
+   }
+  },
+  "parent": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "directory_hash": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "code_version": {
+   "type": "string",
+   "minLength": 1
+  },
+  "config_version": {
+   "type": "string",
+   "minLength": 1
+  },
+  "objects": {
+   "type": "object",
+   "minProperties": 1,
+   "patternProperties": {
+    "^[0-9a-f]{64}$": {
+     "type": "object",
+     "required": [
+      "kind"
+     ],
+     "properties": {
+      "kind": {
+       "type": "string",
+       "enum": [
+        "candidate",
+        "manifest",
+        "evidence",
+        "macro",
+        "assumption",
+        "calc",
+        "claim",
+        "worksheet",
+        "test",
+        "code_config",
+        "open_item",
+        "approval",
+        "report"
+       ]
+      },
+      "refs": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+       }
+      }
+     },
+     "additionalProperties": false
+    }
+   }
+  }
+ },
+ "additionalProperties": false
+}
