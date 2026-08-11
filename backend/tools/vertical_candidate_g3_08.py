@@ -38,6 +38,36 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "backend", "app"))
 
+# ── 数据源解析（A-2b）：真实台账不可达 → 回退合成 fixture 并标注 ──
+# 真实路径：PORTFOLIO/golden-baselines/600089.json
+# 回退路径：backend/tests/fixtures/g3-08-synthetic-golden.json（SYNTHETIC_FIXTURE）
+# **回退必须显式标注 data_source=SYNTHETIC** —— 静默使用合成数据冒充真实
+# 数据是 A-2 变异注入抓点（合成与真实结论不得互相冒充）。
+_GOLDEN_CANDIDATES = [
+    ("REAL", os.path.join(PORTFOLIO, "golden-baselines", "600089.json")),
+    ("SYNTHETIC", os.path.join(REPO, "backend", "tests", "fixtures",
+                               "g3-08-synthetic-golden.json")),
+]
+
+
+def _load_golden():
+    """按序探测：真实台账优先，合成 fixture 回退。返回 (data_source, facts)。"""
+    for source, path in _GOLDEN_CANDIDATES:
+        if os.path.isfile(path):
+            try:
+                d = json.load(open(path, encoding="utf-8"))
+            except Exception:
+                continue
+            if source == "SYNTHETIC" and d.get("SYNTHETIC_FIXTURE") is not True:
+                raise SystemExit(
+                    "E-G3-08-SYNTH: 合成 fixture 缺 SYNTHETIC_FIXTURE 标记 —— "
+                    "禁止冒充真实数据（A-2a）")
+            return source, d.get("facts", {})
+    raise SystemExit("E-G3-08-SRC: 真实台账与合成 fixture 均不可达")
+
+
+DATA_SOURCE, GOLDEN_FACTS = _load_golden()
+
 from research_router import ResearchRouter, RUNNING, CANDIDATE  # noqa: E402
 from macro_snapshot import (  # noqa: E402
     MacroObservation, MacroSnapshot, MacroGate, verify_spec_frozen,
@@ -58,9 +88,8 @@ from valuation_engine import (  # noqa: E402
 
 
 def main() -> int:
-    golden = json.load(open(os.path.join(PORTFOLIO, "golden-baselines",
-                                         "600089.json"), encoding="utf-8"))
-    facts = golden["facts"]
+    golden = GOLDEN_FACTS
+    facts = golden
 
     # ── 1. 冻结合同 ────────────────────────────────────────────────
     contract = ResearchContract(scope="600089", period="2026",
@@ -199,6 +228,11 @@ def main() -> int:
         "workflow": "a-share-single-company-research",
         "scope": "600089",
         "run_id": run.run_id,
+        "data_source": DATA_SOURCE,
+        "data_source_note": ("SYNTHETIC —— 合成 fixture，数值全部虚构，"
+                             "**不构成对真实 600089 的任何断言**（A-2d）"
+                             if DATA_SOURCE == "SYNTHETIC"
+                             else "REAL —— 台账 golden-baselines/600089.json"),
         "contract": contract.to_dict(),
         "macro": {"verdict": macro_verdict, "snapshot": snap.sha256},
         "rules": {"verdict": gate_rules, "report": reg.report_applicable()},
