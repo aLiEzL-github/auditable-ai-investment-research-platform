@@ -128,6 +128,9 @@ jobs:
       # OI-PF-012 由 main 的独立 test-integrity 作业承担（PR #44，已是 required
       # check）。此处不再重复接线 —— 同一守卫挂两处会让「哪一处是 required」
       # 变得含糊，而 required 与否正是 OI-PF-140 的教训所在。
+      # G6C H-8：CALIBRATION_PENDING 不得冒充能力 —— 表述守卫（G6C-03 一票否决）
+      - name: Calibration claim check (G6C-03 H-8)
+        run: python backend/tools/calibration_claim_check.py .
 
   migration-check:
     runs-on: ubuntu-latest
