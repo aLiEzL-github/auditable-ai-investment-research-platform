@@ -88,6 +88,36 @@ APPROVAL_WRITERS = {"approval", "approve", "release", "current_pointer"}
 # 修为实际形态；同时这条豁免的语义须写清：放行的是**服务端监听面**，非出网。
 SERVER_ALLOWLIST = {"backend.app.main.py"}
 
+# ── 死豁免检测（G5 审核发现）────────────────────────────────────
+# SERVER_ALLOWLIST 的键曾写作 "app.main"，而扫描内部的 rel 形态是
+# "backend.app.main.py" —— **从未匹配上**。它不暴露，只因 main.py 当时
+# 恰好只 import http.server（不在 NETWORK_LIBS 中）；直到有人引入
+# urllib.parse 才现形。
+#
+# 与 B-2c 的 EXEMPT_ASSERTS 方向相反：那道管「豁免理由是否成立」
+# （L7_publish 曾理由不成立而豁免生效）；这道管「豁免是否真的生效」
+# （SERVER_ALLOWLIST 曾根本没生效而无人察觉）。**两种都只在有人去戳它时才现形。**
+#
+# 判据不是「路径存在」而是「本次扫描中被实际命中」—— 前者挡不住格式不符。
+_EXEMPT_HITS = {}
+
+
+def check_dead_exemptions():
+    """每条豁免条目须在本次扫描中被实际命中，否则即死豁免。"""
+    bad = []
+    for layer in LAYER_EXEMPT:
+        if ("LAYER_EXEMPT", layer) not in _EXEMPT_HITS:
+            bad.append(f"LAYER_EXEMPT[{layer}]: 本次扫描**零命中** —— "
+                       f"路径写法与扫描内部形态不符，或文件已不存在。"
+                       f"死豁免既不保护什么，也掩盖了它声称保护的东西")
+    for key in SERVER_ALLOWLIST:
+        if ("SERVER_ALLOWLIST", key) not in _EXEMPT_HITS:
+            bad.append(f"SERVER_ALLOWLIST[{key}]: 本次扫描**零命中**。"
+                       f"注意：该豁免只在被豁免文件确实 import 了 http/socket 时"
+                       f"才会被命中 —— 若该文件已不再持有服务端监听面，"
+                       f"应删除本条而非留着")
+    return bad
+
 # ── B-2c（G4 修复）：豁免理由须可机检 ────────────────────────────
 # 每条 LAYER_EXEMPT 条目须在此带一条可执行断言（路径 → 说明 → 判定）。
 # 判定对豁免文件的源码文本执行；不成立即 FAIL —— 豁免理由不再靠人读注释。
@@ -242,6 +272,7 @@ def main() -> int:
                 continue
             layer = exempt_layer_of(rel)
             if layer is not None:
+                _EXEMPT_HITS.setdefault(("LAYER_EXEMPT", layer), set()).add(rel)
                 continue  # 显式层豁免（精确路径，非子串）；其理由由 B-2c 断言承担
             # FF-3/U-1（OI-PF-126）：禁止硬编码 source_status="ALLOWED" 字面量
             # （测试夹具白名单：_matrix_fixture.py 等显式允许，报数）
@@ -261,6 +292,8 @@ def main() -> int:
                 for mod in module_name_of(node):
                     base = mod.split(".")[0]
                     if rel in SERVER_ALLOWLIST and base in ("http", "socket"):
+                        _EXEMPT_HITS.setdefault(("SERVER_ALLOWLIST", rel),
+                                                set()).add(rel)
                         continue  # 服务端监听面（非出网）
                     if base in EGRESS_MODULES or base in exempt_modules and base in EGRESS_MODULES:
                         bad.append(f"{rel}: 传递性出网 —— import 已豁免的出网模块 {mod}")
@@ -271,6 +304,8 @@ def main() -> int:
                     if base in APPROVAL_WRITERS:
                         bad.append(f"{rel}: M5 直写批准/发布对象 {mod}")
     bad += check_exemption_asserts(ROOT)
+    # **须在扫描之后调用** —— _EXEMPT_HITS 由扫描填充，提前调用必然全零
+    bad += check_dead_exemptions()
     if bad:
         print("❌ 架构导入边界违规：")
         for b in bad:
@@ -278,7 +313,8 @@ def main() -> int:
         return 1
     exempt_n = len(_all_exempt_files(ROOT))
     print(f"✅ 检查对象 {checked} 个 .py，无违规（M1—M7 骨架级 + B-2a 内核不引探针）"
-          f"；豁免文件 {exempt_n} 个（B-2c 断言逐条通过）")
+          f"；豁免文件 {exempt_n} 个（B-2c 断言逐条通过；"
+          f"{len(_EXEMPT_HITS)} 条豁免本次均被实际命中，无死豁免）")
     return 0
 
 
