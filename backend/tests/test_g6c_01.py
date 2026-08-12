@@ -113,6 +113,30 @@ class TestPreRegistrationTiming(unittest.TestCase):
         self.assertTrue(("2026-08-12T00:00:00.000000Z", 0) <
                         (p.outcome_available_at, 0))
 
+    def test_production_register_uses_clock_and_checks_timing(self):
+        """生产路径 register()：真时钟自动 tick 且执行 H-1 时序检查。
+
+        审核发现（2026-08-12）：初版只测 register_with_time（注入时序的
+        测试入口），生产入口 register() 的真时钟行为未被直接覆盖 ——
+        若 register() 忘记调用 clock.tick() 或漏掉 cmp_micro 检查，
+        既有测试全绿而生产路径失控。此处补上（先红后绿：删 register()
+        里的任一检查，本用例即红）。
+        """
+        from time_order import MicroClock
+        clk = MicroClock(time_source=iter([
+            "2026-08-12T00:00:00.000000Z"]).__next__)
+        reg = PredictionRegistry(clock=clk)
+        p = _pred("P-PROD", outcome_at="2026-10-01T00:00:00.000000Z")
+        reg.register(p)
+        self.assertEqual(p.registered_at, ("2026-08-12T00:00:00.000000Z", 0))
+        # 结果已可知时生产路径也必须拒（H-1 同款检查走 register）
+        from time_order import MicroClock as _MC2
+        reg2 = PredictionRegistry()
+        p2 = _pred("P-PROD2", outcome_at="2020-01-01T00:00:00.000000Z")
+        with self.assertRaises(LateRegistration) as ctx:
+            reg2.register(p2)
+        self.assertIn("E-G6C-01-101", str(ctx.exception))
+
 
 class TestApprovalAndSnapshot(unittest.TestCase):
     def _approved_snapshot(self):
