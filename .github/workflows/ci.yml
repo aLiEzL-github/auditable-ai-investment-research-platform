@@ -53,6 +53,10 @@ jobs:
         run: npm test
       - name: Build (G5-01)
         run: npm run build
+      - name: E2E（G5-07 纵向验收 + 阻断态浏览器用例）
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
 
   test:
     runs-on: ubuntu-latest
