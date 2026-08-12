@@ -97,15 +97,22 @@ def in_gate5(i):
     return bool(re.search(r"Gate 5", str(i.get("blocks_decisions") or "")))
 
 
-def in_gate5_universal(i):
-    """在 in_gate5 之上，把 blocks_data_flow == "ALL" 也算作命中本 Gate。
+def is_standing_risk(i):
+    """blocks_data_flow == "ALL" 的持续性风险项。
 
-    **ADR-021 §2 没有定义 "ALL" 怎么读** —— 字面上它不含 "G5"，
-    语义上 ALL ⊇ G5。两种读法给出不同的数，且决定 ADR-010 §3.1 第 1 条
-    「须为零」是否成立。本文件**不替 U 裁定**：两个数各自算出、各自报出
-    （规则 ⑨），由 U 择一。见 OI-PF-158。
+    ADR-022（U 裁定 2026-08-12）：**"ALL" 不算命中任何 Gate**（取字面）。
+    理由：这类项对每个 Gate 一视同仁，且不可由任一 Gate 解除
+    （OI-PF-022 需 VD-20 层面处置，OI-PF-026 需对统计局条款的人工裁定），
+    计入即等于宣布该 Gate 不可通过 —— 那不是更严的执行，是永久停摆。
+
+    **该裁定是一次放宽，对价是 ADR-022 §3.1 的单列义务**：
+    每个 Gate 验收包须单列一节逐项点名全部 "ALL" 项，不得与
+    「② 全部未闭材料性开放项」合并（合并即等于没单列）。
+    只落地前半 = 纯放宽，故本函数的产物在 §1.7 被强制成节。
+
+    豁免**仅限 "ALL" 一种取值** —— 其余取值一律走 in_gate5 原路径。
     """
-    return in_gate5(i) or str(i.get("blocks_data_flow")) == "ALL"
+    return str(i.get("blocks_data_flow")) == "ALL"
 
 
 def _blk(i):
@@ -128,9 +135,8 @@ def main() -> int:
     mat = [i for i in op if i.get("material")]
     g5_mat = [i for i in mat if in_gate5(i)
               and i.get("category") != "签署前置条件"]
-    g5_mat_u = [i for i in mat if in_gate5_universal(i)
-                and i.get("category") != "签署前置条件"]
-    _only_all = [i for i in g5_mat_u if i not in g5_mat]
+    # ADR-022 §3.1：持续性风险须**单列**，不得与 ② 合并。
+    _standing = [i for i in mat if is_standing_risk(i)]
 
     # ── 证据采集：后端与前端**分列**（⑨/⑮）────────────────────────
     _be_bypass = status_of(
@@ -175,6 +181,38 @@ def main() -> int:
 
     _tests_ok = _be_all.startswith("OK") and _be_bypass.startswith("OK")
 
+    # ── §1.7 持续性风险节（ADR-022 §3.1）──────────────────────────
+    # **先构造，后自查**：_standing_listed 由「每个 ID 确实出现在产出文本中」
+    # 判定，不是一个自己给自己发的证明。自声明式的落地断言，本项目已栽过
+    # 一次（OI-PF-150：签署对象自证其未被篡改）。
+    _S17 = []
+    _S17.append("### 1.7 持续性风险（`blocks_data_flow = \"ALL\"`，"
+                "不计入本 Gate 阻断）\n")
+    _S17.append("```text")
+    _S17.append("依据 = ADR-022 §2（U 裁定 2026-08-12，取字面）：\"ALL\" 不算命中")
+    _S17.append("       任何 Gate —— 这类项对每个 Gate 一视同仁且不可由任一 Gate")
+    _S17.append("       解除，计入即等于宣布该 Gate 不可通过。")
+    _S17.append("**该裁定是一次放宽，本节即其对价**（ADR-022 §3.1/§4.1）。")
+    _S17.append("本节不得与「② 全部未闭材料性开放项」合并 —— 合并即等于没单列。")
+    _S17.append("")
+    _S17.append(f"未闭且材料性的 \"ALL\" 项：{len(_standing)} 项")
+    for i in _standing:
+        _S17.append(f"  {i['open_item_id']} | {i.get('category','')} | "
+                    f"决策={i.get('blocks_decisions')}")
+        # 要旨取自 description 原文，**不得改写为更轻的表述**（ADR-022 §3.1）
+        _S17.append(f"     要旨: {str(i.get('description') or '')[:120]}")
+    _S17.append("")
+    _S17.append("上列各项**仍 OPEN 且仍 material** —— 本节不主张其风险已消解，")
+    _S17.append("只记载它们不构成本 Gate 的阻断。其处置路径在 VD-20 / VD-12 层面，")
+    _S17.append("不在任何 Gate 内（ADR-022 §4.1 已载明这是被放弃的效力）。")
+    _S17.append("```\n")
+    # **自查点见 §「装配后自查」** —— 不在这里。
+    # 初版在此处用 `all(id in "\n".join(_S17))` 判定，**变异注入抓到它是空的**：
+    # 删掉 `L.extend(_S17)` 后片段照样构造、自查照样通过，而该节根本没进
+    # 最终文件，结论仍报 READY_FOR_APPROVAL。
+    # **这是「结构在、功能不在」的又一例，而且出在专门防它的那道检查上** ——
+    # _S17 是原料，L 才是产出；核对原料等于没核对。
+
     # ㉑：结论由范围内计数**与**测试状态共同决定，不得硬编码
     _blockers = []
     if g5_mat:
@@ -183,16 +221,6 @@ def main() -> int:
         _blockers.append(f"Gate 5 范围内材料性开放项 {len(g5_mat)} 项 ≠ 0"
                          f"（ADR-010 §4 不得 PASS）："
                          f"{[i['open_item_id'] for i in g5_mat]}")
-    # 「ALL 怎么读」未裁定时**不得签署**。ADR-016 的签署不可逆，而 ADR-021
-    # 正是因为「签完才发现范围读法有分歧」才不得不撤销两份签署重做。
-    # 两个数不同 ⇒ ADR-010 §3.1 第 1 条是否成立取决于一个没人裁定过的读法。
-    if _only_all:
-        _blockers.append(
-            f"**范围读法未裁定（OI-PF-158）**：blocks_data_flow=\"ALL\" 的读法"
-            f" ADR-021 §2 未定义。严格字面读法 = {len(g5_mat)} 项；"
-            f"全域读法 = {len(g5_mat_u)} 项"
-            f"（多出 {[i['open_item_id'] for i in _only_all]}）。"
-            f"两数不同 ⇒ ADR-010 §3.1 第 1 条是否成立取决于该读法，须 U 先裁定")
     if not _tests_ok:
         _blockers.append(f"工程测试未全过（后端全量={_be_all}；"
                          f"G5 绕过负测={_be_bypass}）")
@@ -204,22 +232,9 @@ def main() -> int:
     if not _fe.startswith("OK"):
         _blockers.append(f"前端测试未全过或未跑起来（{_fe}）—— "
                          f"E-4/E-5/E-6「阻断态不可隐藏」失去证据")
-    verdict = "READY_FOR_APPROVAL" if not _blockers else "NOT_READY"
-
-    L.append("# Gate 5 验收包\n")
-    L.append("```text")
-    L.append(f"生成时刻   = {NOW}")
-    L.append("生成方式   = backend/tools/build_gate5_acceptance.py（全部数据实时采集）")
-    L.append("依据       = G5-执行计划.md §1A/§3/§4 + 基线 §9 + ADR-021 §2 + ADR-010 §3.1")
-    L.append("范围口径   = ADR-021 §2 并集：material ∧ OPEN ∧ category != 签署前置条件；"
-             "blocks_development 含 G5-xx 必含 | blocks_data_flow/blocks_decisions/"
-             "deprecated_blocks_gate 含 G5/Gate 5")
-    L.append(f"结论       = **{verdict}**"
-             + (f" —— {'；'.join(_blockers)}" if _blockers
-                else "（范围内材料性开放项为零；后端绕过负测非空且全过；工程测试全过）"))
-    L.append("independent_reviewer_present = false（VD-02 = 1 名自然人）")
-    L.append("```\n")
-    L.append("> **本包不是 Gate 5 PASS。** 供批准人审阅的冻结材料；签署按 ADR-016 S1—S5。\n")
+    # 注意：**§0（含结论行）在全部正文装配完毕后才构造并前置** ——
+    # 见下方「装配后自查」。结论依赖一个只有在正文成型后才能回答的问题：
+    # 「§1.7 真的进到产出里了吗」。
 
     # ── §1 基线 §9 证明义务 ───────────────────────────────────────
     L.append("## 1. 基线 §9 证明义务（逐条实测）\n")
@@ -260,6 +275,9 @@ def main() -> int:
     L.append("```\n")
 
     # ── §2 G5-01…G5-07 任务验收 ──────────────────────────────────
+    # ADR-022 §3.1 的单列节 —— 上面已构造并自查，这里拼入包体。
+    L.extend(_S17)
+
     L.append("## 2. G5-01…G5-07 任务验收（基线 B §8 任务表）\n")
     L.append("```text")
     _tr = os.path.join(PORTFOLIO, "task-records")
@@ -282,12 +300,10 @@ def main() -> int:
     L.append(f"① Gate 5 范围内的材料性开放项：{len(g5_mat)} 项（须为零）"
              f"［范围判定：blocks_development 含 G5-xx，ADR-021 §2 并集口径］"
              + (f" —— 非零: {[i['open_item_id'] for i in g5_mat]}" if g5_mat else ""))
-    L.append(f"   **同一问题的另一读数**：把 blocks_data_flow=\"ALL\" 计入本 Gate 时"
-             f" = {len(g5_mat_u)} 项"
-             + (f"，多出 {[i['open_item_id'] for i in _only_all]}" if _only_all else ""))
-    for i in _only_all:
-        L.append(f"      {i['open_item_id']}: data_flow=ALL · "
-                 f"reclass_note={str(i.get('reclass_note') or '（无）')[:56]}")
+    L.append(f"   \"ALL\" 项不计入本条（ADR-022 §2 取字面），"
+             f"另见 §1.7 逐项点名的 {len(_standing)} 项持续性风险 ——")
+    L.append("   **它们不在本条里，不等于不存在**；ADR-022 §4.1 载明了")
+    L.append("   这次放弃的正是「\"ALL\" 项会阻断某个 Gate」这一效力。")
     # ADR-021 §2.4 的自指循环：一项「阻断本 Gate 签署」的材料性 OPEN 项，
     # 自己也落进「本 Gate 范围内」，于是它既是阻断者又是被计数者。
     # §2.4 的处置（category=签署前置条件）在此不适用 —— 守卫 Q2 要求该类别
@@ -300,10 +316,7 @@ def main() -> int:
         L.append("   它本身就是「阻断 Gate 5 签署」的登记项，故既是阻断者又被计数")
         L.append("   （ADR-021 §2.4 记载的循环）。它不代表 Gate 5 有工程欠项，")
         L.append("   U 裁定后即闭合，届时两条阻断一并消失。")
-    if _only_all:
-        L.append("   两读数不同，且 ADR-021 §2 未定义 \"ALL\" 的读法 —— 见 §5 与 OI-PF-158。")
-        L.append("   **注**：上列各项均带 reclass_note 称其不构成额外阻断；但该字段")
-        L.append("   不在 ADR-021 §2 的公式里，故它目前不是一条生效的排除依据。")
+        L.append("   本项待 U 裁定后即闭合。")
     for i in [x for x in items if in_gate5(x)]:
         L.append(f"   {i['open_item_id']}: {i.get('status')} "
                  f"材料性={i.get('material')} 阻断={_blk(i)}")
@@ -366,13 +379,76 @@ def main() -> int:
     L.append("  故实质结论未变；**但当时把它们排除掉靠的是正则要求短横，")
     L.append("  与 reclass_note 的理由毫无关系**。结论对，机制不对。")
     L.append("")
-    L.append("· **OI-PF-158：blocks_data_flow=\"ALL\" 的读法 ADR-021 §2 未定义。**")
-    L.append("  字面上 \"ALL\" 不含 \"G5\"；语义上 ALL ⊇ G5。两种读法给出不同的数，")
-    L.append("  且决定 ADR-010 §3.1 第 1 条「须为零」是否成立 —— 见 §3 ①。")
-    L.append("  **该项已使本包结论转 NOT_READY**：ADR-016 的签署不可逆，")
-    L.append("  而 ADR-021 正是因为「签完才发现范围读法有分歧」才不得不撤销重签。")
-    L.append("  须 U 先裁定 \"ALL\" 的读法，本包据裁定重新生成后方可进入签署。")
+    L.append("· **OI-PF-158 已由 ADR-022 裁定（U，2026-08-12）：取字面。**")
+    L.append("  \"ALL\" 不算命中任何 Gate —— 这类项对每个 Gate 一视同仁且不可由")
+    L.append("  任一 Gate 解除，计入即等于宣布该 Gate 不可通过。")
+    L.append("  **该裁定是一次放宽，须照直读**：此后 OI-PF-022（研究产出误公开）")
+    L.append("  与 OI-PF-026（统计局转载条款）不会因任何 Gate 的验收而被迫处置，")
+    L.append("  其处置只能由 VD-20 / VD-12 层面的决策推动（ADR-022 §4.1）。")
+    L.append("  对价是 §1.7 的单列义务 —— 缺该节则本包结论转 NOT_READY。")
+    L.append("  曾考虑的第三条路（把 reclass_note 纳入公式作排除依据）**实测否决**：")
+    L.append("  未闭材料性 23 项中 16 项带该备注，含 OI-PF-124（其备注明写")
+    L.append("  「阻断**未**解除且签署曾越过它」）—— 23 项排掉 16 项，")
+    L.append("  债务清点第 ① 条基本失效。见 ADR-022 §1.4。")
     L.append("```\n")
+
+    # ── 装配后自查（ADR-022 §3.1 的强制点）────────────────────────
+    # 判据经过两次收窄，两次都被变异注入抓出来：
+    #
+    #   一版：核对 _S17（已构造的片段）
+    #         → 「构造了但没拼进去」照样通过（V-3a 抓到）。
+    #           _S17 是原料，L 才是产出 —— 核对原料等于没核对。
+    #   二版：核对 "\n".join(L)（整个包体）
+    #         → §5 风险节里也写了 OI-PF-022 / OI-PF-026 的名字，
+    #           于是 §1.7 整节删掉，ID 仍出现在文档里，检查照过（V-3a 再抓到）。
+    #           **判据成了「ID 出现在文档某处」，而要求是「出现在 §1.7 里」**
+    #           —— 又一次匹配了代理而非目标。
+    #   三版（本版）：**只在 §1.7 这一节的范围内核对**。
+    #         节不存在 → 红；节在但漏列 → 红；节在但空 → 红。
+    #         别处提到这些 ID 不再能顶替单列义务。
+    _body_txt = "\n".join(L)
+    _h17 = "### 1.7 持续性风险"
+    _i17 = _body_txt.find(_h17)
+    if _i17 < 0:
+        _sec17 = ""                      # 节不存在
+    else:
+        _nxt = _body_txt.find("\n## ", _i17)
+        _sec17 = _body_txt[_i17:_nxt if _nxt > 0 else len(_body_txt)]
+    _standing_listed = all(i["open_item_id"] in _sec17 for i in _standing)
+    if _standing and not _standing_listed:
+        _missing = [i["open_item_id"] for i in _standing
+                    if i["open_item_id"] not in _sec17]
+        # 「节根本不存在」与「节在但漏列」是两回事，分开报（规则 ⑨）。
+        _why = ("**§1.7 该节不存在**" if _i17 < 0
+                else f"§1.7 在，但漏列 {_missing}")
+        _blockers.append(
+            f"**ADR-022 §3.1 的单列义务未落地**：{_why}。持续性风险共 "
+            f"{len(_standing)} 项（{[i['open_item_id'] for i in _standing]}）"
+            f"须在该节逐项点名 —— **别处提到不算**。取字面的对价即此节，"
+            f"缺此节则本 ADR 沦为纯放宽（§4.1）")
+    verdict = "READY_FOR_APPROVAL" if not _blockers else "NOT_READY"
+
+    # ── §0 头部（结论行）—— 装配完毕后才构造并前置 ────────────────
+    _H = []
+    _H.append("# Gate 5 验收包\n")
+    _H.append("```text")
+    _H.append(f"生成时刻   = {NOW}")
+    _H.append("生成方式   = backend/tools/build_gate5_acceptance.py（全部数据实时采集）")
+    _H.append("依据       = G5-执行计划.md §1A/§3/§4 + 基线 §9 + ADR-021 §2"
+              " + ADR-022 §2/§3 + ADR-010 §3.1")
+    _H.append("范围口径   = ADR-021 §2 并集：material ∧ OPEN ∧ category != 签署前置条件；"
+              "blocks_development 含 G5-xx 必含 | blocks_data_flow/blocks_decisions/"
+              "deprecated_blocks_gate 含 G5/Gate 5；"
+              "blocks_data_flow=\"ALL\" 不算命中（ADR-022 §2），另见 §1.7")
+    _H.append(f"结论       = **{verdict}**"
+              + (f" —— {'；'.join(_blockers)}" if _blockers
+                 else "（范围内材料性开放项为零；后端绕过负测非空且全过；"
+                      "工程测试全过；ADR-022 §3.1 单列节已落地）"))
+    _H.append("independent_reviewer_present = false（VD-02 = 1 名自然人）")
+    _H.append("```\n")
+    _H.append("> **本包不是 Gate 5 PASS。** 供批准人审阅的冻结材料；"
+              "签署按 ADR-016 S1—S5。\n")
+    L = _H + L
 
     pkg = os.path.join(PORTFOLIO, "Gate5-验收包.md")
     with open(pkg, "w", encoding="utf-8") as f:
