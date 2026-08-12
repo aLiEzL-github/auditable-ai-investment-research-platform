@@ -38,18 +38,18 @@ class TestInputsReady(unittest.TestCase):
         inp = inputs(shares_outstanding=None)
         self.assertFalse(inp.ready())
         with self.assertRaises(ValuationError) as ctx:
-            fcff_valuation(inp, BASE, "100", "0.05", "0.10")
+            fcff_valuation(inp, BASE, "100", "0.10")
         self.assertIn("E-G3-06-001", str(ctx.exception))
 
     def test_partial_status_blocks(self):
         inp = inputs(statuses={"price": "PARTIAL（无主源）"})
         with self.assertRaises(ValuationError):
-            fcff_valuation(inp, BASE, "100", "0.05", "0.10")
+            fcff_valuation(inp, BASE, "100", "0.10")
 
 
 class TestFourMethods(unittest.TestCase):
     def test_fcff(self):
-        r = fcff_valuation(inputs(), BASE, "100", "0.05", "0.10")
+        r = fcff_valuation(inputs(), BASE, "100", "0.10")
         self.assertEqual(r.method, "FCFF")
         self.assertLess(float(r.per_share_low), float(r.per_share_base))
         self.assertGreater(float(r.per_share_high), float(r.per_share_base))
@@ -57,7 +57,7 @@ class TestFourMethods(unittest.TestCase):
 
     def test_fcff_wacc_less_than_growth_fails(self):
         with self.assertRaises(ValuationError) as ctx:
-            fcff_valuation(inputs(), BASE, "100", "0.05", "0.08",
+            fcff_valuation(inputs(), BASE, "100", "0.08",
                            terminal_growth="0.09")
         self.assertIn("E-G3-06-002", str(ctx.exception))
 
@@ -65,7 +65,7 @@ class TestFourMethods(unittest.TestCase):
         """模型不适用失败关闭。"""
         inp = inputs(net_debt="5000", minority_interest="1000")
         with self.assertRaises(ValuationError) as ctx:
-            fcff_valuation(inp, BASE, "100", "0.05", "0.10")
+            fcff_valuation(inp, BASE, "100", "0.10")
         self.assertIn("E-G3-06-003", str(ctx.exception))
 
     def test_fcfe(self):
@@ -108,9 +108,9 @@ class TestSotp(unittest.TestCase):
 class TestScenarios(unittest.TestCase):
     def test_three_scenarios_and_triggers(self):
         s = ScenarioSet("FCFF")
-        s.add(fcff_valuation(inputs(), PESSIMISTIC, "80", "0.04", "0.11"))
-        s.add(fcff_valuation(inputs(), BASE, "100", "0.05", "0.10"))
-        s.add(fcff_valuation(inputs(), OPTIMISTIC, "120", "0.06", "0.09"))
+        s.add(fcff_valuation(inputs(), PESSIMISTIC, "80", "0.11"))
+        s.add(fcff_valuation(inputs(), BASE, "100", "0.10"))
+        s.add(fcff_valuation(inputs(), OPTIMISTIC, "120", "0.09"))
         self.assertEqual(len(s.scenarios), 3)
         # 悲观 < 基准 < 乐观
         self.assertLess(float(s.scenarios[PESSIMISTIC].per_share_base),
@@ -123,9 +123,9 @@ class TestScenarios(unittest.TestCase):
 
     def test_duplicate_scenario_rejected(self):
         s = ScenarioSet("FCFF")
-        s.add(fcff_valuation(inputs(), BASE, "100", "0.05", "0.10"))
+        s.add(fcff_valuation(inputs(), BASE, "100", "0.10"))
         with self.assertRaises(ValuationError) as ctx:
-            s.add(fcff_valuation(inputs(), BASE, "100", "0.05", "0.10"))
+            s.add(fcff_valuation(inputs(), BASE, "100", "0.10"))
         self.assertIn("E-G3-06-008", str(ctx.exception))
 
     def test_mismatched_method_rejected(self):

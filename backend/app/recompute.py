@@ -130,7 +130,7 @@ def _gen_valuation(ctx: ResearchContext, v: Dict[str, str], route: str) -> dict:
     vi = ctx.valuation_inputs
     f = ctx.facts
     if route == "fcff":
-        r = fcff_valuation(vi, BASE, f["fcff"], v["growth"], v["wacc"])
+        r = fcff_valuation(vi, BASE, f["fcff"], v["wacc"])
     elif route == "fcfe":
         r = fcfe_valuation(vi, BASE, f["fcfe"], v["growth"], v["ke"])
     elif route == "relative":

@@ -167,7 +167,7 @@ def main() -> int:
         statuses={"price": "READY", "shares_outstanding": "READY",
                   "net_debt": "READY", "minority_interest": "READY"})
     scen = ScenarioSet("FCFF")
-    scen.add(fcff_valuation(vin, BASE, calc_output, "0.05", "0.10"))
+    scen.add(fcff_valuation(vin, BASE, calc_output, "0.10"))
     scen.compute_margin("10.0")
 
     # ── 7. Claim 图 + emission map ─────────────────────────────────
