@@ -82,7 +82,11 @@ DB_LIBS = {"sqlite3", "psycopg", "psycopg2", "asyncpg", "SQLAlchemy", "sqlalchem
 # M5：批准事件直写（模块名特征）
 APPROVAL_WRITERS = {"approval", "approve", "release", "current_pointer"}
 # 允许自身持有的网络面（服务端监听，非出网）：app/main.py 的 http.server
-SERVER_ALLOWLIST = {"app.main"}
+# G5 审核发现：该键写作 "app.main"，而守卫内部的 rel 形态是
+# "backend.app.main.py" —— **从未匹配上**，是一条空转豁免。
+# main.py 此前不报错只因它当时仅 import http.server（不在 NETWORK_LIBS 中）。
+# 修为实际形态；同时这条豁免的语义须写清：放行的是**服务端监听面**，非出网。
+SERVER_ALLOWLIST = {"backend.app.main.py"}
 
 # ── B-2c（G4 修复）：豁免理由须可机检 ────────────────────────────
 # 每条 LAYER_EXEMPT 条目须在此带一条可执行断言（路径 → 说明 → 判定）。
