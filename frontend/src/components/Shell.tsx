@@ -3,6 +3,7 @@
 
 import { NavLink, Outlet } from "react-router-dom";
 import { ReleaseStatusBanner } from "./ReleaseStatusBanner";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { useWorkbench } from "../state/WorkbenchContext";
 import { useCallback } from "react";
 
@@ -29,6 +30,10 @@ export function Shell() {
 
   return (
     <div className="shell">
+      {/* G5-06 键盘支持：skip link（键盘用户跳过导航直达主内容） */}
+      <a href="#main-content" className="skip-link" data-testid="skip-link">
+        跳到主内容
+      </a>
       <header className="shell__header">
         <div className="shell__brand">证据优先研究工作台</div>
         <nav className="shell__nav" aria-label="主导航">
@@ -50,8 +55,10 @@ export function Shell() {
         SINGLE_REVIEWER_ATTESTED：无独立第二人复核。研究信息不构成投资建议。
       </div>
       <ReleaseStatusBanner load={eligibility} />
-      <main className="shell__main">
-        <Outlet />
+      <main className="shell__main" id="main-content">
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   );

@@ -6,15 +6,16 @@
 //   · NOT_APPLICABLE 必须显示预冻结适用性依据与签名（基线 G3-09）
 //   · 「无非 PASS」与「空数据」可分辨（规则 ⑨）
 
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import { useWorkbench } from "../state/WorkbenchContext";
-import { Card, EmptyState, ErrorState } from "../components/Basic";
+import { AsyncStateRenderer } from "../components/AsyncStateRenderer";
+import { useAsync } from "../state/useAsync";
+import { Card } from "../components/Basic";
 import { StatusBadge } from "../components/StatusBadge";
 import {
   RULE_BLOCKING,
   type RuleStatus,
   type RuleStatusRow,
-  type RulesView,
 } from "../types";
 
 const STATUS_TONE: Record<RuleStatus, "ok" | "fail" | "warn" | "neutral"> = {
@@ -29,33 +30,15 @@ const STATUS_TONE: Record<RuleStatus, "ok" | "fail" | "warn" | "neutral"> = {
 
 export function RulesPage() {
   const { api } = useWorkbench();
-  const [view, setView] = useState<RulesView | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const load = useCallback(() => api.getRulesView(), [api]);
+  const { state, retry } = useAsync(load, (v) =>
+    v.rows.length === 0 ? "无 Rule 状态数据" : null,
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .getRulesView()
-      .then((v) => {
-        if (!cancelled) setView(v);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
-
-  if (loading) return <EmptyState label="Rule 状态加载中…" />;
-  if (error != null) return <ErrorState message={error} />;
-  if (view == null) return <EmptyState label="无 Rule 状态数据" />;
-
+  if (state.phase !== "READY") {
+    return <AsyncStateRenderer state={state} onRetry={retry} renderValue={() => null} />;
+  }
+  const view = state.value;
   const blockingRows = view.rows.filter((r) => RULE_BLOCKING.includes(r.status));
   const naRows = view.rows.filter((r) => r.status === "NOT_APPLICABLE");
 
