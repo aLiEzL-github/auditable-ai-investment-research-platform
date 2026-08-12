@@ -75,7 +75,8 @@ class TestAdjudicate(unittest.TestCase):
                               VERIFIED, "年报披露值", "2026-10-06T00:00:00Z")
         self.assertEqual(rec.status, RESOLVED)
         self.assertEqual(rec.outcome_kind, VERIFIED)
-        self.assertTrue(rec.benchmark_sha256.startswith("ADJ") is False)
+        self.assertRegex(rec.benchmark_sha256, r"^[0-9a-f]{64}$",
+                         "基准哈希应为 sha256 十六进制（非裁决 id）")
 
     def test_insufficient_source_rejected(self):
         """来源不足不得裁决：无基准数据 / 无证据都须拒绝。"""

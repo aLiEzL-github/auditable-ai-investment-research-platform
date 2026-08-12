@@ -144,7 +144,8 @@ class TestSufficiencyGate(unittest.TestCase):
         si = _score_inputs(n=30)
         st = check_sufficiency(si, selective_unresolved=[])
         # 30 条同报告期、同 horizon → 报告期/桶/effective_n 判据失败
-        self.assertFalse(st.gate["resolved>=30"] is False)
+        self.assertTrue(st.gate["resolved>=30"],
+                        "30 条样本应满足 resolved>=30 判据（其余判据失败）")
         self.assertEqual(st.measurement_status, INSUFFICIENT_SAMPLE)
 
     def test_zero_sample_distinguishable(self):

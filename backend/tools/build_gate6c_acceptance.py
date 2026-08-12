@@ -261,11 +261,11 @@ def main() -> int:
     # ── §4 测试命令、退出码与结果 ─────────────────────────────────
     L.append("## 4. 测试命令、退出码与结果\n")
     L.append("```text")
-    for t in ("test_g6c_01", "test_g6c_02", "test_g6c_03",
-              "test_calibration_guard"):
+    for t in ("test_g6c_01", "test_g6c_02", "test_g6c_03"):
         L.append(f"{t}: {_tests[t]}")
+    L.append(f"test_calibration_guard（H-8 表述守卫变异注入，先红后绿）: "
+             f"{_tests['test_calibration_guard']}")
     L.append(f"H-8 表述守卫（CI scans job）: {_guard}")
-    L.append(f"变异注入（表述守卫先红后绿）: {_tests['test_calibration_guard']}")
     L.append(f"台账审计（含 P6 新守卫）: {_audit}")
     L.append("```\n")
 
