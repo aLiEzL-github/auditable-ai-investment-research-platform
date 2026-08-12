@@ -114,6 +114,59 @@ class TestReleaseEligibilityBypass(unittest.TestCase):
             self.assertEqual(code, 400, f"{k} 未被拒绝：{body}")
             self.assertIn(k, body["rejected_keys"])
 
+    # ── 默认拒绝：清单外的变体同样须被拒（S3 ④ 的修复）──────────────
+    # 下列七个向量**全部绕过过当刻 main**（2026-08-12 实测，规则 ⑩：
+    # 用原来那个成功绕过的载荷复验）。成因是初版用
+    # `keys & set(CLIENT_SUPPLIED_VERDICT_KEYS)` 精确匹配 —— 一份穷举清单。
+    #
+    # **需说清楚**：当时这些绕过并不改变结论，因为 _compute_eligibility()
+    # 不接受入参、返回固定 fail-closed 值。问题不在当下的判定被改写，而在
+    #   ① 「请求携带判定字段即拒绝」这个断言按字面不成立；
+    #   ② 机制是公开的 —— 读代码即知过滤器是精确匹配，也就知道往哪里试；
+    #   ③ 日后任何 handler 一旦消费请求数据，这个过滤器是唯一挡在那里的。
+    def test_default_deny_rejects_all_variants(self):
+        vectors = [
+            ("大小写变体",   "?Release_Eligible=true",        None),
+            ("百分号编码",   "?release%5Feligible=true",      None),
+            ("连字符分隔",   "?release-eligible=true",        None),
+            ("前导空格",     "?%20release_eligible=true",     None),
+            ("任意未知参数", "?foo=1",                        None),
+        ]
+        for name, qs, _ in vectors:
+            code, body = self._get("/api/release/eligibility" + qs)
+            self.assertEqual(code, 400, f"{name} 未被拒绝：{body}")
+            self.assertEqual(body["error"], "E-G5-002", name)
+
+    def test_default_deny_rejects_nested_and_array_bodies(self):
+        """嵌套 dict 与 list 元素里的键同样算数 —— 初版只看顶层 dict.keys()。"""
+        for name, payload in (("嵌套 JSON", {"data": {"release_eligible": True}}),
+                              ("JSON 数组体", [{"release_eligible": True}])):
+            code, body = self._get("/api/release/eligibility",
+                                   data=json.dumps(payload).encode(), method="GET")
+            self.assertEqual(code, 400, f"{name} 未被拒绝：{body}")
+            self.assertEqual(body["error"], "E-G5-002", name)
+
+    def test_unparseable_body_is_still_input(self):
+        """**解析失败不等于没有输入。** 初版在 json.loads 抛异常时静默跳过。"""
+        code, body = self._get("/api/release/eligibility",
+                               data=b"not-json-at-all", method="GET")
+        self.assertEqual(code, 400, body)
+        self.assertIn("<body>", body["rejected_keys"])
+
+    def test_verdict_variants_are_labelled_as_verdict_keys(self):
+        """归一化只用于**诊断标注**：拒绝与否不取决于它，但标注须准确 ——
+        否则日志里看不出「这次是有人在试判定字段」还是「参数打错了」。"""
+        code, body = self._get("/api/release/eligibility?Release-Eligible=true")
+        self.assertEqual(code, 400, body)
+        self.assertTrue(body["verdict_keys"],
+                        f"变体未被标注为判定字段：{body}")
+
+    def test_clean_get_still_allowed(self):
+        """**唯一的放行路径**：无任何入参。默认拒绝不得把正常读取也挡掉。"""
+        code, body = self._get("/api/release/eligibility")
+        self.assertEqual(code, 200, body)
+        self.assertEqual(body["computed_by"], "backend")
+
 
 if __name__ == "__main__":
     unittest.main()

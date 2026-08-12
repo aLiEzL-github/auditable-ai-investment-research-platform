@@ -50,8 +50,61 @@ def _compute_eligibility():
             "computed_by": "backend", "source": "publish_engine.is_release_eligible"}
 
 
+# 本清单**不再是拒绝的依据**，只用于诊断标注（把「你传的是判定字段」
+# 说清楚）。拒绝依据见 _reject_client_input：**本端点不接受任何入参**。
+#
+# 为什么改：初版用 `keys & set(CLIENT_SUPPLIED_VERDICT_KEYS)` 精确匹配，
+# 这是一份穷举清单 —— 守卫能断言「清单内每个键都被拒」，
+# **不能断言清单是完备的**（Gate 5 签署记录 S3 ④ 已如实登记为盲区）。
+# 实测七个向量全部绕过当刻 main（大小写 / %5F / 连字符 / 前导空格 /
+# 嵌套 JSON / JSON 数组体 / 任意未知参数）。
+#
+# **机制是公开的** —— 读代码即知过滤器是精确匹配，也就知道该往哪里试
+# （该后果已写入 Gate 5 签署记录的不可逆后果 ②）。
+# 故按 S4 反转代价 ② 记载的补救执行：**改为默认拒绝**，
+# 使「知道清单」不再等于「知道缺口」—— 因为没有清单了。
 CLIENT_SUPPLIED_VERDICT_KEYS = ("release_eligible", "eligible", "reasons",
                                 "verdict", "gates")
+
+
+def _pct_decode(s):
+    """百分号解码。**不用 urllib.parse.unquote** —— M1/M4 禁止可信内核
+    引入网络库（arch_import_check 会抓）。只需 %XX 一种形态。"""
+    out, i, n = [], 0, len(s)
+    while i < n:
+        if s[i] == "%" and i + 2 < n:
+            try:
+                out.append(chr(int(s[i + 1:i + 3], 16)))
+                i += 3
+                continue
+            except ValueError:
+                pass
+        out.append(s[i])
+        i += 1
+    return "".join(out)
+
+
+def _norm_key(k):
+    """键名归一：百分号解码 → 去空白 → 折叠大小写 → 连字符归一为下划线。
+    诊断标注用；**拒绝与否不取决于它**。"""
+    return _pct_decode(k).strip().casefold().replace("-", "_")
+
+
+def _walk_keys(obj, depth=0):
+    """递归收集 JSON 结构中的**全部**键名 —— 含嵌套 dict 与 list 元素。
+    初版只看顶层 dict.keys()，于是 {"data":{"release_eligible":true}} 与
+    [{"release_eligible":true}] 都能整个绕过。深度设上限防构造性深嵌套。"""
+    if depth > 8:
+        return set()
+    ks = set()
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            ks.add(str(k))
+            ks |= _walk_keys(v, depth + 1)
+    elif isinstance(obj, list):
+        for v in obj:
+            ks |= _walk_keys(v, depth + 1)
+    return ks
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -75,28 +128,46 @@ class HealthHandler(BaseHTTPRequestHandler):
                 keys.add(pair.split("=", 1)[0])
         return path, keys
 
-    def _reject_client_verdict(self):
-        """E-1/E-3：请求携带判定字段即拒绝。返回 True 表示已拒绝。"""
+    def _reject_client_input(self):
+        """E-1/E-3：**本端点不接受任何入参 —— 有任何输入即拒绝。**
+
+        这是默认拒绝（default-deny），不是清单匹配：
+        `/api/release/eligibility` 是一个纯计算读取，没有合法参数，
+        所以「未知参数」与「判定字段」在此**同等对待**。
+
+        由此消掉的正是 S3 ④ 那条盲区 —— 清单完备性问题不复存在，
+        因为拒绝不再依赖清单。清单只剩诊断标注一个用途。
+        """
         _, keys = self._split_path(self.path)
         n = int(self.headers.get("Content-Length") or 0)
         if n > 0:
             raw = self.rfile.read(n)
+            # **请求体存在本身即构成输入** —— 解析失败也不放行。
+            # 初版在 json.loads 抛异常时静默跳过，于是非 JSON 体畅通无阻。
+            keys.add("<body>")
             try:
-                obj = json.loads(raw)
-                if isinstance(obj, dict):
-                    keys |= set(obj.keys())
+                # 递归收集 —— 嵌套 dict 与 list 元素里的键同样算数
+                keys |= _walk_keys(json.loads(raw))
             except Exception:
-                pass
-        hit = sorted(keys & set(CLIENT_SUPPLIED_VERDICT_KEYS))
-        if hit:
-            self._json(400, {
-                "error": "E-G5-002",
-                "detail": f"请求携带判定字段 {hit} —— release_eligible 只由后端计算，"
-                          f"客户端不得传入。**显式拒绝而非静默忽略**：静默忽略会让"
-                          f"调用方以为得手，也使该尝试在日志中无痕。",
-                "rejected_keys": hit})
-            return True
-        return False
+                pass                       # 解析失败仍算有输入（上面已记 <body>）
+        if not keys:
+            return False                   # 无任何入参 —— 唯一的放行路径
+
+        # 诊断标注：哪些属判定字段。**归一后再比**，使大小写 / %5F /
+        # 连字符 / 前导空格等变体都能被正确标注为判定字段。
+        _vk = set(CLIENT_SUPPLIED_VERDICT_KEYS)
+        _verdict_hits = sorted(k for k in keys if _norm_key(k) in _vk)
+        self._json(400, {
+            "error": "E-G5-002",
+            "detail": (f"本端点不接受任何入参（default-deny）。收到 "
+                       f"{sorted(keys)}"
+                       + (f"，其中判定字段 {_verdict_hits}" if _verdict_hits else "")
+                       + "。release_eligible 只由后端计算，客户端不得传入。"
+                         "**显式拒绝而非静默忽略**：静默忽略会让调用方以为得手，"
+                         "也使该尝试在日志中无痕。"),
+            "rejected_keys": sorted(keys),
+            "verdict_keys": _verdict_hits})
+        return True
 
     def do_GET(self):
         path, _ = self._split_path(self.path)
@@ -107,7 +178,7 @@ class HealthHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"ok\n")
             return
         if path == "/api/release/eligibility":
-            if self._reject_client_verdict():
+            if self._reject_client_input():
                 return
             self._json(200, _compute_eligibility())
             return
@@ -119,8 +190,8 @@ class HealthHandler(BaseHTTPRequestHandler):
         if path == "/api/release/eligibility":
             # E-3：本端点不接受写入 —— 判定不可由客户端改写。
             # 带判定字段 → 400（更具体）；否则 → 405（方法不允许）。
-            # _reject_client_verdict 已发响应时不得再发第二次。
-            if not self._reject_client_verdict():
+            # _reject_client_input 已发响应时不得再发第二次。
+            if not self._reject_client_input():
                 self._json(405, {"error": "E-G5-003",
                                  "detail": "release_eligible 不可由客户端写入；"
                                            "本端点只读，判定由后端唯一计算点产出"})
