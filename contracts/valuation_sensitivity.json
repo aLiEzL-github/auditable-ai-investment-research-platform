@@ -1,0 +1,120 @@
+{
+  "contract": "valuation-sensitivity-matrix/1.0",
+  "source": "基线 B §270 G3-06 交付件「路由/双算/**敏感性测试矩阵**」—— 路由与双算已有用例，敏感性此前**全仓库无对应物**（2026-08-12 广搜 敏感性/sensitivity/弹性/扰动 零命中）",
+  "why": [
+    "敏感性矩阵存在的意义正是抓「某参数改了输出不变」。",
+    "OI-PF-162（fcff_valuation 的 growth 形参从不被读取，growth=-0.30 与 0.50 输出逐字相同）",
+    "若本矩阵当初就建了，该缺陷在 G3-06 交付当天即现形，不必等到 G6A-05 的依赖审计。",
+    "**判据是声明式的**：期望由本契约给出，不由实现给出 —— 否则只是拿实现测自己。"
+  ],
+  "semantics": {
+    "SENSITIVE": "改动该参数，per_share_base **必须**变化。不变即 FAIL。",
+    "INSENSITIVE": "改动该参数，per_share_base **必须不变**。变了即 FAIL。须填 reason —— 按规则 ㉚，声明不敏感等同于加一条豁免，与守卫同等对待。"
+  },
+  "matrix": [
+    {
+      "method": "fcff_valuation",
+      "params": {
+        "fcff": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "1000000",
+            "2000000"
+          ]
+        },
+        "wacc": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "0.10",
+            "0.14"
+          ]
+        },
+        "terminal_growth": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "0.01",
+            "0.04"
+          ]
+        }
+      },
+      "note": "growth 形参已于 2026-08-12 移除（OI-PF-162）—— 本模型是单阶段 Gordon 永续，增速即 terminal_growth。**该格曾在本矩阵下报红**：growth=0.05 与 0.30 产出逐字相同；那次报红是本矩阵存在的直接理由。"
+    },
+    {
+      "method": "fcfe_valuation",
+      "params": {
+        "fcfe": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "1000000",
+            "2000000"
+          ]
+        },
+        "growth": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "0.02",
+            "0.07"
+          ],
+          "note": "探针须 < ke（0.10）—— FCFE 路有 E-G3-06-002：Ke 必须大于增速"
+        },
+        "ke": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "0.10",
+            "0.14"
+          ]
+        }
+      }
+    },
+    {
+      "method": "relative_valuation",
+      "params": {
+        "target_pe": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "12",
+            "20"
+          ]
+        },
+        "eps": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "1.5",
+            "2.5"
+          ]
+        }
+      }
+    },
+    {
+      "method": "pe_roe_pb_valuation",
+      "params": {
+        "roe": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "0.10",
+            "0.18"
+          ]
+        },
+        "book_per_share": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "8",
+            "12"
+          ]
+        },
+        "target_pe": {
+          "expect": "SENSITIVE",
+          "probe": [
+            "12",
+            "20"
+          ]
+        }
+      }
+    }
+  ],
+  "not_covered": [
+    "sotp_valuation：入参是 Dict（分部 → 值）而非标量，敏感性须逐分部构造，形态与上四路不同。**本矩阵不覆盖它**，如实载明而非假装覆盖（规则 ⑮：守卫的声称范围须与实际范围一致）。",
+    "cross_check：不产出 per_share_base，不适用本矩阵。",
+    "本矩阵只测「改了会不会变」，**不测变的方向与幅度是否正确** —— 后者需要模型层面的判据，不在 G3-06 交付件范围内。"
+  ]
+}

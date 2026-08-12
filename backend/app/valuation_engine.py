@@ -97,17 +97,33 @@ def _dec(s):
 
 
 def fcff_valuation(inputs: ValuationInputs, scenario: str,
-                   fcff: str, growth: str, wacc: str,
+                   fcff: str, wacc: str,
                    terminal_growth: str = "0.03") -> ValuationResult:
-    """FCFF 路：FCFF×(1+g)/(WACC−g) 终值折现（确定性 Decimal）。
+    """FCFF 路：**单阶段 Gordon 永续** —— FCFF×(1+g)/(WACC−g)，
+    其中 g = terminal_growth（永续增速）。确定性 Decimal。
 
     不给单一伪精确值：基准情景在 ±5% 区间输出。
+
+    ── 关于已移除的 growth 形参（OI-PF-162）──────────────────────────
+    本函数原先还收一个 growth 形参，**被赋值但从未被读取** ——
+    实测 growth=-0.30 与 growth=0.50 产出逐字相同（2026-08-12）。
+    它不是缺一行代码，是模型里根本没有它的位置：单阶段永续模型只有一个
+    增速，即永续增速；近期增速要生效需要显式预测期，那是两阶段模型。
+
+    处置取「去掉形参」而非「补两阶段」：基线 B §270 未要求两阶段，
+    补它是扩大 G3-06 的范围。**去掉形参使签名与实现一致** ——
+    调用者不再会因为签名收下 growth 而以为它影响结果。
+    recompute.py 的 PRODUCT_DEPS 早已按「valuation_fcff 不依赖 growth」
+    如实落库，本次改动与那份记载自洽。
+
+    缺陷本可更早发现：基线交付件含「敏感性测试矩阵」，而它此前
+    全仓库无对应物。现已补齐 —— contracts/valuation_sensitivity.json
+    + backend/tests/test_valuation_sensitivity.py。
     """
     if not inputs.ready():
         raise ValuationError(
             f"E-G3-06-001: FCFF 路输入不满足 G2-15（{inputs.statuses}）")
     fcff_d = _dec(fcff)
-    g = _dec(growth)
     w = _dec(wacc)
     tg = _dec(terminal_growth)
     if w <= tg:
