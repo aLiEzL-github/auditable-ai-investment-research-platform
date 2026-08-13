@@ -100,7 +100,10 @@ PRODUCT_DEPS: Dict[str, Tuple[str, ...]] = {
     "scenario_base": ("growth", "ke"),
     "scenario_optimistic": ("growth", "ke"),
     "claim_map": ("growth", "wacc", "ke", "target_pe", "roe"),
-    "emission_map": (),
+    # OI-PF-169 修复后：emission_map 由 claim_map 派生，故依赖同一批键。
+    # 原值 () 与「恒返回空」互为因果 —— 依赖表说它不读任何假设，
+    # 生成器就真的什么也没产出。
+    "emission_map": ("growth", "wacc"),
     "open_items": (),
 }
 
@@ -165,7 +168,26 @@ def _gen_claim_map(ctx: ResearchContext, v: Dict[str, str]) -> dict:
 
 
 def _gen_emission_map(ctx: ResearchContext, v: Dict[str, str]) -> dict:
-    return {"emissions": sorted(PRODUCT_DEPS["emission_map"])}
+    """`visible_span ↔ claim_node` 映射（G3-05 明列交付件）。
+
+    **OI-PF-169**：原实现是 `return {"emissions": sorted(PRODUCT_DEPS["emission_map"])}`
+    —— 它把**本产物读取哪些假设键**当作 emissions 输出，而那两件事不同；
+    且 `PRODUCT_DEPS["emission_map"] = ()`，故**恒返回空**。
+
+    基线 B §10 G3-05 交付件明列「`visible_span↔claim_node` emission map」，
+    验收明写「除白名单 C/L 外**每段可见内容一一绑定 Claim**」。
+    恒空 ⇒ 该绑定在回算产物中不存在 —— 一件明列交付件的缺失。
+
+    本实现由 claim_map 的产出派生：每条 Claim 生成一个可见片段绑定，
+    使「可见内容 → Claim」可查、且随假设值变化而变化。
+    """
+    claims = _gen_claim_map(ctx, v).get("claims", [])
+    return {"emissions": [
+        {"visible_span": f"span:{c['id']}",
+         "claim_node": c["id"],
+         "rendered_value": c["value"],
+         "assumption": c["assumption"]}
+        for c in claims]}
 
 
 def _gen_open_items(ctx: ResearchContext, v: Dict[str, str]) -> dict:
