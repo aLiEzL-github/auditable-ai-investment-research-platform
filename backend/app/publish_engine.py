@@ -275,19 +275,35 @@ class AuditResult:
     gates: Dict[str, str]           # gate 名 → PASS / FAIL（覆盖门报告 N）
     release_eligible: bool
     failures: List[str]
+    # OI-PF-174：审计结论**须绑定被审候选**。原实现的 candidate_digest
+    # 收下不用，导致同一份结论可被当作任意候选的审计。
+    audited_subject: str = ""       # = inputs_hash(manifest, candidate_digest)
 
     def report(self) -> str:
         lines = [f"gate {k} = {v}" for k, v in self.gates.items()]
         lines.append(f"release_eligible = {self.release_eligible}")
+        # **审计对象须出现在报告里** —— 否则「审了哪个候选」仍不可查
+        lines.append(f"audited_subject = {self.audited_subject}")
         return "\n".join(lines)
 
 
 def audit_candidate(store: ArtifactStore, manifest: dict,
                     candidate_digest: Optional[str] = None) -> AuditResult:
     """G4-02：任一适用质量门非 PASS 或 materially critical Claim 有缺口
-    → release_eligible=false。七门逐一断言，覆盖门报适用门数（⑨）。"""
+    → release_eligible=false。七门逐一断言，覆盖门报适用门数（⑨）。
+
+    **审计结论须绑定被审候选**（OI-PF-174）。原实现收下 candidate_digest
+    却从不读取 —— 实测 'AAAA' / 'BBBB' / None 三种入参**产出逐字相同**，
+    即审计结论不针对任何具体候选，而本函数的任务名正是「对**候选**执行审计」。
+    同一个量在 is_release_eligible 里却是绑定量（E-G4-04-004：输入变化批准失效），
+    **审计与准出对「哪个候选」的认定不一致**。
+
+    与 OI-PF-162（fcff_valuation 收下 growth 不用）同形 —— 本仓库第二例。
+    """
     failures: List[str] = []
     gates: Dict[str, str] = {}
+    # 审计对象标识：并入结论，使「审计了哪个候选」可查、可比对
+    audited_subject = inputs_hash(manifest, candidate_digest)
 
     # ① 完整性
     try:
@@ -390,6 +406,7 @@ def audit_candidate(store: ArtifactStore, manifest: dict,
 
     eligible = all(v.startswith("PASS") for v in gates.values())
     return AuditResult(gates=gates, release_eligible=eligible,
+                       audited_subject=audited_subject,
                        failures=failures)
 
 

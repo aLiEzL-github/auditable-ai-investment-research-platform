@@ -100,14 +100,19 @@ class TestFullRecompute(unittest.TestCase):
         ctx_new = _ctx(approve=["growth"])   # growth 0.05 → 0.08
         r_base = recompute_all(ctx_base)
         r_new = recompute_all(ctx_new)
+        # OI-PF-169 修复后 emission_map 移入受影响集合：它由 claim_map 派生、
+        # 依赖 growth/wacc。**此前它在 unaffected 里，而那是照着缺陷写的断言** ——
+        # 旧实现 `return {"emissions": sorted(PRODUCT_DEPS["emission_map"])}`
+        # 恒返回空，当然不随任何假设变化。用例因此记录了缺陷的行为而非正确行为，
+        # 并使该缺陷在回归中**看起来是被覆盖的**。
         affected = {"calc_ledger", "valuation_fcfe",
                     "scenario_pessimistic", "scenario_base",
-                    "scenario_optimistic", "claim_map"}
+                    "scenario_optimistic", "claim_map", "emission_map"}
         for name in affected:
             self.assertNotEqual(r_base.shas[name], r_new.shas[name],
                                 f"受影响产物 {name} 未重算（F-3）")
         unaffected = {"valuation_fcff", "valuation_relative",
-                      "valuation_pe_roe_pb", "emission_map", "open_items"}
+                      "valuation_pe_roe_pb", "open_items"}
         for name in unaffected:
             self.assertEqual(r_base.shas[name], r_new.shas[name],
                              f"不受影响产物 {name} 不应变化")

@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 
 from valuation_engine import (  # noqa: E402
     BASE, ValuationInputs, fcff_valuation, fcfe_valuation,
-    relative_valuation, pe_roe_pb_valuation,
+    relative_valuation, pe_roe_pb_valuation, sotp_valuation,
 )
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
@@ -51,12 +51,17 @@ _BASELINE = {
     "relative_valuation": dict(target_pe="12", eps="1.5"),
     "pe_roe_pb_valuation": dict(roe="0.10", book_per_share="8",
                                 target_pe="12"),
+    # OI-PF-172：SOTP 入参是 Dict（分部 → 值），探针形态是**整表替换**。
+    # 基准须合法：非空、且重叠 ≤ 分部合计 50%（否则触发 SotpDoubleCount）。
+    "sotp_valuation": dict(segments={"segA": "1000000", "segB": "500000"},
+                           overlaps={"ovl": "100000"}),
 }
 _FN = {
     "fcff_valuation": fcff_valuation,
     "fcfe_valuation": fcfe_valuation,
     "relative_valuation": relative_valuation,
     "pe_roe_pb_valuation": pe_roe_pb_valuation,
+    "sotp_valuation": sotp_valuation,
 }
 
 
