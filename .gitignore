@@ -60,3 +60,10 @@ frontend/dist/
 frontend/*.tsbuildinfo
 frontend/test-results/
 frontend/playwright-report/
+
+# OI-PF-186：变异注入/临时脚本不得入库。mut_g6path.py 曾被 git add -A
+# 扫进仓库根并随公开 main 发布（含本机路径与私有台账目录布局）。
+# 守卫 backend/tools/repo_hygiene_check.py 的 H-2 是兜底，本规则是第一道。
+/mut_*.py
+/_scratch*
+/*.tmp.py

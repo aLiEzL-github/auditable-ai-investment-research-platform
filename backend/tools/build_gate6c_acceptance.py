@@ -19,7 +19,23 @@ import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-PORTFOLIO = os.environ.get("PORTFOLIO_ROOT") or "/Users/li/Documents/Claudetext/portfolio"
+def _portfolio_root() -> str:
+    """台账根目录 —— 由 PORTFOLIO_ROOT 给出，**缺失即拒**（OI-PF-186）。
+
+    此前缺省值写死为编写者的本机绝对路径，并随公开仓库一并发布，
+    泄露了本机用户名、目录布局与私有台账的存在。台账位置因人因机而异，
+    **没有一个正确的缺省值可取**，故取 fail-closed：未设即报错退出，
+    而不是悄悄指向一个别人机器上不存在的路径再产出空结果。
+    """
+    p = os.environ.get("PORTFOLIO_ROOT")
+    if not p or not os.path.isdir(p):
+        raise SystemExit(
+            "E-ENV-001: 须设 PORTFOLIO_ROOT 指向台账根目录（当前 "
+            f"{p!r} 未设或不是目录）—— 本工具不再使用任何硬编码缺省路径")
+    return os.path.abspath(p)
+
+
+PORTFOLIO = _portfolio_root()
 NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
 
 EXCLUDE = ("生成时刻", "实测时刻", "main 最新 CI run", "run = ", "ruleset: ",

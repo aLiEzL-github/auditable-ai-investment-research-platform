@@ -21,12 +21,14 @@ TOOL = os.path.join(REPO, "tools", "vertical_candidate_g3_08.py")
 def _find_portfolio():
     """与 vertical_candidate_g3_08.py 相同的解析顺序，避免两处口径不一致。
 
-    显式环境变量 > 仓库同级 > 本机既定位置。**逐个探测其 golden-baselines
+    显式环境变量 > 仓库同级（本机既定位置已移除，OI-PF-186）。**逐个探测其 golden-baselines
     子目录是否存在**，而不是只看路径字符串 —— 路径存在不等于台账在那儿。
     """
+    # OI-PF-186：链尾的本机绝对路径已移除（它随公开仓库发布）。
+    # 探测不到即返回 None，下游按 SYNTHETIC_FIXTURE 显式降级 —— 与此前
+    # 在 CI 上的实际行为一致（CI runner 上那条路径本就不存在）。
     for _c in (os.environ.get("PORTFOLIO_ROOT"),
-               os.path.join(REPO, "..", "..", "portfolio"),
-               "/Users/li/Documents/Claudetext/portfolio"):
+               os.path.join(REPO, "..", "..", "portfolio")):
         if _c and os.path.isdir(os.path.join(_c, "golden-baselines")):
             return os.path.abspath(_c)
     return None
