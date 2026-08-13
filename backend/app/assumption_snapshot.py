@@ -84,6 +84,24 @@ class ApprovalEvent:
                 "rejection_reason": self.rejection_reason}
 
 
+# ── 批准者白名单（OI-PF-176：默认拒绝，非黑名单）────────────────────
+# 身份形态依 VD-18 ②：化名/代号 + GitHub 账号，**不用真实姓名**
+# （VD-05 = 公开仓库，真名会进入公开 task-record 且入 Git 历史不可撤回）。
+# 新增批准者须显式加入本清单 —— 加入即等同于加一条豁免，按规则 ㉚ 与守卫同等对待。
+APPROVER_ALLOWLIST = ("U",)
+
+
+def _norm_approver(s: str) -> str:
+    """归一后比对：去首尾空白 + 折叠大小写。
+
+    原黑名单是字面比对，故 'llm' 与 'LLM ' 都能绕过。
+    """
+    return str(s or "").strip().casefold()
+
+
+_NORM_ALLOWLIST = frozenset(_norm_approver(x) for x in APPROVER_ALLOWLIST)
+
+
 class AssumptionRegistry:
     """proposal 登记与人工裁决。LLM 无批准写权：
     approve()/reject() 的调用方必须声明身份且非 LLM/自动化。"""
@@ -101,10 +119,32 @@ class AssumptionRegistry:
         return proposal
 
     def _assert_approver(self, approver: str) -> None:
-        """批准写权：LLM/自动化/AUTOMATION 一律无批准权（G0-04 §2）。"""
-        if approver in ("LLM", "AUTOMATION", "L8", "L9", "L10"):
+        """批准写权：**默认拒绝** —— 不在白名单内的一律无批准权。
+
+        原实现是穷举黑名单 `if approver in ("LLM","AUTOMATION","L8","L9","L10")`。
+        实测 2026-08-13（OI-PF-176）：十种身份七种批准成功 ——
+        **'llm'（小写）· 'LLM '（尾随空格）· 'AGENT' · 'Codex' · 'system'
+        · 'L11' · 'GPT' 全部通过**。其中 'Codex' 尤其致命：VD-02 明写
+        「Codex 或任何 AI 辅助**不计入**自然人数（A §6.1）」。
+
+        **这是同一形状的第三例** —— CLIENT_SUPPLIED_VERDICT_KEYS（OI-PF-161）、
+        SERVER_ALLOWLIST 死豁免、本处。OI-PF-161 的结论早已写下：
+        **穷举清单不可证完备，能做默认拒绝就不要做清单。**
+
+        与前两例相比本处更重：那两处被绕过不改变结论（判定由唯一计算点产出）；
+        **本处一旦绕过，即一个未经人工批准的假设进入计算** —— 而 G6A-05 的
+        整个确定性回算链条建立在「每条 AssumptionProposal 有独立人工批准」之上。
+
+        判据：归一（去空白 + 折叠大小写）后须落在 APPROVER_ALLOWLIST 内。
+        白名单为空时**不得默认放行**（fail-closed）。
+        """
+        if not APPROVER_ALLOWLIST:
             raise NoApprovalWrite(
-                f"E-G3-13-003: {approver} 无批准写权（G0-04 §2 / writers.json）")
+                "E-G3-13-003: 批准者白名单为空 —— **不得默认放行**（fail-closed）")
+        if _norm_approver(approver) not in _NORM_ALLOWLIST:
+            raise NoApprovalWrite(
+                f"E-G3-13-003: {approver!r} 不在批准者白名单内，无批准写权"
+                f"（默认拒绝；G0-04 §2 / VD-02：AI 辅助不计入自然人数）")
 
     def decide(self, proposal_id: str, decision: str, approver: str,
                decided_at: str, token: str,
