@@ -28,6 +28,33 @@ EXCLUDE = ("生成时刻", "实测时刻", "main 最新 CI run", "run = ", "rule
            "substantive_sha256", "合计", "独立审计:", "v2.0 基线:")
 
 
+def _adr021_in_scope(i, g):
+    """ADR-021 §2 **逐字段**口径 + ADR-022 §2（"ALL" 不算命中）。
+
+    OI-PF-157：各生成器此前一律把四字段拼成一个串、统一用 `GN-\\d|Gate N`
+    匹配 —— **要求短横**，于是 blocks_data_flow / deprecated_blocks_gate 里的
+    **裸 GN** 一个也匹配不上。而裸 GN 恰是那两个字段的主流写法
+    （deprecated_blocks_gate 里 G1×8 · G2×6 · G0×4 · G7×3）。
+
+    ADR-021 §2 原文对四个字段给的是各不相同的模式：
+        blocks_development     含 GN-\\d\\d
+        blocks_data_flow       含 GN / Gate N      ← 裸 GN
+        blocks_decisions       含 Gate N
+        deprecated_blocks_gate 含 GN / Gate N      ← 裸 GN
+    """
+    import re  # 局部导入：本函数被多个生成器共用，各模块的 re 绑定方式不一。
+    if re.search(rf"{g}-\d\d", str(i.get("blocks_development") or "")):
+        return True
+    for _k in ("blocks_data_flow", "deprecated_blocks_gate"):
+        _v = str(i.get(_k) or "")
+        if _v == "ALL":
+            continue                       # ADR-022 §2 取字面
+        if re.search(rf"\b{g}\b|{g}-\d|Gate {g[1:]}\b", _v):
+            return True
+    return bool(re.search(rf"Gate {g[1:]}\b",
+                          str(i.get("blocks_decisions") or "")))
+
+
 def run(cmd):
     r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
@@ -41,14 +68,10 @@ def status_of(cmd):
 
 
 def in_gate4(i):
-    """ADR-021 §2 并集口径（blocks_development 必含 G4-xx）。"""
-    bd = str(i.get("blocks_development") or "")
-    if re.search(r"G4-\d\d", bd):
-        return True
-    s = " ".join(str(i.get(k) or "") for k in
-                 ("blocks_data_flow", "blocks_decisions", "deprecated_blocks_gate"))
-    return bool(re.search(r"G4-|Gate 4", s))
-
+    """ADR-021 §2 逐字段口径（OI-PF-157）。"""
+    # **本改动不重新生成该验收包** —— 它已 ACTIVE 签署，
+    # 重生成会改字节而触发 A §10.3（见 OI-PF-168）。
+    return _adr021_in_scope(i, "G4")
 
 def main() -> int:
     L = []
