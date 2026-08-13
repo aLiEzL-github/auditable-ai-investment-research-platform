@@ -106,7 +106,8 @@ class TestCasAndRetry(TestRepositoryBase):
 
     def test_cas_stale_version_rejected(self):
         art = self._mk_artifact()
-        self.repo.cas_insert(self.s, art)
+        self.repo.cas_insert(self.s, art, writer="L7_freeze",
+                             context={"rights_gate_and_parse_ok": True})
         self.assertEqual(art.version, 1)
         # 陈旧版本并发更新（version 仍 1，模拟他人已 +1）
         art.version = 2  # 他人已提交
@@ -117,7 +118,8 @@ class TestCasAndRetry(TestRepositoryBase):
 
     def test_retry_after_conflict_succeeds(self):
         art = self._mk_artifact()
-        self.repo.cas_insert(self.s, art)
+        self.repo.cas_insert(self.s, art, writer="L7_freeze",
+                             context={"rights_gate_and_parse_ok": True})
         # 模拟两次冲突后成功（有限重试）
         for expected in (1, 2):
             current = self.s.query(RawArtifact).filter_by(id="RA-9").one()
@@ -131,10 +133,12 @@ class TestCasAndRetry(TestRepositoryBase):
 
     def test_content_addressed_dedup_rejected(self):
         first = self._mk_artifact()
-        self.repo.cas_insert(self.s, first)
+        self.repo.cas_insert(self.s, first, writer="L7_freeze",
+                             context={"rights_gate_and_parse_ok": True})
         dup = self._mk_artifact(sha="b" * 64, src_id="S-3", src_name="cas-source-2")
         with self.assertRaises(ValueError) as cm:
-            self.repo.cas_insert(self.s, dup)
+            self.repo.cas_insert(self.s, dup, writer="L7_freeze",
+                             context={"rights_gate_and_parse_ok": True})
         self.assertIn("sha256", str(cm.exception))
 
 
