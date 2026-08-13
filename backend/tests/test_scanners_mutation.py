@@ -20,6 +20,7 @@ sys.path.insert(0, TOOLS)
 import secret_scan
 import data_ingress_scan
 import upstream_taint_scan
+import repo_hygiene_check
 
 # ── secret_scan：每条规则一个正例（应与规则一一对应） ──────────────
 # 载荷一律拼接构造（_X 模式）：
@@ -164,6 +165,93 @@ class TestTaintRules(unittest.TestCase):
 
     def test_negative(self):
         self.assertIsNone(upstream_taint_scan.HEADER_PAT.search(TAINT_NEG))
+
+
+# ── repo_hygiene_check（OI-PF-186）：载荷表独立于规则维护 ──────────────
+# H-1 正例的第一条**就是原缺陷形态**（规则 ⑩）：这一行曾在公开 main 上的
+# 七个生成器里逐字出现，泄露编写者的用户名与私有台账目录名。
+# **载荷一律拼接构造**（沿用本文件既有的 _c 模式）：写成字面量会被
+# repo_hygiene_check 自己的 H-1 判红 —— 守卫抓到了它自己的载荷表。
+# 修法不是给本文件开豁免（那会让载荷表成为唯一可藏本机路径的地方），
+# 而是让载荷在源码里不以字面形态存在，运行时才拼出来。
+_U = _c("/Us", "ers/li/Documents/Claudetext/portfolio")
+HYGIENE_POS = {
+    "原缺陷形态（生成器缺省值）":
+        _c('PORTFOLIO = os.environ.get("PORTFOLIO_ROOT") or "', _U, '"'),
+    "原缺陷形态（变异脚本常量）": _c('SRC = "', _U, '"'),
+    "Linux 家目录": _c('p = "/ho', 'me/alice/ledger/open-items.json"'),
+    "行内出现而非行首": _c('    shutil.copytree("/Us', 'ers/someone/x", dst)'),
+    "文档里的散文提及": _c("台账位于 /Us", "ers/li/Documents/ 之下。"),
+}
+
+HYGIENE_NEG = {
+    "CI runner 工作目录（写明理由的前缀排除）":
+        _c('ws = "/ho', 'me/runner/work/repo/repo"'),
+    "仓库同级相对路径":
+        'os.path.join(REPO, "..", "..", "portfolio")',
+    "URL 路径段里恰好有 /Us" "ers/":
+        _c('DOC = "https://example.com/Us', 'ers/guide"'),
+    "环境变量读取本身": 'p = os.environ.get("PORTFOLIO_ROOT")',
+}
+
+
+class TestRepoHygieneRules(unittest.TestCase):
+    """H-1/H-2 的判据须能判红，也须不误红。
+
+    只测「能判红」不够：一个恒红的守卫会被人关掉；一个恒绿的守卫等于没有。
+    """
+
+    def test_h1_positive(self):
+        for name, payload in HYGIENE_POS.items():
+            with self.subTest(name):
+                self.assertIsNotNone(repo_hygiene_check.abs_path_hit(payload),
+                                     f"H-1 未命中正例：{name}")
+
+    def test_h1_negative(self):
+        for name, payload in HYGIENE_NEG.items():
+            with self.subTest(name):
+                self.assertIsNone(repo_hygiene_check.abs_path_hit(payload),
+                                  f"H-1 误红于负例：{name}")
+
+    def test_h2_rejects_stray_root_entry(self):
+        """原缺陷形态：mut_g6path.py 躺在仓库根（PR #78 由 git add -A 扫入）。"""
+        roots = set(repo_hygiene_check.ROOT_ALLOWED) | {"mut_g6path.py"}
+        v = repo_hygiene_check.root_violations(roots)
+        self.assertTrue(any("mut_g6path.py" in x for x in v),
+                        "根上多出的散落文件未被判红")
+
+    def test_h2_reports_declared_but_missing(self):
+        """声明了却不存在，同样须判红 —— 否则声明集合会悄悄腐烂。"""
+        roots = set(repo_hygiene_check.ROOT_ALLOWED) - {"contracts"}
+        v = repo_hygiene_check.root_violations(roots)
+        self.assertTrue(any("contracts" in x for x in v))
+
+    def test_h2_clean_set_passes(self):
+        """防误红：与声明完全一致时须为空。"""
+        self.assertEqual(
+            repo_hygiene_check.root_violations(set(repo_hygiene_check.ROOT_ALLOWED)), [])
+
+    def test_guard_is_actually_wired_end_to_end(self):
+        """判据对 ≠ 守卫生效：在临时 git 仓库上端到端跑一次。
+
+        本项目反复出现的形状正是「判据写对了但没人经过它」
+        （SERVER_ALLOWLIST 从不匹配 · SENSITIVE_KEYS 从不使用 ·
+        E-G2-01-005 在无人经过的路上）。故此处不测判据，测**接线**。
+        """
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["git", "init", "-q", d], check=True)
+            with open(os.path.join(d, "stray.py"), "w", encoding="utf-8") as f:
+                f.write(_c('SRC = "', _U, '"') + "\n")
+            subprocess.run(["git", "-C", d, "add", "-A"], check=True)
+            r = subprocess.run(
+                [sys.executable,
+                 os.path.join(TOOLS, "repo_hygiene_check.py"), d],
+                capture_output=True, text=True)
+            self.assertEqual(r.returncode, 1, f"端到端未判红：{r.stdout}")
+            self.assertIn("H-1", r.stdout)
+            self.assertIn("H-2", r.stdout)
 
 
 if __name__ == "__main__":

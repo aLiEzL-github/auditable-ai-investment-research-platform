@@ -30,10 +30,14 @@ import sys
 # OI-PF-153 同类：原默认值写死本机绝对路径，CI 上不存在该目录，
 # 工具崩溃且 stdout 非 JSON —— test_g3_08 的 5 个用例因此在 CI 上全部
 # ERROR/FAIL，而本机全过。**本机通过不构成 CI 通过。**
-# 优先级：显式参数 > PORTFOLIO_ROOT 环境变量 > 本机默认值。
+# 优先级：显式参数 > PORTFOLIO_ROOT 环境变量 > 仓库同级 ../portfolio。
+# OI-PF-186：**本机绝对路径缺省已移除** —— 它随公开仓库发布，泄露了
+# 编写者的用户名与目录布局。链尾改为仓库同级的相对位置，对任何 clone
+# 者都成立；仍不可达时下游按 SYNTHETIC_FIXTURE 显式降级（见下）。
 PORTFOLIO = (sys.argv[1] if len(sys.argv) > 1
              else os.environ.get("PORTFOLIO_ROOT")
-             or "/Users/li/Documents/Claudetext/portfolio")
+             or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+                 os.path.abspath(__file__)))), "..", "portfolio"))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "backend", "app"))
