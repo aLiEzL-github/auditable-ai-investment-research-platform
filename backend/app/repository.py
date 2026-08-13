@@ -13,6 +13,7 @@
 写权：本层为 L7_freeze 提供写原语 —— assert_writer 的接入点（J4 前向要求）。
 """
 
+import json
 import os
 import sqlite3
 import sys
@@ -23,6 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.types import TypeDecorator
 
 # schema_validate 与 repository 同目录；容器内 `import backend.app.repository`
 # 模式下 backend/app/ 不在 sys.path，须显式注入（与其他工具入口一致）
@@ -30,6 +32,41 @@ sys.path.insert(0, os.path.dirname(__file__))
 from schema_validate import assert_writer
 
 Base = declarative_base()
+
+
+class JSONList(TypeDecorator):
+    """列表 ↔ JSON 文本（OI-PF-185）。
+
+    `refs` 有两份互相矛盾的契约：存储侧是 `Text`（migrations/g2_01_claim_evidence.py:27），
+    域侧是数组（tools/gen_schemas.py:137 `"refs": {"type": "array"}`）。
+    修复前二者**互斥**：
+
+        refs=['E-1']    校验要求的形态 → DB 绑定失败 type 'list' is not supported
+        refs='["E-1"]'  DB 能存的形态   → 校验拒 E-G2-01-005
+        refs=None       →  **唯一能成功写入的取值，恰好是唯一跳过校验的取值**
+
+    即 `E-G2-01-005` 在任何成功路径上都不生效，而 `test_g2_01.py` 走的正是
+    refs 缺省（None）那条路，**把这个状态固化成了绿灯**。
+
+    本装饰器让 Python 侧为 list、存储侧仍为 JSON 文本 —— 两份契约同时成立，
+    且**不需要迁移**（列类型不变，alembic 路径与 create_all 路径保持一致，
+    这一点由 test_jobs.py:202「测试路径与部署路径一致」间接约束）。
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError("E-G2-01-005: claim.refs 必须为列表")
+        return json.dumps(value, ensure_ascii=False)
+
+    def process_result_value(self, value, dialect):
+        if value is None or value == "":
+            return None
+        return json.loads(value)
 
 WAL_PRAGMAS = (
     "PRAGMA journal_mode=WAL;",
@@ -97,7 +134,7 @@ class Claim(Base):
     statement = Column(Text, nullable=False)
     category = Column(String(64), nullable=False)
     materiality = Column(String(16), nullable=False, default="UNCLASSIFIED")
-    refs = Column(Text)
+    refs = Column(JSONList)          # OI-PF-185：Python 侧 list，存储侧 JSON 文本
     status = Column(String(16), nullable=False, default="DRAFT")
     version = Column(Integer, nullable=False, default=1)
 
@@ -274,6 +311,75 @@ class CurrentPointer(Base):
     version = Column(Integer, nullable=False, default=1)
 
 
+# ── 写权类型表与前置判据（OI-PF-183 / OI-PF-184）──────────────────────
+#
+# `_OBJ_TYPE` 把 ORM 模型映射到 contracts/writers.json 的对象名。
+# **表里没有的类型一律拒**（cas_insert 中默认拒绝），而不是放行 ——
+# 新增一个模型而忘了登记，会在第一次写入时报错，不会静默绕过写权。
+_OBJ_TYPE = {
+    Source: "source",
+    RawArtifact: "raw_artifact",
+    AcquisitionEvent: "acquisition_event",
+    Claim: "claim",
+    EvidenceRecord: "evidence_record",
+    ManualEntry: "manual_entry",
+    Snapshot: "snapshot",
+    FactRecord: "fact",
+    RightsDecisionRecord: "rights_decision",
+    ClaimEvidenceLink: "claim_evidence_link",
+    Approval: "approval",
+    Release: "release",
+    CurrentPointer: "current_pointer",
+}
+
+# refs 可指向的表 —— 「引用可解析」= 每个 ref 在其中之一里实际存在。
+_REF_TABLES = (Claim, EvidenceRecord, FactRecord, RawArtifact, Snapshot, Source)
+
+
+def _refs_resolvable(session, refs) -> bool:
+    """MACHINE 前置 `refs_resolvable`（writers.json claim 行：「引用必须可解析」）。
+
+    此前此处传的是**字面 `True`** —— 前置的输入由被断言方提供且恒为合法值，
+    使该前置无条件成立（OI-PF-184 ②）。现改为实际解析：
+
+      · refs 为 None / [] → True（无引用可解析失败，非「跳过校验」）
+      · 否则每个 ref 须在 _REF_TABLES 之一中存在；**有一个查不到即 False**
+    """
+    if refs is None:
+        return True
+    if not isinstance(refs, list):
+        return False
+    for r in refs:
+        if not isinstance(r, str) or not r:
+            return False
+        if not any(session.query(t).filter_by(id=r).first() is not None
+                   for t in _REF_TABLES):
+            return False
+    return True
+
+
+def _policy_frozen(policy_version) -> bool:
+    """MACHINE 前置 `policy_frozen`（「policy_version 须为已冻结版本」）。
+
+    此前同样是**字面 `True`**。现按 rights_matrix.json 的 `produced_at` 判定 ——
+    `RightsGuard` 正是以它作为 policy_version 的缺省来源（rights_guard.py:75）。
+
+    **已知边界，如实载明**：本判据只认**当前**矩阵版本。历史上冻结过的旧版本
+    在仓库内没有任何登记处，故以旧版本记录的 RightsDecision 会被判为不满足前置。
+    这是默认拒绝方向的取舍；要支持旧版本，需要一份冻结版本登记册，
+    那是 OI-PF-180 写权矩阵接入面的一部分，不在本次修复范围内。
+    """
+    if not policy_version or not isinstance(policy_version, str):
+        return False
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     "..", "..", "contracts", "rights_matrix.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            return policy_version == str(json.load(f).get("produced_at"))
+    except (OSError, ValueError):
+        return False        # 读不到矩阵 → 无法证明已冻结 → 拒（不默认放行）
+
+
 class Repository:
     """Repository 基类：事务、CAS（版本乐观锁）、有限重试。"""
 
@@ -303,8 +409,27 @@ class Repository:
     def session(self):
         return self.Session()
 
-    def cas_insert(self, session, obj):
-        """CAS 写：插入时检查同 sha256（内容寻址）是否已存在。"""
+    def cas_insert(self, session, obj, writer, context=None):
+        """CAS 写：插入时检查同 sha256（内容寻址）是否已存在。
+
+        **OI-PF-183**：本方法原先不收写者参数、不判对象类型，
+        `session.add(obj)` + `commit()` 直落 —— 于是它成了四个受控写法之外的
+        第二条 public 写路径。实测（内存库）曾以
+
+            repo.cas_insert(s, Claim(id='C-BYPASS-1', ...))   → 成功，库内计数 = 1
+
+        绕过 `add_claim` 的 `assert_writer`。断言在它自己那条路上确实有效，
+        问题是同一个类上还有第二条路。
+
+        现改为：写者参数**必填**，对象类型经 `_OBJ_TYPE` 查表，
+        **查不到即拒**（默认拒绝，而非放行）。
+        """
+        obj_type = _OBJ_TYPE.get(type(obj))
+        if obj_type is None:
+            raise ValueError(
+                f"E-WRITE-005: {type(obj).__name__} 未登记于写权类型表 —— "
+                f"通用写原语不得写未登记类型（默认拒绝）")
+        assert_writer(obj_type, writer, context or {})
         if isinstance(obj, RawArtifact):
             existing = session.query(RawArtifact).filter_by(sha256=obj.sha256).first()
             if existing is not None:
@@ -321,17 +446,27 @@ class Repository:
         obj.version = expected_version + 1
 
     # ── G2-01 写路径（assert_writer 接入，X-4/J4）────────────────────
-    def add_claim(self, session, claim: Claim, writer: str = "L9_claim"):
-        # refs_resolvable：refs 须为合法引用列表（G2-01：格式校验，pattern 由 schema 保证）
+    #
+    # **OI-PF-184**：以下四法的 `writer` 原先都有缺省值，且缺省值**恰好等于
+    # contracts/writers.json 里该对象白名单的唯一合法值** —— 调用方不传即自动通过，
+    # 断言只能挡住「主动自称非法写者」的调用方。缺省已全部移除，writer 为必填。
+    #
+    # 同一条目的第二半：MACHINE 前置的实参曾有两处**硬编码字面 True** ——
+    # `add_claim` 的 `refs_resolvable` 与 `record_rights_decision` 的 `policy_frozen`
+    # （另两法的前置一直是真查询）。两处均已改为实际校验结果。
+
+    def add_claim(self, session, claim: Claim, writer: str):
         refs = getattr(claim, "refs", None) if hasattr(claim, "refs") else None
         if refs is not None and not isinstance(refs, list):
             raise ValueError("E-G2-01-005: claim.refs 必须为列表")
-        assert_writer("claim", writer, {"id": claim.id, "refs_resolvable": True})
+        assert_writer("claim", writer, {
+            "id": claim.id,
+            "refs_resolvable": _refs_resolvable(session, refs)})
         session.add(claim)
         session.commit()
         return claim
 
-    def add_evidence(self, session, ev: EvidenceRecord, writer: str = "L13_evidence"):
+    def add_evidence(self, session, ev: EvidenceRecord, writer: str):
         assert_writer("evidence_record", writer, {
             "id": ev.id, "artifact_id": ev.artifact_id,
             "artifact_frozen": session.query(RawArtifact).filter_by(id=ev.artifact_id).first() is not None,
@@ -346,10 +481,11 @@ class Repository:
         return ev
 
     def record_rights_decision(self, session, rd: RightsDecisionRecord,
-                               writer: str = "L15_rights"):
+                               writer: str):
         """RightsDecision 审计入册（X-4：assert_writer 接入）。"""
         assert_writer("rights_decision", writer, {
-            "id": rd.id, "source_id": rd.source_id, "policy_frozen": True,
+            "id": rd.id, "source_id": rd.source_id,
+            "policy_frozen": _policy_frozen(rd.policy_version),
             "source_registered": session.query(Source).filter_by(id=rd.source_id).first() is not None})
         if session.query(Source).filter_by(id=rd.source_id).first() is None:
             raise ValueError(f"E-G2-03-005: source 未登记: {rd.source_id}")
@@ -358,7 +494,7 @@ class Repository:
         return rd
 
     def link_evidence(self, session, claim_id: str, evidence_id: str,
-                      direction: str, writer: str = "L14_evidence_link"):
+                      direction: str, writer: str):
         claim_exists = session.query(Claim).filter_by(id=claim_id).first() is not None
         evidence_exists = session.query(EvidenceRecord).filter_by(id=evidence_id).first() is not None
         assert_writer("claim_evidence_link", writer, {

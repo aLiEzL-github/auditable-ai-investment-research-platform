@@ -109,15 +109,50 @@ class TestRightsGuard(unittest.TestCase):
             self.assertIn("E-G2-03-004", str(ctx.exception))
 
     # ── X-4：审计写路径 assert_writer ───────────────────────────────
+    def _frozen_policy_version(self):
+        """契约里当前已冻结的 policy_version（rights_matrix.json 的 produced_at）。"""
+        import json
+        import os
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "..", "..", "contracts", "rights_matrix.json")
+        with open(p, encoding="utf-8") as f:
+            return str(json.load(f)["produced_at"])
+
     def test_decision_recorded_with_writer_gate(self):
         rd = self.guard.decide("SRC_SSE", "FETCH", "/a")
         rec = self._rd_to_record(rd)
         rec.id = "RD_0001"
-        self.repo.record_rights_decision(self.s, rec)
+        # OI-PF-184：MACHINE 前置 policy_frozen 此前硬编码为 True，
+        # 于是本用例用内联 fixture matrix（policy_version 落到回退值 "matrix"）
+        # 也能写入。前置改为实际判定后，须给出**真实已冻结**的版本。
+        rec.policy_version = self._frozen_policy_version()
+        self.repo.record_rights_decision(self.s, rec, writer="L15_rights")
         n = self.s.query(RightsDecisionRecord).count()
         self.assertEqual(n, 1, "决定须审计入册")
         with self.assertRaises(Exception):
             self.repo.record_rights_decision(self.s, rec, writer="LLM")
+
+    def test_unfrozen_policy_version_rejected(self):
+        """OI-PF-184：policy_frozen 须是实际判定，不是字面 True。
+
+        修复前该前置无条件成立 —— 任何 policy_version（包括内联 fixture 的
+        回退值 "matrix"）都能写入审计册。本用例把「无法证明已冻结即拒」钉死。
+        """
+        rd = self.guard.decide("SRC_SSE", "FETCH", "/a")
+        for bad in ("matrix", "v1", "", "2000-01-01T00:00:00Z"):
+            rec = self._rd_to_record(rd)
+            rec.id = f"RD_BAD_{abs(hash(bad)) % 9999}"
+            rec.policy_version = bad
+            with self.assertRaises(Exception) as ctx:
+                self.repo.record_rights_decision(self.s, rec, writer="L15_rights")
+            self.assertIn("policy_frozen", str(ctx.exception),
+                          f"policy_version={bad!r} 应因前置不满足被拒")
+            self.s.rollback()
+        # 防误红：已冻结版本仍可写入
+        ok = self._rd_to_record(rd)
+        ok.id = "RD_OK_1"
+        ok.policy_version = self._frozen_policy_version()
+        self.repo.record_rights_decision(self.s, ok, writer="L15_rights")
 
     # ── X-9：直接调用适配器不能绕门 ─────────────────────────────────
     def test_direct_adapter_call_cannot_bypass(self):

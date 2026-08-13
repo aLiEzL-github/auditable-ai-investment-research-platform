@@ -78,18 +78,20 @@ class TestG2_01(unittest.TestCase):
                    category="FUNDAMENTAL", materiality="MATERIAL", status="DRAFT", version=1)
         c2 = Claim(id="CLAIM_B", schema_version="1.0.0", statement="X 公司营收下降",
                    category="FUNDAMENTAL", materiality="MATERIAL", status="DRAFT", version=1)
-        self.repo.add_claim(self.s, c1)
-        self.repo.add_claim(self.s, c2)
+        self.repo.add_claim(self.s, c1, writer="L9_claim")
+        self.repo.add_claim(self.s, c2, writer="L9_claim")
 
         ev = EvidenceRecord(
                 id="EVID_0001", schema_version="1.0", artifact_id="ART_0001",
                             snapshot_id="SNAP_0001", schema_ver="fact.v1",
                             parser_version="parser-1.0", sha256=_sha("evidence1"),
                             content="片段 A", version=1)
-        self.repo.add_evidence(self.s, ev)
+        self.repo.add_evidence(self.s, ev, writer="L13_evidence")
 
-        self.repo.link_evidence(self.s, "CLAIM_A", "EVID_0001", "SUPPORT")
-        self.repo.link_evidence(self.s, "CLAIM_B", "EVID_0001", "REFUTE")
+        self.repo.link_evidence(self.s, "CLAIM_A", "EVID_0001", "SUPPORT",
+                                writer="L14_evidence_link")
+        self.repo.link_evidence(self.s, "CLAIM_B", "EVID_0001", "REFUTE",
+                                writer="L14_evidence_link")
 
         links = self.s.query(ClaimEvidenceLink).filter_by(evidence_id="EVID_0001").all()
         self.assertEqual(len(links), 2)
@@ -101,12 +103,57 @@ class TestG2_01(unittest.TestCase):
         self.assertEqual(c1.category, "FUNDAMENTAL")
 
     # ── 内容寻址与前置校验（preconditions）──────────────────────────
+    # ── OI-PF-185：refs 的存储契约与校验契约须同时成立 ──────────────
+    def test_refs_list_roundtrip_and_resolvability(self):
+        """修复前这两份契约互斥，唯一能写成功的取值恰好是唯一跳过校验的取值。
+
+            refs=['E-1']    校验要求的形态 → DB 绑定失败（type 'list' is not supported）
+            refs='["E-1"]'  DB 能存的形态   → 校验拒 E-G2-01-005
+            refs=None       → **成功，而 None 恰好跳过校验**
+
+        且 test_g2_01 此前走的正是 refs 缺省那条路，**把该状态固化成了绿灯**
+        —— 与 test_g6a_05 断言 emission_map 不变（而它恒空）同形。
+        """
+        base = dict(schema_version="1.0.0", statement="s", category="C",
+                    materiality="MATERIAL", status="DRAFT", version=1)
+
+        # ① 空列表：写得进，且读出来仍是 list（不是 None、不是字符串）
+        self.repo.add_claim(self.s, Claim(id="CLAIM_R0", refs=[], **base),
+                            writer="L9_claim")
+        got = self.s.query(Claim).filter_by(id="CLAIM_R0").one()
+        self.assertEqual(got.refs, [], "空列表须原样往返")
+        self.assertIsInstance(got.refs, list)
+
+        # ② 指向已存在对象的引用：写得进，往返为同一 list
+        self.repo.add_claim(self.s, Claim(id="CLAIM_R1", refs=["CLAIM_R0"], **base),
+                            writer="L9_claim")
+        got = self.s.query(Claim).filter_by(id="CLAIM_R1").one()
+        self.assertEqual(got.refs, ["CLAIM_R0"], "非空列表须原样往返")
+
+        # ③ 指向不存在的对象：前置 refs_resolvable 为假 → 拒
+        #    （此前该前置硬编码为 True，任何 refs 都能过 —— OI-PF-184）
+        with self.assertRaises(Exception) as ctx:
+            self.repo.add_claim(self.s, Claim(id="CLAIM_R2", refs=["NO_SUCH_ID"], **base),
+                                writer="L9_claim")
+        self.assertIn("refs_resolvable", str(ctx.exception))
+        self.s.rollback()
+
+        # ④ 非列表（JSON 字符串）：校验拒，且是**在写库之前**拒
+        with self.assertRaises(ValueError) as ctx:
+            self.repo.add_claim(self.s, Claim(id="CLAIM_R3", refs='["X"]', **base),
+                                writer="L9_claim")
+        self.assertIn("E-G2-01-005", str(ctx.exception))
+        self.s.rollback()
+        self.assertIsNone(self.s.query(Claim).filter_by(id="CLAIM_R3").first(),
+                          "被拒的 claim 不得留在库里")
+
     def test_evidence_artifact_must_exist(self):
         with self.assertRaises(ValueError) as ctx:
             self.repo.add_evidence(self.s, EvidenceRecord(
                 id="EVID_BAD", schema_version="1.0", artifact_id="ART_NONE",
                 snapshot_id="SNAP_0001", schema_ver="v", parser_version="p",
-                sha256=_sha("x"), content="c", version=1))
+                sha256=_sha("x"), content="c", version=1),
+                writer="L13_evidence")
         # 前置断言（assert_writer）先于显式检查拦截
         self.assertTrue("E-PRECOND-001" in str(ctx.exception) or "E-G2-01-001" in str(ctx.exception))
 
@@ -114,12 +161,14 @@ class TestG2_01(unittest.TestCase):
         self.repo.add_evidence(self.s, EvidenceRecord(
                 id="EVID_D1", schema_version="1.0", artifact_id="ART_0001",
             snapshot_id="SNAP_0001", schema_ver="v", parser_version="p",
-            sha256=_sha("dup"), content="c", version=1))
+            sha256=_sha("dup"), content="c", version=1),
+              writer="L13_evidence")
         with self.assertRaises(ValueError) as ctx:
             self.repo.add_evidence(self.s, EvidenceRecord(
                 id="EVID_D2", schema_version="1.0", artifact_id="ART_0001",
                 snapshot_id="SNAP_0001", schema_ver="v", parser_version="p",
-                sha256=_sha("dup"), content="c2", version=1))
+                sha256=_sha("dup"), content="c2", version=1),
+                writer="L13_evidence")
         self.assertIn("E-G2-01-002", str(ctx.exception))
 
     # ── X-4：assert_writer 接入（错误 writer 被拒）──────────────────
