@@ -111,6 +111,23 @@ def main() -> int:
                  encoding="utf-8").read()
     _vd14_removed = "backtest_mode = REMOVED" in _vd14
     _vd26_pending = "CALIBRATION_PENDING" in _vd26
+    # OI-PF-167：**VD-02 此前从未被读取** —— 而它才是决定「单人期」分支、
+    # 进而决定汇合能否 READY 的那一个。本文件注释声称「读数来源：当场实测，
+    # 不得引用台账记载」，实测却只覆盖 VD-14/VD-26 两个，**漏掉决定性的那个**，
+    # 单人期假设被硬编码进分支逻辑。
+    # 后果：原实现的两条判据 `if not _rr:` 与 `if _rr:` 互斥且穷尽 ——
+    # G6A-06 取任何值都必然产生阻断项，**不存在通往 READY 的路径**。
+    # 第 2 名自然人到位那天，不改本文件就产不出可签署的验收包，
+    # 而「要改本文件」此前无任何记载。
+    _vd02 = open(os.path.join(PORTFOLIO, "decisions-v2", "VD-02.md"),
+                 encoding="utf-8").read()
+    _m02 = re.search(r"baseline_natural_persons\s*=\s*(\d+)", _vd02)
+    if not _m02:
+        # **取不到就判红，不判绿**：读不到人数即无从判断适用哪条分支。
+        _persons = None
+    else:
+        _persons = int(_m02.group(1))
+    _solo = (_persons == 1)
 
     # ── 结论（㉑：由状态决定，不硬编码）────────────────────────────
     _blockers = []
@@ -118,15 +135,44 @@ def main() -> int:
         _blockers.append(f"Gate 6 范围内材料性开放项 {len(g6_mat)} 项 ≠ 0"
                          f"（ADR-010 §4 不得 PASS）："
                          f"{[i['open_item_id'] for i in g6_mat]}")
-    if not _g6a06_review_required:
-        _blockers.append(f"G6A-06 状态 = {_st_a.get('G6A-06')} —— 单人期须"
-                         f"REVIEW_REQUIRED（ADR-012 §3），不得径自判 PASS")
-    if _g6a06_review_required:
-        # ADR-012 §5 明文：G6A-06 是无条件前置 → G6-01 相应受阻
-        _blockers.append("**G6A-06 = REVIEW_REQUIRED（单人期）→ G6-01 汇合"
-                         "受阻**（ADR-012 §5：本 ADR 不改 G6-01 的依赖；"
-                         "G6B 才是有条件支线。解除路径 = VD-02 重开条款，"
-                         "补到第 2 名自然人）")
+    # ── G6A-06 按 VD-02 当场实测的自然人数分支（OI-PF-167）──────────
+    if _persons is None:
+        _blockers.append("**VD-02 读不到 baseline_natural_persons** —— "
+                         "无从判断适用单人期还是双人期分支，判红而非默认放行")
+    elif _solo:
+        # 单人期：G6A-06 只能是 REVIEW_REQUIRED，且汇合相应受阻（ADR-012 §3/§5）
+        if not _g6a06_review_required:
+            _blockers.append(f"G6A-06 状态 = {_st_a.get('G6A-06')} —— 单人期须"
+                             f"REVIEW_REQUIRED（ADR-012 §3），不得径自判 PASS")
+        else:
+            _blockers.append("**G6A-06 = REVIEW_REQUIRED（单人期）→ G6-01 汇合"
+                             "受阻**（ADR-012 §5：本 ADR 不改 G6-01 的依赖；"
+                             "G6B 才是有条件支线。解除路径 = VD-02 重开条款，"
+                             f"补到第 2 名自然人；当前 VD-02 = {_persons} 名）")
+    else:
+        # ≥2 名自然人：重开条款生效，G6A-06 须真的做完且独立性有据
+        if _st_a.get("G6A-06") != "DONE":
+            _blockers.append(f"VD-02 = {_persons} 名自然人（重开条款已具备），"
+                             f"但 G6A-06 状态 = {_st_a.get('G6A-06')} —— 须 DONE")
+        else:
+            _rec06 = _rec("G6A-06") or {}
+            # **查真实字段，不在全文里找词**。初版用 re.search 在整个 JSON
+            # 里找「红队人」—— 而该记录的验收条款原文就是「**红队人**与开发/
+            # 研究编制人不是同一自然人」，于是任何 G6A-06 记录都天然「有」。
+            # 那是匹配代理（词出现过）而非目标（该字段被填了具体的人）。
+            _rt = str(_rec06.get("red_team_reviewer") or "").strip()
+            _fd = _rec06.get("findings") or {}
+            if not _rt:
+                _blockers.append("G6A-06 = DONE 但记录**缺 red_team_reviewer 字段"
+                                 "或其值为空** —— 基线 B §10A 验收条款要求"
+                                 "「红队人与开发/研究编制人不是同一自然人」，"
+                                 "须落库到具体的人而非只在条款里出现该词")
+            elif not isinstance(_fd, dict) or "P0" not in _fd or "P1" not in _fd:
+                _blockers.append("G6A-06 = DONE 但记录**缺 findings.P0 / findings.P1** "
+                                 "—— 基线 B §10A 验收条款：P0=0、P1=0，须可机检")
+            elif _fd.get("P0") or _fd.get("P1"):
+                _blockers.append(f"G6A-06 的 findings 中 P0={_fd.get('P0')} · "
+                                 f"P1={_fd.get('P1')} —— 基线 B §10A 要求两者均为 0")
     if not _g6b_na_ok:
         _blockers.append(f"G6B 状态不符（实测 {_st_b}）—— 四项须 NOT_APPLICABLE")
     if not _g6c_done:
