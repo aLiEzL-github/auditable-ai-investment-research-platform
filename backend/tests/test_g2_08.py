@@ -128,12 +128,18 @@ class TestSnapshot(unittest.TestCase):
         files2 = sorted(os.listdir(d2))
         self.assertEqual(files1, files2)
         for f in files1:
-            b1 = open(os.path.join(d1, f), "rb").read()
-            b2 = open(os.path.join(d2, f), "rb").read()
+            with open(os.path.join(d1, f), "rb") as fh1, \
+                    open(os.path.join(d2, f), "rb") as fh2:
+                b1 = fh1.read()
+                b2 = fh2.read()
             self.assertEqual(b1, b2, f"fixture {f} 不可复现")
         # 六类负例须存在（cutoff 漂移 / 错 scope 是 BF-01 消费对象）
-        all_text = "".join(open(os.path.join(d1, f), encoding="utf-8").read()
-                           for f in files1 if f.endswith(".json"))
+        all_parts = []
+        for f in files1:
+            if f.endswith(".json"):
+                with open(os.path.join(d1, f), encoding="utf-8") as fh:
+                    all_parts.append(fh.read())
+        all_text = "".join(all_parts)
         self.assertIn("cutoff", all_text)
         self.assertIn("scope", all_text)
 

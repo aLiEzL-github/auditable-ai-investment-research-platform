@@ -220,7 +220,8 @@ class TestContractMeta(unittest.TestCase):
                     continue
                 fp = os.path.join(dp, fn)
                 try:
-                    d = _json.load(open(fp, encoding="utf-8"))
+                    with open(fp, encoding="utf-8") as f:
+                        d = _json.load(f)
                 except Exception:
                     continue
                 ref = d.get("$schema", "")
@@ -314,7 +315,8 @@ class TestSection2Mapping(unittest.TestCase):
     def _matrix(self):
         import json as _json
         fp = os.path.join(os.path.dirname(__file__), "..", "..", "contracts", "writers.json")
-        return _json.load(open(fp, encoding="utf-8"))
+        with open(fp, encoding="utf-8") as f:
+            return _json.load(f)
 
     def test_mapping_covers_all_10_rows(self):
         d = self._matrix()

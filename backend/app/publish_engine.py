@@ -116,7 +116,9 @@ def directory_hash(root_dir: str) -> str:
         for fn in filenames:
             fp = os.path.join(dirpath, fn)
             rel = os.path.relpath(fp, root_dir)
-            entries.append(f"{rel}:{hashlib.sha256(open(fp, 'rb').read()).hexdigest()}")
+            with open(fp, "rb") as f:
+                data = f.read()
+            entries.append(f"{rel}:{hashlib.sha256(data).hexdigest()}")
     return hashlib.sha256("\n".join(entries).encode("utf-8")).hexdigest()
 
 

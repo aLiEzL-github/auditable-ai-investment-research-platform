@@ -25,17 +25,20 @@ class TestGuardAB(unittest.TestCase):
         self.assertEqual(_run().returncode, 0)
 
     def test_forbid_curl_cffi_import(self):
-        open(PROBE, "w").write("import curl_cffi\n")
+        with open(PROBE, "w") as f:
+            f.write("import curl_cffi\n")
         r = _run()
         self.assertEqual(r.returncode, 1)
         self.assertIn("curl_cffi", r.stdout)
 
     def test_forbid_akshare_submodule(self):
-        open(PROBE, "w").write("from akshare.news import news_baidu\n")
+        with open(PROBE, "w") as f:
+            f.write("from akshare.news import news_baidu\n")
         self.assertEqual(_run().returncode, 1)
 
     def test_whitelist_blocks_unlisted_call(self):
-        open(PROBE, "w").write("import akshare as ak\ndef f():\n    return ak.stock_zh_a_hist()\n")
+        with open(PROBE, "w") as f:
+            f.write("import akshare as ak\ndef f():\n    return ak.stock_zh_a_hist()\n")
         r = _run()
         self.assertEqual(r.returncode, 1)
         self.assertIn("白名单", r.stdout)
