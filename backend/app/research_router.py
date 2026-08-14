@@ -103,8 +103,12 @@ class ResearchRouter:
         self._runs: Dict[str, ResearchRun] = {}
 
     def create_run(self, workflow: str, scope_id: str, run_id: str,
-                   version_id: str, parent_version: Optional[str] = None,
-                   now_utc: Optional[str] = None) -> ResearchRun:
+                   version_id: str, parent_version: Optional[str] = None
+                   ) -> ResearchRun:
+        # OI-PF-189：原有 now_utc 形参从不被读取，且全仓无调用方传过它。
+        # run_id 由调用方经 make_run_id(now_utc, nonce) 生成后传入 ——
+        # 时间早已烘进 id，本方法不需要时钟。形参是设计变更后的残留，
+        # 留着会让调用方以为可以注入时钟（测试/重放/确定性构造），而它静默失效。
         validate_workflow_scope(workflow, scope_id)
         if not version_id or not version_id.startswith("v"):
             raise ValueError(f"E-G3-02-007: 非法 version_id: {version_id!r}")

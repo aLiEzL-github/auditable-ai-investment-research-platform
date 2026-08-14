@@ -122,6 +122,12 @@ jobs:
       # 调用方做过 —— 责任下推给了一个不存在的接收方。
       - name: Writer matrix coverage (OI-PF-180)
         run: python backend/tools/writer_coverage_check.py .
+      # OI-PF-175/188/189/190：未读取形参须显式豁免并写明理由（默认拒绝），
+      # 且**死豁免判红**。形参未读取有两种：签名多了个不用的参数（读签名会
+      # 误解），与**调用方意图被吞掉**（传了控制值却静默无效）—— 后者更严重：
+      # evaluate 的 constants_override 实测传 0.99 与不传输出逐字相同。
+      - name: Unused param exemptions (OI-PF-188/189/190)
+        run: python backend/tools/unused_param_check.py .
       # OI-PF-140：下面三道守卫从未接进 CI —— 合并 ≠ 生效。ADR-018 §3 的裁定
       # 以 §4 三道守卫落地为前提，而没有 CI 门禁，任何 PR 都能把它们改红而无人察觉。
       - name: AKShare use check (ADR-018 §4 guards A+B+C wiring)

@@ -245,7 +245,7 @@ class PredictionSnapshot:
         for pid, p in registry.predictions.items():
             if p.status != APPROVED:
                 continue                       # 未批准预测不进入快照
-            self._verify_bindings(pid, p, binding_objects)
+            self._verify_bindings(p, binding_objects)
             self.predictions[pid] = p.to_dict()
         self._frozen = True
         blob = {"snapshot_id": self.snapshot_id,
@@ -255,7 +255,7 @@ class PredictionSnapshot:
                                        sort_keys=True).encode("utf-8"))
         return self
 
-    def _verify_bindings(self, pid: str, p: PredictionProposal,
+    def _verify_bindings(self, p: PredictionProposal,
                          binding_objects: Dict[str, dict]) -> None:
         """绑定逐键校验：candidate_hash / contract_hash 就地重算比对；
         evidence_pack_id / cutoff / snapshot_root 是 id/时刻 —— 直接比对。

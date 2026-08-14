@@ -453,8 +453,13 @@ class Repository:
         session.commit()
         return obj
 
-    def cas_update(self, session, obj, expected_version):
-        """CAS 更新：版本不符（并发修改）即失败，调用方有限重试。"""
+    def cas_update(self, obj, expected_version):
+        """CAS 更新：版本不符（并发修改）即失败，调用方有限重试。
+
+        **只改内存版本号，不提交** —— 提交由调用方负责。
+        原签名带 `session` 而函数体从不用它（OI-PF-190），会让调用方以为
+        本方法负责持久化；实际不 commit 就什么都没发生。
+        """
         if obj.version != expected_version:
             raise ValueError(
                 f"E-WRITE-004: CAS 版本冲突 expected={expected_version} actual={obj.version}")

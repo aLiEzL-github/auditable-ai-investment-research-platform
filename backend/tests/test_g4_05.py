@@ -44,7 +44,7 @@ class TestUpdateDiff(unittest.TestCase):
                                 "refs": m1["objects"][claim]["refs"] + [new_ev]}
         m2["id"] = fx.content_id(m2)
 
-        d = update_diff(self.store, m1, m2)
+        d = update_diff(m1, m2)
         self.assertIn(new_ev, d["changed_objects"])
         self.assertIn(claim, d["affected_conclusions"],
                       "受影响结论 = 从改动对象可达的 claim")
@@ -64,7 +64,7 @@ class TestUpdateDiff(unittest.TestCase):
         m2["code_version"] = "v1.1"
         m2["id"] = fx.content_id(m2)
         d2 = fx.freeze_manifest(self.store, m2)
-        diff = update_diff(self.store, m1, m2)
+        diff = update_diff(m1, m2)
         self.assertNotEqual(m1["id"], m2["id"])
         self.assertEqual(self.store.load(d1), snapshot,
                          "历史 manifest 字节必须逐字不变（不回写）")
@@ -79,8 +79,42 @@ class TestUpdateDiff(unittest.TestCase):
         meta = m1["objects"][oid]
         m2["objects"][oid] = dict(meta, refs=meta.get("refs", []) + ["0" * 64])
         m2["id"] = fx.content_id(m2)
-        d = update_diff(self.store, m1, m2)
+        d = update_diff(m1, m2)
         self.assertIn(oid, d["changed_objects"])
+
+
+class TestSignatureIntegrity(unittest.TestCase):
+    """OI-PF-175/188/190：签名不得承诺实现没做的事。
+
+    **载荷即原缺陷形态**：这些调用在修复前都是合法签名。
+    """
+
+    def test_update_diff_takes_no_store(self):
+        """OI-PF-175：store 从不被读取（传 None 也照跑），已去掉。"""
+        import inspect
+        self.assertNotIn("store", inspect.signature(update_diff).parameters)
+
+    def test_evaluate_takes_no_constants_override(self):
+        """OI-PF-188：**调用方意图被吞掉** —— 传 0.99 与不传输出逐字相同
+        （250 vs 应为 990），连 inputs_hash 都一样，CalcLedger 里不可分辨。
+        """
+        import inspect
+        import sys as _s
+        import os as _o
+        _s.path.insert(0, _o.path.join(_o.path.dirname(__file__), "..", "app"))
+        from formula_registry import FormulaRegistry
+        self.assertNotIn("constants_override",
+                         inspect.signature(FormulaRegistry.evaluate).parameters)
+
+    def test_cas_update_takes_no_session(self):
+        """OI-PF-190：只改内存版本号、不提交，带 session 会让人以为它持久化。"""
+        import inspect
+        import sys as _s
+        import os as _o
+        _s.path.insert(0, _o.path.join(_o.path.dirname(__file__), "..", "app"))
+        from repository import Repository
+        self.assertNotIn("session",
+                         inspect.signature(Repository.cas_update).parameters)
 
 
 if __name__ == "__main__":
