@@ -227,7 +227,7 @@ class TestContractCoverage(unittest.TestCase):
                                                   "acquired_at": "2026-08-07T00:00:00Z",
                                                   "ok": True, "version": 1})
         q = JobQueue(repo)
-        q.submit("j1")
+        q.submit("j1", writer="L7_freeze")
         _sv.validate_object("job", {"id": 1, "schema_version": "1.0.0",
                                     "job_key": "j1", "status": "PENDING", "version": 1})
         s.close()

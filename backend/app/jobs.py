@@ -12,7 +12,9 @@ SQLAlchemy Session 非线程安全 —— JobQueue 以锁串行化全部操作�
 与「SQLite Worker 并发为 1」语义一致：API/Worker 并发提交由
 锁 + job_key 唯一约束双重保证（2026-08-07 CI 实测修复）。
 
-写权：本层为调度原语，调用方须自行按 contracts/writers.json 断言
+写权：**本层自行断言**（OI-PF-180）。原注释写「本层为调度原语，调用方须
+自行按 contracts/writers.json 断言」，而 backend/app 内**没有任何调用方
+做过该断言** —— 责任下推给了一个不存在的接收方。现由 submit() 直接断言。
 （assert_writer 的接入点，J4 前向要求）。
 """
 
@@ -23,6 +25,7 @@ from sqlalchemy import Column, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 
 from repository import Base, Repository
+from schema_validate import assert_writer
 
 JOB_STATUSES = ("PENDING", "RUNNING", "DONE", "FAILED", "CANCELLED")
 TERMINAL = ("DONE", "FAILED", "CANCELLED")
@@ -58,9 +61,18 @@ class JobQueue:
         self.s = repo.session()
         self._lock = threading.Lock()
 
-    def submit(self, job_key: str, payload: str = None) -> Job:
+    def submit(self, job_key: str, payload: str = None, *, writer: str) -> Job:
         """幂等提交：job_key 存在（含终态）→ 返回既有 job，**不重复执行**。
-        幂等键全表唯一；需重跑须用新 job_key。"""
+        幂等键全表唯一；需重跑须用新 job_key。
+
+        `writer` **必填且为关键字参数**（OI-PF-180）：本方法是 job 表的唯一
+        写入点，而 contracts/writers.json 的 job 行写者集合为 ['L7_freeze']、
+        never 含 LLM。此前本方法不收写者，那一行的契约在执行侧无落点。
+
+        缺省值一律不给 —— OI-PF-184 记的正是「缺省值恰为白名单的唯一合法值时，
+        断言只能挡住主动自称非法写者的调用方」。
+        """
+        assert_writer("job", writer, {"job_key": job_key})
         with self._lock:
             existing = self.s.query(Job).filter_by(job_key=job_key).first()
             if existing is not None:

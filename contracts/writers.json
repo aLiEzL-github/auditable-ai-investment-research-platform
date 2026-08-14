@@ -25,7 +25,8 @@
           "key": "rights_gate_and_parse_ok",
           "description": "经 L3 权利门 + L6 解析成功"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "acquisition_event": {
       "never": [
@@ -35,7 +36,8 @@
       ],
       "writers": [
         "L7_freeze"
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "fact": {
       "never": [
@@ -53,7 +55,8 @@
           "key": "source_snapshot_frozen",
           "description": "来自已冻结对象"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "snapshot": {
       "never": [
@@ -76,7 +79,8 @@
           "key": "cutoff_frozen",
           "description": "cutoff 冻结后不可改"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "assumption": {
       "writers": [
@@ -91,7 +95,9 @@
           "check": "NONE",
           "description": "G0-04 §2 无前置条件"
         }
-      ]
+      ],
+      "enforcement": "NOT_APPLICABLE",
+      "enforcement_reason": "无 ORM 表、无落盘路径 —— 假设以 AssumptionProposal/ApprovalEvent 形式进入 AssumptionSnapshot（app/assumption_snapshot.py），其批准权由 _assert_approver 默认拒绝把关（OI-PF-176 已修）。DB 写权在此不适用。"
     },
     "calc": {
       "never": [
@@ -108,7 +114,9 @@
           "key": "inputs_frozen",
           "description": "输入必须是已冻结对象"
         }
-      ]
+      ],
+      "enforcement": "NOT_APPLICABLE",
+      "enforcement_reason": "无 ORM 表 —— CalcLedger 是回算产物字典（app/recompute.py），随 candidate 一并内容寻址冻结，不单独落库。"
     },
     "claim": {
       "never": [
@@ -125,7 +133,8 @@
           "key": "refs_resolvable",
           "description": "引用必须可解析"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "prediction": {
       "never": [
@@ -143,7 +152,9 @@
           "key": "independent_approval_event",
           "description": "须有独立 ApprovalEvent（G0-04 §2 AssumptionSnapshot 前置）"
         }
-      ]
+      ],
+      "enforcement": "NOT_APPLICABLE",
+      "enforcement_reason": "无 ORM 表、无写入路径 —— 契约声明保留，待 G7 预测层落地时接入。"
     },
     "approval": {
       "never": [
@@ -168,7 +179,8 @@
           "key": "subject_root_hash_bound",
           "description": "绑定 approval_subject_root 哈希"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "release": {
       "never": [
@@ -186,7 +198,8 @@
           "key": "exit_predicate_and_parent_cas",
           "description": "唯一准出谓词为真 + 父版本 CAS 成功"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "current_pointer": {
       "never": [
@@ -206,7 +219,8 @@
           "key": "exit_predicate_and_parent_cas",
           "description": "唯一准出谓词为真 + 父版本 CAS 成功（与 release 同前置）"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "open_item": {
       "any_of": true,
@@ -218,7 +232,9 @@
           "check": "NONE",
           "description": "G0-04 §2 无对应行（台账对象，受管理写）"
         }
-      ]
+      ],
+      "enforcement": "NOT_APPLICABLE",
+      "enforcement_reason": "无 ORM 表 —— 回算产物字段（recompute._gen_open_items）；台账侧的开放项登记册在 portfolio/risk/open-items.json，不经本仓库。"
     },
     "candidate": {
       "any_of": true,
@@ -230,7 +246,9 @@
           "check": "NONE",
           "description": "G0-04 §2 无对应行（台账对象，受管理写）"
         }
-      ]
+      ],
+      "enforcement": "NOT_APPLICABLE",
+      "enforcement_reason": "无 ORM 表 —— 经 ArtifactStore 内容寻址冻结（publish_engine.freeze_candidate / recompute.freeze_candidate_from_recompute）。"
     },
     "source": {
       "writers": [
@@ -249,7 +267,8 @@
           "description": "来源登记由治理层人工维护",
           "guaranteed_by": "台账治理层（U）"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "job": {
       "writers": [
@@ -263,7 +282,8 @@
           "check": "NONE",
           "description": "G1-04 调度对象（L7_freeze 写，LLM 禁）"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "evidence_record": {
       "never": [
@@ -286,7 +306,8 @@
           "key": "snapshot_bound",
           "description": "证据须绑定已存在 snapshot（G2-01 基线）"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "claim_evidence_link": {
       "never": [
@@ -308,7 +329,8 @@
           "key": "evidence_exists",
           "description": "evidence 须已存在"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "rights_decision": {
       "never": [
@@ -330,7 +352,8 @@
           "key": "policy_frozen",
           "description": "policy_version 须为已冻结版本"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "manual_entry": {
       "never": [
@@ -354,7 +377,8 @@
           "key": "dual_verified",
           "description": "双录复核完成（G2-13）"
         }
-      ]
+      ],
+      "enforcement": "ENFORCED"
     },
     "manifest": {
       "any_of": true,
@@ -366,7 +390,9 @@
           "check": "NONE",
           "description": "G4-01 发布清单（L7_freeze/L11_release 域；LLM 禁）"
         }
-      ]
+      ],
+      "enforcement": "NOT_APPLICABLE",
+      "enforcement_reason": "无 ORM 表 —— 经 ArtifactStore 内容寻址冻结（publish_engine.freeze_manifest），不入关系库。"
     }
   },
   "section2_mapping": [
@@ -414,5 +440,6 @@
       "note": "P0-4b(ii) 裁定（2026-08-07 U）：非 DB 对象不纳入；由 G0-03 签署流程管辖"
     }
   ],
-  "section2_rows": 10
+  "section2_rows": 10,
+  "enforcement_note": "OI-PF-180：每一行须显式落入 ENFORCED 或 NOT_APPLICABLE，**不得留白**。守卫 backend/tools/writer_coverage_check.py 默认拒绝：新增一行而未标注即判红。ENFORCED 的执行点为 repository.cas_insert（按 _OBJ_TYPE 动态查表）、四个专用写法、publish_engine 三处、JobQueue.submit。"
 }
