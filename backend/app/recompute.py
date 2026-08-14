@@ -28,15 +28,18 @@
 import hashlib
 import json
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional, Tuple
 
 from artifact_store import ArtifactStore
 from assumption_snapshot import AssumptionSnapshot
+from open_item_registry import OPEN, OpenItem, OpenItemRegistry
 from publish_engine import canonical_bytes
 from valuation_engine import (
     BASE, OPTIMISTIC, PESSIMISTIC,
-    ValuationInputs, fcff_valuation, fcfe_valuation,
-    pe_roe_pb_valuation, relative_valuation,
+    ValuationInputs, ValuationResult,
+    fcff_valuation, fcfe_valuation,
+    pe_roe_pb_valuation, relative_valuation, cross_check,
 )
 
 CANDIDATE_KIND = "candidate"
@@ -55,6 +58,23 @@ class OldCandidateMissing(RecomputeError):
     """失效记录引用的旧候选不可达 —— 不得「失效并保留」的假象。"""
 
 
+@dataclass(frozen=True)
+class OpenItemsPolicy:
+    """G3-14 开放项生成策略 —— **冻结输入**（OI-PF-170）。
+
+    owner_role / due_date / blocks_gate / tolerance 必须来自本策略的冻结值，
+    不得读墙钟、环境变量或硬编码当前日期；缺失、空值、非法容差由
+    `_resolve_open_items_policy` 失败关闭（RecomputeError），不默认补值。
+
+    tolerance 为交叉验证相对容差（Decimal 字符串，>0）：越宽越少项，
+    可宽到一致结果不产生任何项（**允许空集**；禁止无条件塞占位项）。
+    """
+    tolerance: str
+    owner_role: str
+    due_date: str
+    blocks_gate: str
+
+
 @dataclass
 class ResearchContext:
     """全部冻结输入 + 已批准假设快照。
@@ -68,6 +88,7 @@ class ResearchContext:
     valuation_inputs: ValuationInputs
     assumption_defaults: Dict[str, str]   # 假设键 → 冻结合同默认值
     approved: AssumptionSnapshot
+    open_items_policy: Optional[OpenItemsPolicy] = None
 
     def approved_keys(self) -> set:
         """已批准假设的键集合（payload 以 proposal_id 为键 —— 展平取键）。"""
@@ -90,7 +111,12 @@ class ResearchContext:
 # ════════════════════════════════════════════════════════════════
 
 PRODUCT_DEPS: Dict[str, Tuple[str, ...]] = {
-    "calc_ledger": ("growth", "wacc", "ke", "target_pe", "roe"),
+    # OI-PF-171：声明须与生成器**真实读取**逐一对应，既不欠报也不少报。
+    # calc_ledger 的生成器只从 v 读 growth（其余键仅用于账本无关的元数据），
+    # claim_map 只读 growth/wacc —— 旧声明把五个键全列上属偏保守多报，
+    # 使 F-4 受影响判定不准确（批准 ke/target_pe/roe 会虚报这两个产物受影响）。
+    # 最小修复：声明收敛到当前真实读取，不扩张产品输出语义。
+    "calc_ledger": ("growth",),
     "valuation_fcff": ("wacc",),            # FCFF 路引擎以终值增速为分母，
     #                                        # 增速参数不影响其结果（如实落库，F-4）
     "valuation_fcfe": ("growth", "ke"),
@@ -99,12 +125,17 @@ PRODUCT_DEPS: Dict[str, Tuple[str, ...]] = {
     "scenario_pessimistic": ("growth", "ke"),
     "scenario_base": ("growth", "ke"),
     "scenario_optimistic": ("growth", "ke"),
-    "claim_map": ("growth", "wacc", "ke", "target_pe", "roe"),
+    "claim_map": ("growth", "wacc"),
     # OI-PF-169 修复后：emission_map 由 claim_map 派生，故依赖同一批键。
     # 原值 () 与「恒返回空」互为因果 —— 依赖表说它不读任何假设，
     # 生成器就真的什么也没产出。
     "emission_map": ("growth", "wacc"),
-    "open_items": (),
+    # OI-PF-170：open_items 由四路估值交叉验证派生（_valuation_results
+    # 唯一实现路径），四路合计读取**全部五个**假设键 —— fcff 读 wacc、
+    # fcfe 读 growth/ke、relative 读 target_pe、pe_roe_pb 读 roe/target_pe。
+    # 任一键批准都可能改变某路基准价 → 改变交叉验证差异与开放项集，
+    # 故五键全部如实落库（F-4 判定不欠报）。
+    "open_items": ("growth", "wacc", "ke", "target_pe", "roe"),
 }
 
 PRODUCT_ORDER = tuple(PRODUCT_DEPS)
@@ -127,21 +158,27 @@ def _gen_calc_ledger(ctx: ResearchContext, v: Dict[str, str]) -> dict:
     }
 
 
-def _gen_valuation(ctx: ResearchContext, v: Dict[str, str], route: str) -> dict:
-    """四路估值（BASE 情景）。fcff/fcfe/eps/bps 来自冻结事实，
-    growth/wacc/ke/target_pe/roe 来自（已批准假设 ∪ 冻结默认）。"""
+def _valuation_results(ctx: ResearchContext,
+                       v: Dict[str, str]) -> Dict[str, ValuationResult]:
+    """四路估值（BASE 情景）**唯一实现路径**（OI-PF-170）。
+
+    valuation 各产物与 open_items 的交叉验证**共用同一批 ValuationResult**，
+    避免两套公式漂移 —— open_items 若自算一遍口径会与估值产物分叉。
+    """
     vi = ctx.valuation_inputs
     f = ctx.facts
-    if route == "fcff":
-        r = fcff_valuation(vi, BASE, f["fcff"], v["wacc"])
-    elif route == "fcfe":
-        r = fcfe_valuation(vi, BASE, f["fcfe"], v["growth"], v["ke"])
-    elif route == "relative":
-        r = relative_valuation(vi, BASE, v["target_pe"], f["eps"])
-    else:  # pe_roe_pb
-        r = pe_roe_pb_valuation(vi, BASE, v["roe"], f["book_per_share"],
-                                v["target_pe"])
-    return r.to_dict()
+    return {
+        "fcff": fcff_valuation(vi, BASE, f["fcff"], v["wacc"]),
+        "fcfe": fcfe_valuation(vi, BASE, f["fcfe"], v["growth"], v["ke"]),
+        "relative": relative_valuation(vi, BASE, v["target_pe"], f["eps"]),
+        "pe_roe_pb": pe_roe_pb_valuation(
+            vi, BASE, v["roe"], f["book_per_share"], v["target_pe"]),
+    }
+
+
+def _gen_valuation(ctx: ResearchContext, v: Dict[str, str], route: str) -> dict:
+    """四路估值（BASE 情景）产物 —— 取 `_valuation_results` 的对应路。"""
+    return _valuation_results(ctx, v)[route].to_dict()
 
 
 def _gen_scenario(ctx: ResearchContext, v: Dict[str, str], scenario: str) -> dict:
@@ -190,8 +227,70 @@ def _gen_emission_map(ctx: ResearchContext, v: Dict[str, str]) -> dict:
         for c in claims]}
 
 
+def _resolve_open_items_policy(ctx: ResearchContext) -> OpenItemsPolicy:
+    """冻结 policy 校验（失败关闭）：缺失 / 空值 / 非法容差 → RecomputeError。
+
+    不读墙钟、环境变量或硬编码当前日期；**不默认补值** —— 补一个默认
+    owner/due_date/blocks_gate/tolerance 等于把「谁来负责、何时截止、
+    多宽才算一致」写死进实现，那是另一处硬编码。
+    """
+    p = ctx.open_items_policy
+    if p is None:
+        raise RecomputeError(
+            "E-OI-PF-170-001: 冻结 OpenItemsPolicy 缺失 —— 失败关闭，"
+            "不默认补值")
+    tol_text = str(p.tolerance or "").strip()
+    if not tol_text:
+        raise RecomputeError(
+            "E-OI-PF-170-002: OpenItemsPolicy.tolerance 为空 —— 失败关闭")
+    try:
+        tol = Decimal(tol_text)
+    except InvalidOperation:
+        raise RecomputeError(
+            f"E-OI-PF-170-002: OpenItemsPolicy.tolerance 非法 "
+            f"({tol_text!r}) —— 失败关闭")
+    if tol <= 0:
+        raise RecomputeError(
+            f"E-OI-PF-170-002: OpenItemsPolicy.tolerance 必须 > 0"
+            f"（实得 {tol_text}）—— 失败关闭")
+    for fld in ("owner_role", "due_date", "blocks_gate"):
+        if not str(getattr(p, fld) or "").strip():
+            raise RecomputeError(
+                f"E-OI-PF-170-003: OpenItemsPolicy.{fld} 为空 —— 失败关闭")
+    return p
+
+
 def _gen_open_items(ctx: ResearchContext, v: Dict[str, str]) -> dict:
-    return {"open_items": []}
+    """G3-06 交叉验证 → G3-14 开放项（OI-PF-170）。
+
+    差异 > 冻结容差的真实交叉验证不一致 → 强类型 OpenItem（material=true）
+    + 原始诊断（scenario/method_a/method_b/diff/tolerance）原样保留；
+    一致或容差足够宽 → **允许空集**。禁止无条件塞占位项 —— 项必须由
+    `valuation_engine.cross_check` 的真实结果产生。
+    """
+    policy = _resolve_open_items_policy(ctx)
+    mismatches = cross_check(list(_valuation_results(ctx, v).values()),
+                             policy.tolerance)
+    reg = OpenItemRegistry()
+    for m in mismatches:
+        reg.register(OpenItem(
+            open_item_id=m["open_item_id"],
+            description=(
+                f"G3-06 交叉验证不一致：{m['scenario']} 下 {m['method_a']} "
+                f"与 {m['method_b']} 基准价相对差 {m['diff']} "
+                f"> 冻结容差 {m['tolerance']}"),
+            material=True,
+            owner_role=policy.owner_role,
+            due_date=policy.due_date,
+            blocks_gate=policy.blocks_gate,
+            closure_evidence=None,
+            status=OPEN,
+        ))
+    return {
+        "open_items": [it.to_dict() for it in reg.items.values()],
+        # G3-06 交叉验证诊断原样保留（scenario/method_a/method_b/diff/tolerance）
+        "cross_check": mismatches,
+    }
 
 
 GENERATORS = {

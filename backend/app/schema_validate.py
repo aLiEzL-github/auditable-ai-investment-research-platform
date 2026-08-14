@@ -16,7 +16,8 @@ import re
 
 CONTRACTS = os.path.join(os.path.dirname(__file__), "..", "..", "contracts")
 SCHEMA_DIR = os.path.join(CONTRACTS, "schema")
-WRITERS = json.load(open(os.path.join(CONTRACTS, "writers.json"), encoding="utf-8"))["matrix"]
+with open(os.path.join(CONTRACTS, "writers.json"), encoding="utf-8") as f:
+    WRITERS = json.load(f)["matrix"]
 
 
 class SchemaError(ValueError):
@@ -79,7 +80,8 @@ def validate_object(obj_type, obj):
     fp = os.path.join(SCHEMA_DIR, f"{obj_type}.schema.json")
     if not os.path.exists(fp):
         raise SchemaError("E-CONTRACT-001", obj_type, "无对应 Schema")
-    schema = json.load(open(fp, encoding="utf-8"))
+    with open(fp, encoding="utf-8") as f:
+        schema = json.load(f)
     if obj.get("schema_version") != schema.get("schema_version"):
         raise SchemaError("E-SCHEMA-005", "schema_version",
                           f"对象 {obj.get('schema_version')} vs 契约 {schema.get('schema_version')}")

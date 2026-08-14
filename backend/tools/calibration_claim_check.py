@@ -46,8 +46,9 @@ def _scan_app_literals() -> list:
             if not fn.endswith(".py"):
                 continue
             rel = os.path.relpath(os.path.join(dp, fn), ROOT)
-            src = open(os.path.join(dp, fn), encoding="utf-8",
-                       errors="replace").read()
+            with open(os.path.join(dp, fn), encoding="utf-8",
+                      errors="replace") as f:
+                src = f.read()
             try:
                 tree = ast.parse(src)
             except SyntaxError as e:

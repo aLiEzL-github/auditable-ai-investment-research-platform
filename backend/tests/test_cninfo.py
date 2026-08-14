@@ -50,9 +50,10 @@ class TestCninfoAdapter(unittest.TestCase):
     def test_unknown_zero_request(self):
         """FF-2：真实矩阵（CNINFO automated_bulk_acquisition=UNKNOWN）→ 零请求。"""
         import copy, json as _j
-        real = _j.load(open(os.path.join(
-            os.path.dirname(__file__), "..", "..", "contracts",
-            "rights_matrix.json"), encoding="utf-8"))
+        with open(os.path.join(
+                os.path.dirname(__file__), "..", "..", "contracts",
+                "rights_matrix.json"), encoding="utf-8") as f:
+            real = _j.load(f)
         ad = CninfoAdapter(RightsGuard(matrix=real), min_interval=0.0)
         with mock.patch("cninfo_adapter.urllib.request.urlopen") as m:
             with self.assertRaises(GuardDenied):

@@ -94,7 +94,6 @@ class TestOfflineRebuild(unittest.TestCase):
             "~/.local/bin/docker")
         if not docker or not os.path.exists(docker):
             return None
-        os.makedirs(out_dir)
         manifest_fp = os.path.join(self._tmp, "manifest.json")
         with open(manifest_fp, "w", encoding="utf-8") as f:
             json.dump(self.manifest, f)
@@ -114,6 +113,7 @@ class TestOfflineRebuild(unittest.TestCase):
             capture_output=True, text=True).stdout.strip()
         if not cid:
             return None
+        os.makedirs(out_dir)
         try:
             subprocess.run([docker, "start", cid], capture_output=True,
                            check=True)
@@ -255,6 +255,36 @@ class TestOfflineRebuild(unittest.TestCase):
             report = json.loads(r.stdout.strip().splitlines()[-1])
             digests.add(report["output_digest"])
         self.assertEqual(len(digests), 1, "连跑三次复建产物哈希须一致")
+
+    def test_docker_cli_present_but_daemon_down_no_out_dir_leftover(self):
+        """回归（OI-PF-192）：docker CLI 存在但 docker create 失败
+        （daemon 不可用、返回空容器 ID）时，_docker() 必须返回 None 且
+        不得留下 out_dir —— 否则 sandbox 回退的 os.makedirs(out_dir)
+        会撞 FileExistsError（状态泄漏）。确定性：不依赖真实环境，
+        用替身 docker 二进制 + 打桩 subprocess.run 模拟空容器 ID。"""
+        import unittest.mock as mock
+
+        store_dir = str(self.store.root)
+        out_dir = os.path.join(self._tmp, "out_leak")
+        fake_docker = os.path.join(self._tmp, "fake-docker")
+        with open(fake_docker, "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\nexit 1\n")
+        os.chmod(fake_docker, 0o755)
+
+        def _daemon_down(cmd, *args, **kwargs):
+            return subprocess.CompletedProcess(
+                cmd, returncode=1, stdout="", stderr="daemon unavailable")
+
+        with mock.patch("shutil.which", return_value=fake_docker), \
+                mock.patch("subprocess.run", side_effect=_daemon_down):
+            result = self._docker(store_dir, out_dir)
+
+        self.assertIsNone(result,
+                          "docker create 返回空容器 ID 时 _docker 须返回 None")
+        self.assertFalse(
+            os.path.exists(out_dir),
+            "docker create 失败后不得留下 out_dir —— 否则 sandbox 回退 "
+            "os.makedirs(out_dir) 会 FileExistsError（状态泄漏）")
 
 
 class TestVerificationLevels(unittest.TestCase):

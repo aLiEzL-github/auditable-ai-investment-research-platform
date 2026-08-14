@@ -120,8 +120,10 @@ class TestArtifactStore(unittest.TestCase):
             self.store.store("ART_SYM2", b"probe")
         self.assertIn("E-G2-02-001", str(ctx.exception))
         # 失败关闭：写原语不得经 symlink 写出 —— 库外既无新文件、也无改写
+        with open(marker) as f:
+            marker_content = f.read()
         self.assertEqual(
-            open(marker).read(), "escaped",
+            marker_content, "escaped",
             "symlink 载荷下写原语不得改写到库外（内容不变 = 未写出）")
         self.assertEqual(
             sorted(os.listdir(outside_dir)), ["marker.txt"],

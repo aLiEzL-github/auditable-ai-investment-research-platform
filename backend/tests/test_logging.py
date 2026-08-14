@@ -70,7 +70,8 @@ class TestSettingsAndEnv(unittest.TestCase):
     def test_env_example_has_no_real_values(self):
         """1b：.env.example 只含键名与占位，无真实值；被 secret_scan 覆盖（CI scans job）。"""
         p = os.path.join(os.path.dirname(__file__), "..", "..", ".env.example")
-        content = open(p, encoding="utf-8").read()
+        with open(p, encoding="utf-8") as f:
+            content = f.read()
         # 无任何 64 位哈希 / 密钥模式 / 占位符之外的真实值
         self.assertNotRegex(content, r"[0-9a-f]{64}")
         self.assertNotRegex(content, r"(?i)(ghp_|sk-[A-Za-z0-9]{10,}|AKIA|BEGIN (?:OPENSSH|RSA))")

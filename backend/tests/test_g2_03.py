@@ -179,9 +179,10 @@ class TestRightsGuard(unittest.TestCase):
     def test_matrix_driven_cninfo_unknown_blocked(self):
         """真实矩阵（工程镜像）对巨潮 automated_bulk_acquisition = UNKNOWN → 阻断。"""
         import json as _j
-        real = _j.load(open(os.path.join(
-            os.path.dirname(__file__), "..", "..", "contracts",
-            "rights_matrix.json"), encoding="utf-8"))
+        with open(os.path.join(
+                os.path.dirname(__file__), "..", "..", "contracts",
+                "rights_matrix.json"), encoding="utf-8") as f:
+            real = _j.load(f)
         g = RightsGuard(matrix=real)
         rd = g.decide("SRC_CNINFO", "FETCH", "/announcements/600089")
         self.assertEqual(rd.verdict, UNKNOWN)
