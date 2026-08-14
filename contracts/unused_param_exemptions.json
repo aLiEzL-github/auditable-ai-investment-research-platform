@@ -1,0 +1,15 @@
+{
+  "$schema": "unused-param-exemptions/1.0",
+  "note": "OI-PF-190：backend/app 内形参未被读取者须**显式豁免并写明理由**，默认拒绝。守卫 backend/tools/unused_param_check.py 另断言**死豁免判红** —— 豁免项若已不适用（形参改了名/函数没了/参数开始被用），留着会让下一个真缺陷藏在它后面。本项目已有先例：SERVER_ALLOWLIST 死豁免。",
+  "exemptions": {
+    "curl_cffi_interdict.py:find_spec:path": "importlib.abc.MetaPathFinder 协议签名 —— find_spec(fullname, path, target) 由解释器按位置调用，不得改名或删除",
+    "curl_cffi_interdict.py:find_spec:target": "同上，importlib 协议签名",
+    "repository.py:process_bind_param:dialect": "SQLAlchemy TypeDecorator 协议签名 —— 由 SQLAlchemy 按位置调用",
+    "repository.py:process_result_value:dialect": "同上，SQLAlchemy TypeDecorator 协议签名",
+    "repository.py:_set_sqlite_pragma:connection_record": "SQLAlchemy event.listens_for(Engine, 'connect') 回调协议签名",
+    "llm_provider.py:complete:request": "@abstractmethod —— 抽象方法只声明签名，实现方使用该参数",
+    "recompute.py:_gen_claim_map:ctx": "产物生成器统一签名 _gen_*(ctx, v) —— PRODUCT_ORDER 按同一形态调用；本产物当前不依赖 ctx，但签名须与同族一致",
+    "recompute.py:_gen_open_items:ctx": "同上，产物生成器统一签名",
+    "recompute.py:_gen_open_items:v": "同上。**另注**：本函数是桩函数（恒返回空），见 AGENT_ADVERSARIAL_REVIEW F-2 —— 该问题由那条记录承载，不由本豁免掩盖"
+  }
+}

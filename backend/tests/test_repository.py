@@ -113,7 +113,7 @@ class TestCasAndRetry(TestRepositoryBase):
         art.version = 2  # 他人已提交
         stale = self.s.query(RawArtifact).filter_by(id="RA-9").one()
         with self.assertRaises(ValueError) as cm:
-            self.repo.cas_update(self.s, stale, expected_version=1)
+            self.repo.cas_update(stale, expected_version=1)
         self.assertIn("CAS", str(cm.exception))
 
     def test_retry_after_conflict_succeeds(self):
@@ -124,7 +124,7 @@ class TestCasAndRetry(TestRepositoryBase):
         for expected in (1, 2):
             current = self.s.query(RawArtifact).filter_by(id="RA-9").one()
             try:
-                self.repo.cas_update(self.s, current, expected_version=expected)
+                self.repo.cas_update(current, expected_version=expected)
                 break
             except ValueError:
                 continue

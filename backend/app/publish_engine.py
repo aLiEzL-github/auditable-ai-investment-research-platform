@@ -719,9 +719,14 @@ def current_release(session, key: CurrentKey) -> Optional[dict]:
 # G4-05 UpdateDiff：差异 / 受影响结论 / 父子链
 # ════════════════════════════════════════════════════════════════
 
-def update_diff(store: ArtifactStore, old_manifest: dict,
-                new_manifest: dict) -> dict:
-    """新证据生成新版本，不回写历史：只比较、不写回。"""
+def update_diff(old_manifest: dict, new_manifest: dict) -> dict:
+    """新证据生成新版本，不回写历史：只比较、不写回。
+
+    **`store` 形参已去掉（OI-PF-175）** —— 它从不被读取：实测传 None 或两个
+    不同的 ArtifactStore，输出逐字相同。docstring 说的「只比较、不写回」本就
+    不需要对象库，故这是**签名与实现不一致**而非逻辑错误：调用方读签名会以为
+    它要访问对象库。与 OI-PF-162 去掉 `fcff_valuation.growth` 同法。
+    """
     old_objs = old_manifest.get("objects", {})
     new_objs = new_manifest.get("objects", {})
     changed = sorted(set(old_objs) ^ set(new_objs))

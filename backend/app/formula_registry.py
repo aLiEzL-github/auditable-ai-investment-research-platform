@@ -151,8 +151,17 @@ class FormulaRegistry:
         return [m.group("id") for m in _TOKEN_RE.finditer(expr) if m.group("id")]
 
     # ── 求值（递归下降，仅四则与括号）────────────────────────────
-    def evaluate(self, formula_id: str, inputs: Dict[str, str],
-                 constants_override: Optional[Dict[str, str]] = None) -> dict:
+    def evaluate(self, formula_id: str, inputs: Dict[str, str]) -> dict:
+        """受限求值。**常量只能经 `register_constant` 变更**。
+
+        原签名有 `constants_override` 形参而函数体从不读它（OI-PF-188）：
+        实测传 `{"TAXRATE": "0.99"}` 与不传，输出逐字相同（250 vs 应为 990），
+        **连 `inputs_hash` 都一样** —— 落进 CalcLedger 后事后无从分辨。
+        那不是「多了个没用的参数」，是**调用方的意图被吞掉**：
+        有人以为在做敏感性分析，实际算的是同一个数，而账本上看不出区别。
+        去掉而非实现，因为**全仓无任何调用方传过它**；日后确需按次覆盖常量，
+        须连同 `inputs_hash` 一并设计，否则两次求值仍不可分辨。
+        """
         f = self.formulas.get(formula_id)
         if f is None:
             raise FormulaError(f"E-G3-04-005: 未登记公式: {formula_id}")
