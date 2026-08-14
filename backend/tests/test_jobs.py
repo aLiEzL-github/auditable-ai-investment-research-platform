@@ -35,25 +35,25 @@ class TestJobQueueBase(unittest.TestCase):
 
 class TestIdempotentSubmit(TestJobQueueBase):
     def test_duplicate_submit_returns_same_job(self):
-        j1 = self.q.submit("key-1", "payload")
-        j2 = self.q.submit("key-1", "other-payload")
+        j1 = self.q.submit("key-1", "payload", writer="L7_freeze")
+        j2 = self.q.submit("key-1", "other-payload", writer="L7_freeze")
         self.assertEqual(j1.id, j2.id)
         self.assertEqual(j1.status, "PENDING")
         self.assertEqual(self.q.s.query(type(j1)).count(), 1)
 
     def test_terminal_resubmit_returns_original(self):
-        j1 = self.q.submit("key-2")
+        j1 = self.q.submit("key-2", writer="L7_freeze")
         claimed = self.q.claim_next("w1")
         self.q.complete(claimed.id, "w1", "ok")
-        j2 = self.q.submit("key-2")
+        j2 = self.q.submit("key-2", writer="L7_freeze")
         self.assertEqual(j1.id, j2.id)  # 幂等到底：终态重提返回原 job（含 result）
         self.assertEqual(j2.status, "DONE")
 
 
 class TestLeaseAndConcurrency(TestJobQueueBase):
     def test_claim_single_worker(self):
-        self.q.submit("a")
-        self.q.submit("b")
+        self.q.submit("a", writer="L7_freeze")
+        self.q.submit("b", writer="L7_freeze")
         j1 = self.q.claim_next("w1")
         j2 = self.q.claim_next("w1")
         self.assertIsNotNone(j1)
@@ -62,7 +62,7 @@ class TestLeaseAndConcurrency(TestJobQueueBase):
         self.assertEqual(j1.status, "RUNNING")
 
     def test_expired_lease_recovered(self):
-        j = self.q.submit("r1")
+        j = self.q.submit("r1", writer="L7_freeze")
         claimed = self.q.claim_next("w1", lease_seconds=1)
         # 模拟租约过期
         claimed.lease_until = datetime.utcnow() - timedelta(seconds=5)
@@ -75,11 +75,11 @@ class TestLeaseAndConcurrency(TestJobQueueBase):
         self.assertEqual(re_claimed.attempts, 2)  # 恢复计数
 
     def test_active_lease_not_reclaimed(self):
-        j = self.q.submit("a1")
+        j = self.q.submit("a1", writer="L7_freeze")
         self.q.claim_next("w1", lease_seconds=60)
         other = self.q.claim_next("w2")
         # 只有 PENDING 的另一个任务可被领取；RUNNING 且租约未过期的不可
-        self.q.submit("a2")
+        self.q.submit("a2", writer="L7_freeze")
         other = self.q.claim_next("w2")
         self.assertIsNotNone(other)
         self.assertNotEqual(other.id, j.id)
@@ -87,39 +87,39 @@ class TestLeaseAndConcurrency(TestJobQueueBase):
 
 class TestTransitions(TestJobQueueBase):
     def test_complete(self):
-        j = self.q.submit("c1")
+        j = self.q.submit("c1", writer="L7_freeze")
         claimed = self.q.claim_next("w1")
         done = self.q.complete(claimed.id, "w1", "result-ok")
         self.assertEqual(done.status, "DONE")
         self.assertEqual(done.result, "result-ok")
 
     def test_fail(self):
-        j = self.q.submit("f1")
+        j = self.q.submit("f1", writer="L7_freeze")
         claimed = self.q.claim_next("w1")
         failed = self.q.fail(claimed.id, "w1", "boom")
         self.assertEqual(failed.status, "FAILED")
 
     def test_cancel_pending(self):
-        j = self.q.submit("x1")
+        j = self.q.submit("x1", writer="L7_freeze")
         cancelled = self.q.cancel(j.id)
         self.assertEqual(cancelled.status, "CANCELLED")
         self.assertIsNone(cancelled.lease_until)
 
     def test_cancel_terminal_rejected(self):
-        j = self.q.submit("x2")
+        j = self.q.submit("x2", writer="L7_freeze")
         claimed = self.q.claim_next("w1")
         self.q.complete(claimed.id, "w1", "ok")
         with self.assertRaises(ValueError):
             self.q.cancel(claimed.id)
 
     def test_complete_non_running_rejected(self):
-        j = self.q.submit("x3")
+        j = self.q.submit("x3", writer="L7_freeze")
         with self.assertRaises(ValueError) as cm:
             self.q.complete(j.id, "w1", "x")  # PENDING 不可完成
         self.assertIn("E-STATE-001", str(cm.exception))
 
     def test_extend_lease(self):
-        j = self.q.submit("e1")
+        j = self.q.submit("e1", writer="L7_freeze")
         claimed = self.q.claim_next("w1", lease_seconds=5)
         self.assertTrue(self.q.extend_lease(claimed.id, "w1", lease_seconds=30))
         self.assertGreater(claimed.lease_until,
@@ -127,7 +127,7 @@ class TestTransitions(TestJobQueueBase):
 
     def test_lease_ownership_sequence(self):
         """J-1/Q1 验收序列：A 领 1s → 过期 → B 抢占 → A complete 被拒、B 成功。"""
-        self.q.submit("own-1")
+        self.q.submit("own-1", writer="L7_freeze")
         a = self.q.claim_next("A", lease_seconds=1)
         a.lease_until = datetime.utcnow() - timedelta(seconds=5)
         self.q.s.commit()
@@ -139,7 +139,7 @@ class TestTransitions(TestJobQueueBase):
             self.q.complete(b.id, "A", "A 的结果（租约已过期）")
         self.assertIn("E-LEASE-002", str(cm.exception))
         # E-LEASE-001 场景：持有者身份仍在但租约已过期（无抢占）
-        self.q.submit("own-1b")
+        self.q.submit("own-1b", writer="L7_freeze")
         a2 = self.q.claim_next("A", lease_seconds=1)
         a2.lease_until = datetime.utcnow() - timedelta(seconds=5)
         self.q.s.commit()
@@ -154,7 +154,7 @@ class TestTransitions(TestJobQueueBase):
 
     def test_non_holder_rejected(self):
         """J-1/Q1：非持有者（租约未过期）提交被拒 E-LEASE-002。"""
-        self.q.submit("own-2")
+        self.q.submit("own-2", writer="L7_freeze")
         a = self.q.claim_next("A", lease_seconds=60)
         with self.assertRaises(ValueError) as cm:
             self.q.complete(a.id, "B", "B 冒充")
@@ -168,7 +168,7 @@ class TestTransitions(TestJobQueueBase):
 
     def test_updated_at_advances(self):
         """J-2/Q2：提交→领取→完成后 updated_at > created_at。"""
-        j = self.q.submit("u1")
+        j = self.q.submit("u1", writer="L7_freeze")
         claimed = self.q.claim_next("w1")
         time.sleep(0.05)
         done = self.q.complete(claimed.id, "w1", "ok")
@@ -181,7 +181,7 @@ class TestConcurrentSubmit(TestJobQueueBase):
         results = []
 
         def do_submit():
-            results.append(self.q.submit("race-key"))
+            results.append(self.q.submit("race-key", writer="L7_freeze"))
 
         ts = [threading.Thread(target=do_submit) for _ in range(2)]
         for t in ts:
@@ -221,7 +221,7 @@ class TestMigrationPath(unittest.TestCase):
 
     def test_job_flow_on_migrated_db(self):
         """迁移建的库上完整跑一遍 job 流程（job 表经迁移存在）。"""
-        j = self.q.submit("mig-key")
+        j = self.q.submit("mig-key", writer="L7_freeze")
         claimed = self.q.claim_next("w1")
         self.assertIsNotNone(claimed)
         done = self.q.complete(claimed.id, "w1", "mig-ok")

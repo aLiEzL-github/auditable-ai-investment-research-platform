@@ -58,7 +58,7 @@ def main() -> int:
     q = JobQueue(repo)
 
     # ② 入队
-    job = q.submit("smoke-1", '{"payload": "vertical-smoke"}')
+    job = q.submit("smoke-1", '{"payload": "vertical-smoke"}', writer="L7_freeze")
     print(f"② 入队 OK（job id={job.id}）")
 
     # ③ Worker 领取
@@ -74,7 +74,7 @@ def main() -> int:
     print("④ 完成 + 落库 OK:", row)
 
     # ⑤ 租约容器内复验（2c）：过期后原持有者 complete 被拒
-    q.submit("smoke-2")
+    q.submit("smoke-2", writer="L7_freeze")
     a = q.claim_next("A", lease_seconds=1)
     a.lease_until = datetime.utcnow() - timedelta(seconds=5)
     q.s.commit()

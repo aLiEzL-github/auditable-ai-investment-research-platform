@@ -330,7 +330,21 @@ _OBJ_TYPE = {
     Approval: "approval",
     Release: "release",
     CurrentPointer: "current_pointer",
+    # Job 定义在 jobs.py（与本模块共用 Base），在此按名字延迟登记 ——
+    # 直接 import 会造成 repository ←→ jobs 循环依赖。见 _register_late()。
 }
+
+
+def _register_late():
+    """把定义在其他模块、但与本模块共用 Base 的 ORM 类补登记进 _OBJ_TYPE。
+
+    不补登记也不会放行（cas_insert 对未登记类型默认拒绝，E-WRITE-005），
+    但那会把「忘了登记」和「本就不该写」混为一谈 —— 前者须被看见。
+    """
+    for cls in Base.registry.mappers:
+        c = cls.class_
+        if c not in _OBJ_TYPE and getattr(c, "__tablename__", None):
+            _OBJ_TYPE[c] = c.__tablename__
 
 # refs 可指向的表 —— 「引用可解析」= 每个 ref 在其中之一里实际存在。
 _REF_TABLES = (Claim, EvidenceRecord, FactRecord, RawArtifact, Snapshot, Source)
@@ -424,6 +438,7 @@ class Repository:
         现改为：写者参数**必填**，对象类型经 `_OBJ_TYPE` 查表，
         **查不到即拒**（默认拒绝，而非放行）。
         """
+        _register_late()   # 定义了不调用 = 结构在、功能不在
         obj_type = _OBJ_TYPE.get(type(obj))
         if obj_type is None:
             raise ValueError(

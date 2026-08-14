@@ -142,6 +142,65 @@ class TestWriterMatrix(unittest.TestCase):
         self.assertEqual(cm.exception.code, "E-WRITE-002")
 
 
+class TestWriterNormalizationAndPreconditions(unittest.TestCase):
+    """OI-PF-181 / OI-PF-182 —— 全局写权执行函数的两处默认拒绝。
+
+    **载荷即原缺陷形态**（规则 ⑩）：下面每一个字符串/取值都曾实测绕过。
+    """
+
+    # ── OI-PF-181：never 名单的归一化 ──────────────────────────────
+    BYPASS = ("llm", "Llm", "LLM ", " LLM", "LLM\t",
+              "LLM\u200b",          # 零宽空格
+              "ＬＬＭ")               # 全角
+
+    def test_never_list_resists_normalization_variants(self):
+        """any_of 的行没有 writers 白名单，never 是唯一的门。
+
+        修复前：只有精确的 'LLM' 被拒，七种变体全部通过 ——
+        **默认拒绝只在有白名单时成立，any_of 把它翻转成了默认允许。**
+        """
+        for w in ("LLM",) + self.BYPASS:
+            for obj in ("open_item", "candidate", "manifest"):
+                with self.subTest(obj=obj, writer=w):
+                    with self.assertRaises(sv.SchemaError):
+                        sv.assert_writer(obj, w)
+
+    def test_empty_writer_rejected(self):
+        for w in ("", " ", "\t", None):
+            with self.subTest(writer=w):
+                with self.assertRaises(sv.SchemaError):
+                    sv.assert_writer("open_item", w)
+
+    def test_legal_writer_still_passes(self):
+        """防误红：归一化不得把合法写者也挡掉。"""
+        self.assertIsNone(sv.assert_writer("open_item", "L8"))
+        self.assertIsNone(sv.assert_writer(
+            "raw_artifact", "L7_freeze", {"rights_gate_and_parse_ok": True}))
+
+    # ── OI-PF-182：MACHINE 前置取布尔而非取真值 ────────────────────
+    TRUTHY_BUT_NOT_TRUE = ("false", "False", "0", "no", "N", " ",
+                           [0], {"ok": False}, 1)
+
+    def test_machine_precondition_requires_boolean_true(self):
+        """修复前 `if not ctx.get(key)` 使这些取值全部判为「前置满足」。
+
+        `rights_gate_and_parse_ok` 的语义是**经 L3 权利门 + L6 解析成功** ——
+        字符串 "false" 判为满足，等于权利门被静默放行。而这些形态正是从
+        JSON / 环境变量 / CLI 取值时天然出现的。
+        """
+        for v in self.TRUTHY_BUT_NOT_TRUE:
+            with self.subTest(value=v):
+                with self.assertRaises(sv.SchemaError) as ctx:
+                    sv.assert_writer("raw_artifact", "L7_freeze",
+                                     {"rights_gate_and_parse_ok": v})
+                self.assertIn("E-PRECOND-001", str(ctx.exception))
+
+    def test_machine_precondition_accepts_true(self):
+        """防误红。"""
+        self.assertIsNone(sv.assert_writer(
+            "raw_artifact", "L7_freeze", {"rights_gate_and_parse_ok": True}))
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -227,7 +286,7 @@ class TestContractCoverage(unittest.TestCase):
                                                   "acquired_at": "2026-08-07T00:00:00Z",
                                                   "ok": True, "version": 1})
         q = JobQueue(repo)
-        q.submit("j1")
+        q.submit("j1", writer="L7_freeze")
         _sv.validate_object("job", {"id": 1, "schema_version": "1.0.0",
                                     "job_key": "j1", "status": "PENDING", "version": 1})
         s.close()
