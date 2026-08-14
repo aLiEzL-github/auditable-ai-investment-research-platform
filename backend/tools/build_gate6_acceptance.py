@@ -44,6 +44,11 @@ PORTFOLIO = _portfolio_root()
 
 
 # ── ADR-026：单人期红队的精确状态 ────────────────────────────────────
+# 条件 8（有效期）的判据**只在 red_team_marker_check 里有一份**，此处 import。
+# 不另写一遍 —— OI-PF-173 记的正是「同一判据四份实现，无守卫保证其一致」。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from red_team_marker_check import expiry_problem   # noqa: E402
+
 _RT_SOLO = "RED_TEAM_SINGLE_PERSON_ATTESTED"
 
 
@@ -118,6 +123,11 @@ def _rt_solo_missing(rec):
     if not str(rec.get("independence") or "").strip():
         miss.append("缺 independence（须写明红队人与编制人的实际关系，"
                     "单人期即「同一自然人」）")
+
+    # 条件 8：有效期（U 于接受 ADR-026 时补入）
+    _exp = expiry_problem(rec)
+    if _exp:
+        miss.append(_exp)
     return miss
 
 NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
@@ -490,7 +500,10 @@ def main() -> int:
     print(f"verdict = {verdict}", file=sys.stderr)
     print(f"blockers = {len(_blockers)}", file=sys.stderr)
     for _b in _blockers:
-        print(f"  · {_b[:120]}", file=sys.stderr)
+        # 不截断。原为 _b[:120] —— 实测把「本状态已失效」这句切在了第 132 字，
+        # 于是阻断理由的**结论部分**读者看不到，只看得到前半段描述。
+        # 一条被截断的阻断理由，和一条含糊的阻断理由，对读者是一回事。
+        print(f"  · {_b}", file=sys.stderr)
     return 0
 
 

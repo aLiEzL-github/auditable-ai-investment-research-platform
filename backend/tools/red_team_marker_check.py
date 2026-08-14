@@ -30,6 +30,39 @@ RT_SOLO = "RED_TEAM_SINGLE_PERSON_ATTESTED"
 MARKER = "independent_red_team_present"
 HEAD_LINES = 40
 
+# ADR-026 §4 条件 8（U 于接受本 ADR 时补入）：该状态自审查执行之日起失效。
+# 起草稿只有条件 7（补到第 2 名自然人则失效），**没有处理「一直没补到人」**
+# —— 而那恰恰是最可能发生的情形。缺了它，签一次即永久有效。
+VALID_DAYS = 180
+
+
+def expiry_problem(rec):
+    """条件 8 的判据。返回说明字符串，None = 未过期且字段齐备。
+
+    **判据只此一份** —— 生成器 build_gate6_acceptance.py 直接 import 本函数，
+    不另写一遍。OI-PF-173 记的正是「同一判据四份实现，行为一致但无守卫保证
+    其一致；任一份日后被改，其余不会跟着变」。
+    """
+    import datetime as _dt
+    raw = str(rec.get("red_team_performed_at") or "").strip()
+    if not raw:
+        return ("缺 red_team_performed_at（ADR-026 §4 条件 8）—— "
+                "无从判断该状态是否已过期，判红而非默认放行")
+    try:
+        t = _dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return f"red_team_performed_at 不是合法 ISO8601：{raw!r}"
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=_dt.timezone.utc)
+    age = (_dt.datetime.now(_dt.timezone.utc) - t).days
+    if age > VALID_DAYS:
+        return (f"红队审查执行于 {raw}，已过 {age} 天 > {VALID_DAYS} 天 —— "
+                f"ADR-026 §4 条件 8：本状态已失效，须重做红队"
+                f"（代码、开放项与九轮审查结论都可能已变）")
+    if age < 0:
+        return f"red_team_performed_at 在未来：{raw}"
+    return None
+
 
 def _root(argv) -> str:
     p = (argv[1] if len(argv) > 1 else None) or os.environ.get("PORTFOLIO_ROOT")
@@ -87,6 +120,12 @@ def main() -> int:
                 bad.append(f"M-3: 派生产物 {os.path.basename(f)} 未携带 "
                            f"{MARKER} = false —— 标记须逐份传播，"
                            f"不得只贴在源头")
+
+    # ── M-5：有效期（ADR-026 §4 条件 8）──
+    if solo:
+        _exp = expiry_problem(rec)
+        if _exp:
+            bad.append("M-5: " + _exp)
 
     # ── M-4：反向 ──
     if not solo and f"{MARKER} = false" in pkg:
