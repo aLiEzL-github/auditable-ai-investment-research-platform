@@ -72,7 +72,7 @@ from assumption_snapshot import AssumptionSnapshot
 from open_item_registry import OPEN, OpenItem, OpenItemRegistry
 from publish_engine import canonical_bytes
 from valuation_engine import (
-    BASE, OPTIMISTIC, PESSIMISTIC,
+    BASE, OPTIMISTIC, PESSIMISTIC, SCENARIOS,
     ValuationInputs, ValuationResult,
     fcff_valuation, fcfe_valuation,
     pe_roe_pb_valuation, relative_valuation, cross_check,
@@ -107,6 +107,239 @@ class OpenItemsPolicy:
     blocks_gate: str
 
 
+# ════════════════════════════════════════════════════════════════
+# G6A-06 PARTIAL：估值路由声明（fcff/fcfe/relative/pe_roe_pb）
+# ════════════════════════════════════════════════════════════════
+
+VALUATION_ROUTES = ("fcff", "fcfe", "relative", "pe_roe_pb")
+
+ROUTE_READY = "READY"
+ROUTE_INPUT_MISSING = "INPUT_MISSING"
+ROUTE_NOT_EVALUATED = "NOT_EVALUATED"
+ROUTE_STATES = (ROUTE_READY, ROUTE_INPUT_MISSING, ROUTE_NOT_EVALUATED)
+
+# 每路估值/情景产物的 typed method 标签（与 valuation_engine 输出一致）
+ROUTE_METHODS = {
+    "fcff": "FCFF",
+    "fcfe": "FCFE",
+    "relative": "RELATIVE_PE",
+    "pe_roe_pb": "PE_ROE_PB",
+}
+
+# 每路估值「声明 READY 才必须出现」的路由专属事实键
+ROUTE_FACT_KEYS = {
+    "fcff": "fcff",
+    "fcfe": "fcfe",
+    "relative": "eps",
+    "pe_roe_pb": "book_per_share",
+}
+
+# 每路估值路由**实际消费**的假设键（canonical 单点真源：校验 + 产物共用）。
+# 只列该路引擎真正读取的假设 —— READY 路由缺失所需假设即 E-G6A-06-020
+# 失败关闭；非 READY 路由不消费任何假设，调用方提供的无关默认/提案不得
+# 进入账本/声明/映射产物。
+ROUTE_ASSUMPTIONS = {
+    "fcff": ("wacc",),
+    "fcfe": ("growth", "ke"),
+    "relative": ("target_pe",),
+    "pe_roe_pb": ("roe", "target_pe"),
+}
+
+# 五个假设键的**确定性规范顺序**（calc_ledger/claim_map/emission_map 的
+# 输出顺序）：全 READY 时恰好 = ROUTE_ASSUMPTIONS 并集（五键）；
+# 部分 READY 时只保留被消费键，顺序不变。
+ASSUMPTION_KEYS = ("growth", "wacc", "ke", "target_pe", "roe")
+
+# 每个假设键在 claim_map 中的确定性文本（G3-05 可读可见绑定）。
+ASSUMPTION_TEXTS = {
+    "growth": "营收增速假设",
+    "wacc": "WACC 假设",
+    "ke": "股权成本假设",
+    "target_pe": "目标市盈率假设",
+    "roe": "净资产收益率假设",
+}
+
+
+def _consumed_assumptions(ctx: "ResearchContext") -> Tuple[str, ...]:
+    """READY 路由实际消费的假设键（ASSUMPTION_KEYS 规范顺序）。
+
+    只取声明 READY 的路由所消费的键 —— 非 READY 路由的假设键即使调用方
+    提供了默认/提案也**不得**进入账本/声明/映射产物（不发明数值）。
+    """
+    routes = _declared_routes(ctx)
+    consumed = set()
+    for route in VALUATION_ROUTES:
+        if routes[route].state == ROUTE_READY:
+            consumed.update(ROUTE_ASSUMPTIONS[route])
+    return tuple(k for k in ASSUMPTION_KEYS if k in consumed)
+
+
+def _assumptions_for_statuses(rs: Dict[str, str]) -> Tuple[str, ...]:
+    """从 route_statuses 派生同一规范假设键集（quality 校验用，无 ctx）。"""
+    consumed = set()
+    for route in VALUATION_ROUTES:
+        if rs[route] == ROUTE_READY:
+            consumed.update(ROUTE_ASSUMPTIONS[route])
+    return tuple(k for k in ASSUMPTION_KEYS if k in consumed)
+
+
+def _validate_ready_route_assumptions(ctx: "ResearchContext",
+                                      v: Dict[str, str]) -> None:
+    """回算边界：每个 READY 路由所需假设键必须作为**非空字符串**存在。
+
+    在解析路由声明与 approved/default 取值后、产物生成前执行 —— 缺失任一
+    必需假设 → RecomputeError E-G6A-06-020 失败关闭（不 KeyError、不静默
+    用默认注入）；非 READY 路由不要求任何假设，其键允许不存在。
+    """
+    routes = _declared_routes(ctx)
+    missing = []
+    for route in VALUATION_ROUTES:
+        decl = routes[route]
+        if decl.state != ROUTE_READY:
+            continue
+        for key in ROUTE_ASSUMPTIONS[route]:
+            val = v.get(key)
+            if not (isinstance(val, str) and val.strip()):
+                missing.append((route, key))
+    if missing:
+        raise RecomputeError(
+            f"E-G6A-06-020: READY 路由所需假设缺失/空值 —— {missing} —— 失败关闭")
+
+
+@dataclass(frozen=True)
+class RouteDeclaration:
+    """单路估值声明（冻结输入）。状态专属形状由 __post_init__ 强制：
+
+      · READY          —— 不得带 reason/evidence_refs/missing_inputs；
+      · INPUT_MISSING  —— 必须带非空 reason + 非空证据引用 + 非空
+                           missing_inputs；
+      · NOT_EVALUATED  —— 必须带非空 reason + 非空证据引用，不得带
+                           missing_inputs。
+
+    直接构造非法组合（缺 missing_inputs / 带多余字段 / 未知状态 / 类型错误）
+    → RecomputeError E-G6A-06-020 失败关闭，不泄漏 KeyError、不静默吞掉矛盾。
+    数值事实只能经 facts 且只对 READY 路出现（由 `_declared_routes` 校验）。
+    """
+    state: str
+    reason: str = ""
+    evidence_refs: Tuple[str, ...] = ()
+    missing_inputs: Tuple[str, ...] = ()
+
+    def __post_init__(self):
+        if self.state not in ROUTE_STATES:
+            raise RecomputeError(
+                f"E-G6A-06-020: 路由状态 {self.state!r} 非法"
+                f"（须为 {ROUTE_STATES}）—— 失败关闭")
+        if not isinstance(self.reason, str):
+            raise RecomputeError(
+                f"E-G6A-06-020: 路由声明 reason 须为字符串"
+                f"（实得 {type(self.reason).__name__}）—— 失败关闭")
+        for label in ("evidence_refs", "missing_inputs"):
+            val = getattr(self, label)
+            if isinstance(val, list):
+                # 冻结 dataclass 内不得保留可变 list 别名 —— 规范化为 tuple
+                # （G6A-06 partial-route 硬化：调用方传 list 后改列表会反向
+                # 漂移声明）。
+                object.__setattr__(self, label, tuple(val))
+                val = getattr(self, label)
+            elif not isinstance(val, tuple):
+                raise RecomputeError(
+                    f"E-G6A-06-020: 路由声明 {label} 须为 tuple/list"
+                    f"（实得 {type(val).__name__}）—— 失败关闭")
+            if not all(isinstance(x, str) and x.strip() for x in val):
+                raise RecomputeError(
+                    f"E-G6A-06-020: 路由声明 {label} 须全为非空字符串"
+                    " —— 失败关闭")
+            if len(set(val)) != len(val):
+                raise RecomputeError(
+                    f"E-G6A-06-020: 路由声明 {label} 含重复项"
+                    f"（{sorted(set(val))}）—— 失败关闭")
+        if self.state == ROUTE_READY:
+            extra = [k for k in ("reason", "evidence_refs", "missing_inputs")
+                     if getattr(self, k)]
+            if extra:
+                raise RecomputeError(
+                    f"E-G6A-06-020: READY 路由不得携带 {extra} —— 失败关闭")
+            return
+        if not self.reason.strip():
+            raise RecomputeError(
+                "E-G6A-06-020: 非 READY 路由必须带非空 reason —— 失败关闭")
+        if not self.evidence_refs:
+            raise RecomputeError(
+                "E-G6A-06-020: 非 READY 路由必须带非空 evidence_refs"
+                " —— 失败关闭")
+        if self.state == ROUTE_INPUT_MISSING:
+            if not self.missing_inputs:
+                raise RecomputeError(
+                    f"E-G6A-06-020: {ROUTE_INPUT_MISSING} 路由必须带非空"
+                    " missing_inputs —— 失败关闭")
+        elif self.missing_inputs:
+            raise RecomputeError(
+                f"E-G6A-06-020: {ROUTE_NOT_EVALUATED} 路由不得携带"
+                " missing_inputs —— 失败关闭")
+
+    def to_dict(self) -> dict:
+        d = {"state": self.state}
+        if self.state != ROUTE_READY:
+            d["reason"] = self.reason
+            d["evidence_refs"] = list(self.evidence_refs)
+            if self.missing_inputs:
+                d["missing_inputs"] = list(self.missing_inputs)
+        return d
+
+
+@dataclass(frozen=True)
+class ValuationRoutes:
+    """四路估值声明容器（键集必须恰好 = VALUATION_ROUTES）。"""
+    routes: Dict[str, RouteDeclaration]
+
+
+def _declared_routes(ctx: "ResearchContext") -> Dict[str, RouteDeclaration]:
+    """解析路由声明并校验事实一致性。legacy 内部上下文缺省 = 全 READY
+    （不发明 PARTIAL）；受管请求在 `candidate_service.final_candidate_request`
+    已强制四路齐全。任何键集漂移、非 RouteDeclaration、声明状态与 facts 中
+    该路数值事实相互矛盾（READY 缺该路事实 / 非 READY 夹带该路数值）→
+    RecomputeError E-G6A-06-020 失败关闭。"""
+    if ctx.valuation_routes is None:
+        routes = {r: RouteDeclaration(ROUTE_READY) for r in VALUATION_ROUTES}
+    else:
+        vr = ctx.valuation_routes
+        if not isinstance(vr, ValuationRoutes):
+            raise RecomputeError(
+                "E-G6A-06-020: valuation_routes 形态不符（须为 ValuationRoutes）"
+                " —— 失败关闭")
+        routes = vr.routes
+        if set(routes) != set(VALUATION_ROUTES):
+            raise RecomputeError(
+                f"E-G6A-06-020: 估值路由声明键集 {sorted(routes)} ≠ "
+                f"生产注册表 {list(VALUATION_ROUTES)} —— 失败关闭")
+        for r in VALUATION_ROUTES:
+            decl = routes.get(r)
+            if not isinstance(decl, RouteDeclaration):
+                raise RecomputeError(
+                    f"E-G6A-06-020: valuation_routes.{r} 非 RouteDeclaration"
+                    f"（实得 {type(decl).__name__}）—— 失败关闭")
+        routes = dict(routes)
+    facts = ctx.facts
+    if not isinstance(facts, dict):
+        raise RecomputeError(
+            "E-G6A-06-020: ctx.facts 非对象 —— 失败关闭")
+    for r in VALUATION_ROUTES:
+        decl = routes[r]
+        fk = ROUTE_FACT_KEYS[r]
+        has = isinstance(facts.get(fk), str) and facts[fk].strip()
+        if decl.state == ROUTE_READY:
+            if not has:
+                raise RecomputeError(
+                    f"E-G6A-06-020: READY 路由 {r} 缺必需事实字段 "
+                    f"facts.{fk} —— 声明/事实矛盾，失败关闭")
+        elif fk in facts:
+            raise RecomputeError(
+                f"E-G6A-06-020: 非 READY 路由 {r} 携带数值事实 "
+                f"facts.{fk} —— 非 READY 不得夹带该路数值，失败关闭")
+    return routes
+
+
 @dataclass
 class ResearchContext:
     """全部冻结输入 + 已批准假设快照。
@@ -121,6 +354,7 @@ class ResearchContext:
     assumption_defaults: Dict[str, str]   # 假设键 → 冻结合同默认值
     approved: AssumptionSnapshot
     open_items_policy: Optional[OpenItemsPolicy] = None
+    valuation_routes: Optional[ValuationRoutes] = None
 
     def approved_keys(self) -> set:
         """已批准假设的键集合（payload 以 proposal_id 为键 —— 展平取键）。"""
@@ -143,12 +377,12 @@ class ResearchContext:
 # ════════════════════════════════════════════════════════════════
 
 PRODUCT_DEPS: Dict[str, Tuple[str, ...]] = {
-    # OI-PF-171：声明须与生成器**真实读取**逐一对应，既不欠报也不少报。
-    # calc_ledger 的生成器只从 v 读 growth（其余键仅用于账本无关的元数据），
-    # claim_map 只读 growth/wacc —— 旧声明把五个键全列上属偏保守多报，
-    # 使 F-4 受影响判定不准确（批准 ke/target_pe/roe 会虚报这两个产物受影响）。
-    # 最小修复：声明收敛到当前真实读取，不扩张产品输出语义。
-    "calc_ledger": ("growth",),
+    # G6A-06 partial-route 返工：calc_ledger/claim_map/emission_map 只含 READY
+    # 路由实际消费的假设。全 READY 时消费集 = ROUTE_ASSUMPTIONS 并集 = 全部
+    # 五个键（F-4 all-READY 灵敏度须精确，故声明五键而非按生成时实际消费键
+    # 写死 —— 声明的是**可能**消费的并集）；部分 READY 时实际只读被消费键，
+    # 该子集在 QUALITY 校验侧与声明并集兼容（不欠报）。
+    "calc_ledger": ASSUMPTION_KEYS,
     "valuation_fcff": ("wacc",),            # FCFF 路引擎以终值增速为分母，
     #                                        # 增速参数不影响其结果（如实落库，F-4）
     "valuation_fcfe": ("growth", "ke"),
@@ -157,11 +391,11 @@ PRODUCT_DEPS: Dict[str, Tuple[str, ...]] = {
     "scenario_pessimistic": ("growth", "ke"),
     "scenario_base": ("growth", "ke"),
     "scenario_optimistic": ("growth", "ke"),
-    "claim_map": ("growth", "wacc"),
+    "claim_map": ASSUMPTION_KEYS,
     # OI-PF-169 修复后：emission_map 由 claim_map 派生，故依赖同一批键。
     # 原值 () 与「恒返回空」互为因果 —— 依赖表说它不读任何假设，
     # 生成器就真的什么也没产出。
-    "emission_map": ("growth", "wacc"),
+    "emission_map": ASSUMPTION_KEYS,
     # OI-PF-170：open_items 由四路估值交叉验证派生（_valuation_results
     # 唯一实现路径），四路合计读取**全部五个**假设键 —— fcff 读 wacc、
     # fcfe 读 growth/ke、relative 读 target_pe、pe_roe_pb 读 roe/target_pe。
@@ -178,43 +412,115 @@ PRODUCT_ORDER = tuple(PRODUCT_DEPS)
 # ════════════════════════════════════════════════════════════════
 
 def _gen_calc_ledger(ctx: ResearchContext, v: Dict[str, str]) -> dict:
-    growth = v["growth"]
+    """账本只登记 READY 路由实际消费的假设（G6A-06 partial-route 返工）。
+
+    全 READY → 五键全部登记；全部非 READY → ledger 可为空数组
+    （formula_count 保留）。只取 `_consumed_assumptions` 的规范顺序 ——
+    非 READY 路由的假设键即使调用方提供了默认/提案也不得进账本（不发明
+    数值）。
+    """
     approved = ctx.approved_keys()
     return {
         "ledger": [
-            {"metric": "growth_assumption", "value": growth,
-             "source": ("approved_assumption" if "growth" in approved
-                        else "contract_default")},
+            {"metric": f"{key}_assumption", "value": v[key],
+             "source": ("approved_assumption" if key in approved
+                        else "contract_default")}
+            for key in _consumed_assumptions(ctx)
         ],
         "formula_count": len(ctx.formula_specs),
     }
 
 
-def _valuation_results(ctx: ResearchContext,
-                       v: Dict[str, str]) -> Dict[str, ValuationResult]:
-    """四路估值（BASE 情景）**唯一实现路径**（OI-PF-170）。
+def _run_route(route: str, vi: ValuationInputs, f: Dict[str, str],
+               v: Dict[str, str]) -> ValuationResult:
+    if route == "fcff":
+        return fcff_valuation(vi, BASE, f["fcff"], v["wacc"])
+    if route == "fcfe":
+        return fcfe_valuation(vi, BASE, f["fcfe"], v["growth"], v["ke"])
+    if route == "relative":
+        return relative_valuation(vi, BASE, v["target_pe"], f["eps"])
+    if route == "pe_roe_pb":
+        return pe_roe_pb_valuation(
+            vi, BASE, v["roe"], f["book_per_share"], v["target_pe"])
+    raise RecomputeError(f"E-G6A-06-020: 未知估值路由 {route!r} —— 失败关闭")
 
-    valuation 各产物与 open_items 的交叉验证**共用同一批 ValuationResult**，
-    避免两套公式漂移 —— open_items 若自算一遍口径会与估值产物分叉。
+
+@dataclass
+class RouteOutcome:
+    """单路估值结果：READY 携带 ValuationResult；非 READY 只携带声明元数据
+    （含 missing_inputs —— 冻结后仍可追溯，不丢失）。"""
+    route: str
+    state: str
+    result: Optional[ValuationResult] = None
+    reason: str = ""
+    evidence_refs: Tuple[str, ...] = ()
+    missing_inputs: Tuple[str, ...] = ()
+
+
+def _valuation_outcomes(ctx: ResearchContext,
+                        v: Dict[str, str]) -> Dict[str, RouteOutcome]:
+    """四路估值（BASE 情景）结果（OI-PF-170 唯一实现路径）。
+
+    非 READY 路由不运行引擎、不产生任何数值 —— typed 状态产物由
+    `_gen_valuation`/`_gen_scenario` 按声明输出（含 missing_inputs）；
+    交叉验证只取 READY 路。
     """
     vi = ctx.valuation_inputs
     f = ctx.facts
-    return {
-        "fcff": fcff_valuation(vi, BASE, f["fcff"], v["wacc"]),
-        "fcfe": fcfe_valuation(vi, BASE, f["fcfe"], v["growth"], v["ke"]),
-        "relative": relative_valuation(vi, BASE, v["target_pe"], f["eps"]),
-        "pe_roe_pb": pe_roe_pb_valuation(
-            vi, BASE, v["roe"], f["book_per_share"], v["target_pe"]),
+    out: Dict[str, RouteOutcome] = {}
+    for route in VALUATION_ROUTES:
+        decl = _declared_routes(ctx)[route]
+        if decl.state == ROUTE_READY:
+            out[route] = RouteOutcome(route, ROUTE_READY,
+                                      result=_run_route(route, vi, f, v))
+        else:
+            out[route] = RouteOutcome(route, decl.state, result=None,
+                                      reason=decl.reason,
+                                      evidence_refs=decl.evidence_refs,
+                                      missing_inputs=decl.missing_inputs)
+    return out
+
+
+def _valuation_results(ctx: ResearchContext,
+                       v: Dict[str, str]) -> List[ValuationResult]:
+    """仅成功评估（READY）路由的结果集 —— 交叉验证唯一输入。"""
+    return [o.result for o in _valuation_outcomes(ctx, v).values()
+            if o.state == ROUTE_READY]
+
+
+def _non_ready_product(route: str, scenario: str, outcome: RouteOutcome) -> dict:
+    """非 READY 路由的确定性 typed 状态产物：无任何 per-share 数值；
+    INPUT_MISSING 携带 missing_inputs（冻结后仍可追溯），NOT_EVALUATED 不带。"""
+    prod = {
+        "method": ROUTE_METHODS[route],
+        "scenario": scenario,
+        "status": outcome.state,
+        "reason": outcome.reason,
+        "evidence_refs": list(outcome.evidence_refs),
     }
+    if outcome.missing_inputs:
+        prod["missing_inputs"] = list(outcome.missing_inputs)
+    return prod
 
 
 def _gen_valuation(ctx: ResearchContext, v: Dict[str, str], route: str) -> dict:
-    """四路估值（BASE 情景）产物 —— 取 `_valuation_results` 的对应路。"""
-    return _valuation_results(ctx, v)[route].to_dict()
+    """四路估值（BASE 情景）产物。READY → PASS 数值产物；非 READY →
+    typed 状态产物（无 per-share 数值，不夹带声明以外的数字事实）。"""
+    outcome = _valuation_outcomes(ctx, v)[route]
+    if outcome.state == ROUTE_READY:
+        return {"status": "PASS", **outcome.result.to_dict()}
+    return _non_ready_product(route, BASE, outcome)
 
 
 def _gen_scenario(ctx: ResearchContext, v: Dict[str, str], scenario: str) -> dict:
-    """三情景：同公式（FCFE 路，增速参数实际参与计算）、不同参数集。"""
+    """三情景：同公式（FCFE 路，增速参数实际参与计算）、不同参数集；
+    FCFE 非 READY → 传播声明状态（typed 产物，无数值，含 missing_inputs）。"""
+    fcfe_decl = _declared_routes(ctx)["fcfe"]
+    if fcfe_decl.state != ROUTE_READY:
+        return _non_ready_product("fcfe", scenario.upper(), RouteOutcome(
+            "fcfe", fcfe_decl.state, reason=fcfe_decl.reason,
+            evidence_refs=fcfe_decl.evidence_refs,
+            missing_inputs=fcfe_decl.missing_inputs))
     adj = {"pessimistic": "0.90", "base": "1.00", "optimistic": "1.10"}
     k = adj[scenario]
     from decimal import Decimal
@@ -222,16 +528,21 @@ def _gen_scenario(ctx: ResearchContext, v: Dict[str, str], scenario: str) -> dic
     ke = v["ke"]
     r = fcfe_valuation(ctx.valuation_inputs, scenario.upper(),
                        ctx.facts["fcfe"], g, ke)
-    return {"scenario": scenario.upper(), **r.to_dict()}
+    return {"scenario": scenario.upper(), "status": "PASS", **r.to_dict()}
 
 
 def _gen_claim_map(ctx: ResearchContext, v: Dict[str, str]) -> dict:
+    """Claim 只声明 READY 路由实际消费的假设（G6A-06 partial-route 返工）。
+
+    只取 `_consumed_assumptions` 的规范顺序；全部非 READY → claims 可为空
+    数组。非 READY 路由的假设键即使调用方提供了默认/提案也不得进声明
+    （不把无关假设伪装成结论）。
+    """
     return {
         "claims": [
-            {"id": "CLM-1", "text": "营收增速假设", "assumption": "growth",
-             "value": v["growth"]},
-            {"id": "CLM-2", "text": "WACC 假设", "assumption": "wacc",
-             "value": v["wacc"]},
+            {"id": f"CLM-{idx}", "text": ASSUMPTION_TEXTS[key],
+             "assumption": key, "value": v[key]}
+            for idx, key in enumerate(_consumed_assumptions(ctx), start=1)
         ],
     }
 
@@ -293,16 +604,21 @@ def _resolve_open_items_policy(ctx: ResearchContext) -> OpenItemsPolicy:
 
 
 def _gen_open_items(ctx: ResearchContext, v: Dict[str, str]) -> dict:
-    """G3-06 交叉验证 → G3-14 开放项（OI-PF-170）。
+    """G3-06 交叉验证 → G3-14 开放项（OI-PF-170 / G6A-06 PARTIAL）。
 
     差异 > 冻结容差的真实交叉验证不一致 → 强类型 OpenItem（material=true）
     + 原始诊断（scenario/method_a/method_b/diff/tolerance）原样保留；
     一致或容差足够宽 → **允许空集**。禁止无条件塞占位项 —— 项必须由
     `valuation_engine.cross_check` 的真实结果产生。
+
+    G6A-06 PARTIAL：交叉验证只取 READY 路由（非 READY 无数值，不许把
+    空/单路集冒充全局 PASS）；每个声明非 READY 的路由登记一个确定性
+    material OPEN 开放项 —— owner_role/due_date/blocks_gate 一律取冻结
+    OpenItemsPolicy，reason/证据引用原样保留进 description。
     """
     policy = _resolve_open_items_policy(ctx)
-    mismatches = cross_check(list(_valuation_results(ctx, v).values()),
-                             policy.tolerance)
+    outcomes = _valuation_outcomes(ctx, v)
+    mismatches = cross_check(_valuation_results(ctx, v), policy.tolerance)
     reg = OpenItemRegistry()
     for m in mismatches:
         reg.register(OpenItem(
@@ -318,11 +634,403 @@ def _gen_open_items(ctx: ResearchContext, v: Dict[str, str]) -> dict:
             closure_evidence=None,
             status=OPEN,
         ))
+    for route in VALUATION_ROUTES:
+        o = outcomes[route]
+        if o.state == ROUTE_READY:
+            continue
+        detail = (f"估值路由 {route.upper()} 未评估（{o.state}）：{o.reason}"
+                  f"；证据引用：{', '.join(o.evidence_refs)}")
+        if o.missing_inputs:
+            detail += f"；缺失输入：{', '.join(o.missing_inputs)}"
+        reg.register(OpenItem(
+            open_item_id=f"OI-G6A06-RC-{route.upper()}-{o.state}",
+            description=detail,
+            material=True,
+            owner_role=policy.owner_role,
+            due_date=policy.due_date,
+            blocks_gate=policy.blocks_gate,
+            closure_evidence=None,
+            status=OPEN,
+        ))
     return {
         "open_items": [it.to_dict() for it in reg.items.values()],
         # G3-06 交叉验证诊断原样保留（scenario/method_a/method_b/diff/tolerance）
         "cross_check": mismatches,
+        "route_statuses": {route: outcomes[route].state
+                           for route in VALUATION_ROUTES},
     }
+
+
+QUALITY_FULL = "FULL"
+QUALITY_PARTIAL = "PARTIAL"
+ROUTE_PRODUCT_PASS = "PASS"
+
+# 直接表达路由状态的产物名（四路估值 + 三情景，全部由 FCFE/FCFF 等派生）
+VALUATION_PRODUCT_NAMES = (
+    "valuation_fcff", "valuation_fcfe", "valuation_relative",
+    "valuation_pe_roe_pb", "scenario_pessimistic", "scenario_base",
+    "scenario_optimistic",
+)
+
+# 每个估值/情景产物对应的估值路由（三情景由 FCFE 路派生）
+VALUATION_PRODUCT_ROUTES = {
+    "valuation_fcff": "fcff",
+    "valuation_fcfe": "fcfe",
+    "valuation_relative": "relative",
+    "valuation_pe_roe_pb": "pe_roe_pb",
+    "scenario_pessimistic": "fcfe",
+    "scenario_base": "fcfe",
+    "scenario_optimistic": "fcfe",
+}
+
+# 每个估值/情景产物按产品名的**精确 method/scenario 标签**（与
+# valuation_engine 输出一致，不允许把 valuation_fcff 标成 FCFE 等交叉换名）。
+VALUATION_PRODUCT_METHODS = {
+    "valuation_fcff": ("FCFF", BASE),
+    "valuation_fcfe": ("FCFE", BASE),
+    "valuation_relative": ("RELATIVE_PE", BASE),
+    "valuation_pe_roe_pb": ("PE_ROE_PB", BASE),
+    "scenario_pessimistic": ("FCFE", PESSIMISTIC),
+    "scenario_base": ("FCFE", BASE),
+    "scenario_optimistic": ("FCFE", OPTIMISTIC),
+}
+
+PER_SHARE_FIELDS = ("per_share_low", "per_share_high", "per_share_base")
+_NON_READY_META = ("reason", "evidence_refs", "missing_inputs")
+
+# 估值/情景产物的状态专属**精确键集**（多余/缺失字段一律失败关闭）
+PASS_PRODUCT_KEYS = {"status", "method", "scenario", *PER_SHARE_FIELDS,
+                     "triggers", "notes"}
+INPUT_MISSING_PRODUCT_KEYS = {"status", "method", "scenario", "reason",
+                              "evidence_refs", "missing_inputs"}
+NOT_EVALUATED_PRODUCT_KEYS = {"status", "method", "scenario", "reason",
+                              "evidence_refs"}
+
+# 非估值三产物 + open_items 的精确形状（换哈希/换正文即键集不符 → 失败关闭）
+CALC_LEDGER_KEYS = {"ledger", "formula_count"}
+CALC_LEDGER_ENTRY_KEYS = {"metric", "value", "source"}
+CLAIM_MAP_KEYS = {"claims"}
+CLAIM_ENTRY_KEYS = {"id", "text", "assumption", "value"}
+EMISSION_MAP_KEYS = {"emissions"}
+EMISSION_ENTRY_KEYS = {"visible_span", "claim_node", "rendered_value",
+                       "assumption"}
+OPEN_ITEMS_PRODUCT_KEYS = {"open_items", "cross_check", "route_statuses"}
+OPEN_ITEM_KEYS = {"open_item_id", "description", "material", "owner_role",
+                  "due_date", "blocks_gate", "closure_evidence", "status"}
+CROSS_CHECK_KEYS = {"open_item_id", "scenario", "method_a", "method_b",
+                    "diff", "tolerance", "blocking"}
+
+
+class QualityError(ValueError):
+    """G6A-06 严格质量派生失败：畸形/未知状态/根产物不一致。
+
+    调用方归一：candidate bundle 复验 → E-G6A-06-018；发布资格门 →
+    E-G6A-06-030。绝不宽松地推导出 FULL。
+    """
+
+
+def _require(cond: bool, message: str) -> None:
+    if not cond:
+        raise QualityError(f"E-G6A-06-018: {message} —— 失败关闭")
+
+
+def _exact_keys(obj: dict, allowed, name: str) -> None:
+    """精确键集断言：多余或缺失任一字段都失败关闭。"""
+    _require(isinstance(obj, dict), f"{name} 非对象")
+    _require(set(obj) == set(allowed),
+             f"{name} 键集 {sorted(obj)} ≠ 预期 {sorted(allowed)}")
+
+
+def _nonempty_string_fields(obj: dict, fields, name: str) -> None:
+    for key in fields:
+        val = obj.get(key)
+        _require(isinstance(val, str) and val.strip(),
+                 f"{name}.{key} 须为非空字符串")
+
+
+def _finite_positive_decimal(val, name: str):
+    """PASS per-share 值：必须是字符串、可解析为**有限** Decimal 且 > 0。
+
+    NaN/Infinity/负数/非数字 → QualityError 失败关闭，绝不推导出 FULL。
+    """
+    _require(isinstance(val, str) and val.strip(), f"{name} 非字符串")
+    try:
+        d = Decimal(val)
+    except InvalidOperation:
+        raise QualityError(
+            f"E-G6A-06-018: {name} 非 Decimal（{val!r}）—— 失败关闭")
+    _require(d.is_finite(), f"{name} 非有限数（NaN/Infinity）—— 失败关闭")
+    _require(d > 0, f"{name} 必须 > 0（生产不变式）—— 失败关闭")
+    return d
+
+
+def _route_status_item_id(route: str, state: str) -> str:
+    return f"OI-G6A06-RC-{route.upper()}-{state}"
+
+
+def _validate_open_items_product(oi_prod, rs: dict) -> List[dict]:
+    """open_items 产物**精确**形状校验（G6A-06 partial-route 硬化）。
+
+      · 顶层键集恰为 {open_items, cross_check, route_statuses}；
+      · 每个 OpenItem 对照真实 `OpenItem.to_dict` 合同：精确键集、
+        ID/description/owner/due/gate 非空、material 恰为 bool、status 在
+        OPEN/CLOSED/SUPERSEDED 支持集、closure evidence 语义（CLOSED 必须
+        附证据，非 CLOSED 不得带证据）、重复 ID 拒绝 —— 畸形 material/status
+        绝不静默逃离 PARTIAL；
+      · 每个声明非 READY 路由必须有其确定性 material OPEN 路由项；READY
+        路由不得带路由状态项；
+      · cross_check 每条诊断的 open_item_id 必须命中一个 material OPEN 项
+        （删/改标签 mismatch 即失败关闭）。
+    """
+    from open_item_registry import CLOSED as _CLOSED
+    from open_item_registry import SUPERSEDED as _SUPERSEDED
+    _exact_keys(oi_prod, OPEN_ITEMS_PRODUCT_KEYS, "open_items")
+    items = oi_prod.get("open_items")
+    _require(isinstance(items, list), "open_items.open_items 非数组")
+    item_ids: List[str] = []
+    item_by_id: Dict[str, dict] = {}
+    for idx, it in enumerate(items):
+        _exact_keys(it, OPEN_ITEM_KEYS, f"open_items[{idx}]")
+        oid = it["open_item_id"]
+        _require(isinstance(oid, str) and oid.strip(),
+                 f"open_items[{idx}].open_item_id 非空")
+        _require(oid not in item_ids, f"重复 open_item_id {oid!r}")
+        item_ids.append(oid)
+        item_by_id[oid] = it
+        _nonempty_string_fields(
+            it, ("description", "owner_role", "due_date", "blocks_gate"),
+            f"open_items[{idx}]")
+        _require(isinstance(it["material"], bool),
+                 f"open_items[{idx}].material 须为 bool"
+                 f"（实得 {type(it['material']).__name__}）")
+        _require(it["status"] in (OPEN, _CLOSED, _SUPERSEDED),
+                 f"open_items[{idx}].status 非法 {it['status']!r}")
+        if it["status"] == _CLOSED:
+            _require(isinstance(it["closure_evidence"], str)
+                     and it["closure_evidence"].strip(),
+                     f"CLOSED 项 {oid} 必须附非空 closure_evidence")
+        else:
+            _require(it["closure_evidence"] is None,
+                     f"非 CLOSED 项 {oid} 不得携带 closure_evidence")
+    # 路由状态项：非 READY 路由必有确定性项，READY 路由必无。
+    for route in VALUATION_ROUTES:
+        state = rs[route]
+        marker = _route_status_item_id(route, state)
+        if state == ROUTE_READY:
+            _require(marker not in item_by_id,
+                     f"READY 路由 {route} 不得带路由状态项 {marker}")
+            _require(not any(oid.startswith(f"OI-G6A06-RC-{route.upper()}-")
+                             for oid in item_ids),
+                     f"READY 路由 {route} 不得带任何路由状态项")
+        else:
+            _require(marker in item_by_id,
+                     f"非 READY 路由 {route} 缺确定性路由状态项 {marker}")
+            it = item_by_id[marker]
+            _require(it["material"] is True,
+                     f"路由状态项 {marker} 必须 material=true")
+            _require(it["status"] == OPEN,
+                     f"路由状态项 {marker} 必须 OPEN")
+    # cross_check 诊断 ↔ 对应 material OPEN 开放项绑定。
+    cc = oi_prod.get("cross_check")
+    _require(isinstance(cc, list), "open_items.cross_check 非数组")
+    for idx, entry in enumerate(cc):
+        _exact_keys(entry, CROSS_CHECK_KEYS, f"cross_check[{idx}]")
+        _require(entry["open_item_id"] in item_by_id,
+                 f"cross_check[{idx}].open_item_id 无对应开放项")
+        it = item_by_id[entry["open_item_id"]]
+        _require(it["material"] is True and it["status"] == OPEN,
+                 f"cross_check[{idx}] 对应开放项非 material OPEN（删/改标签）")
+        _require(entry["scenario"] in SCENARIOS,
+                 f"cross_check[{idx}].scenario 非法 {entry['scenario']!r}")
+        _nonempty_string_fields(
+            entry, ("method_a", "method_b"), f"cross_check[{idx}]")
+        _finite_positive_decimal(entry["diff"], f"cross_check[{idx}].diff")
+        _finite_positive_decimal(entry["tolerance"], f"cross_check[{idx}].tolerance")
+        _require(entry["blocking"] is True,
+                 f"cross_check[{idx}].blocking 必须为 true")
+    return items
+
+
+def quality_from_products(products: Dict[str, dict]) -> Tuple[str, bool]:
+    """从 canonical 产物**严格**派生候选质量（FULL/PARTIAL）与发布资格。
+
+    只由产物/开放项派生，绝不用调用方输入或请求声明；任一畸形、未知状态、
+    错标签、错键集或值域不符都失败关闭（QualityError），**绝不把坏产物当成
+    FULL**：
+
+      · 键集必须精确等于生产注册表 PRODUCT_ORDER；
+      · 四路估值 + 三情景共 7 个产物必须带 typed status（PASS /
+        INPUT_MISSING / NOT_EVALUATED）与**状态专属精确键集**，且 method/
+        scenario 必须与产物名一一对应（错方法/错情景换名失败关闭）；
+          PASS           → method/scenario + 三个 per-share 数值字段，且每个
+                           per-share 值为**有限正 Decimal** 且
+                           low ≤ base ≤ high；不得携带非 READY 元数据；
+          INPUT_MISSING  → 精确键集、无 per-share、非空 reason + 非空唯一
+                           evidence_refs + 非空唯一 missing_inputs；
+          NOT_EVALUATED  → 精确键集、无 per-share、非空 reason + 非空唯一
+                           evidence_refs、不得带 missing_inputs；
+      · calc_ledger / claim_map / emission_map 按**精确生成形状**校验，
+        emission_map 与 claim_map 必须一一交叉一致（claim ID/值/假设 ↔
+        emission 绑定）—— 换哈希/换正文失败关闭；
+      · open_items 按 `_validate_open_items_product` 精确校验；
+      · route_statuses 必须与各估值产物及全部三情景产物一致；
+      · 任一 material+OPEN 开放项或任一非 READY 估值/情景产物 → PARTIAL。
+    """
+    if not isinstance(products, dict):
+        raise QualityError("E-G6A-06-018: 产物表非 dict —— 失败关闭")
+    _require(set(products) == set(PRODUCT_ORDER),
+             f"产物键集 {sorted(products)} ≠ 生产注册表 {sorted(PRODUCT_ORDER)}")
+    # ── open_items 结构化输出（route_statuses 真源）──
+    oi_prod = products.get("open_items")
+    _require(isinstance(oi_prod, dict), "open_items 产物非对象")
+    rs = oi_prod.get("route_statuses")
+    _require(isinstance(rs, dict), "open_items.route_statuses 非对象")
+    _require(set(rs) == set(VALUATION_ROUTES),
+             f"route_statuses 键集 {sorted(rs)} ≠ 四路 {sorted(VALUATION_ROUTES)}")
+    for route, st in rs.items():
+        _require(st in ROUTE_STATES,
+                 f"route_statuses[{route}] 未知状态 {st!r}")
+    items = _validate_open_items_product(oi_prod, rs)
+    # ── 四路估值 + 三情景 typed 产物 ──
+    non_ready = []
+    for name in VALUATION_PRODUCT_NAMES:
+        prod = products.get(name)
+        _require(isinstance(prod, dict), f"产物 {name} 非对象")
+        status = prod.get("status")
+        route = VALUATION_PRODUCT_ROUTES[name]
+        expected_method, expected_scenario = VALUATION_PRODUCT_METHODS[name]
+        _require(prod.get("method") == expected_method,
+                 f"产物 {name}.method 须为 {expected_method!r}"
+                 f"（实得 {prod.get('method')!r}）—— 失败关闭")
+        _require(prod.get("scenario") == expected_scenario,
+                 f"产物 {name}.scenario 须为 {expected_scenario!r}"
+                 f"（实得 {prod.get('scenario')!r}）—— 失败关闭")
+        if status == ROUTE_PRODUCT_PASS:
+            _exact_keys(prod, PASS_PRODUCT_KEYS, f"产物 {name}")
+            low = _finite_positive_decimal(prod["per_share_low"],
+                                           f"{name}.per_share_low")
+            base = _finite_positive_decimal(prod["per_share_base"],
+                                            f"{name}.per_share_base")
+            high = _finite_positive_decimal(prod["per_share_high"],
+                                            f"{name}.per_share_high")
+            _require(low <= base <= high,
+                     f"PASS 产物 {name} per-share 须 low ≤ base ≤ high"
+                     f"（{low} ≤ {base} ≤ {high}）—— 失败关闭")
+            expected_route_state = ROUTE_READY
+        elif status in (ROUTE_INPUT_MISSING, ROUTE_NOT_EVALUATED):
+            expected_keys = (INPUT_MISSING_PRODUCT_KEYS if status
+                             == ROUTE_INPUT_MISSING
+                             else NOT_EVALUATED_PRODUCT_KEYS)
+            _exact_keys(prod, expected_keys, f"产物 {name}")
+            _nonempty_string_fields(prod, ("reason",), f"产物 {name}")
+            refs = prod.get("evidence_refs")
+            _require(isinstance(refs, list) and refs
+                     and all(isinstance(x, str) and x.strip() for x in refs),
+                     f"非 READY 产物 {name} 缺非空 evidence_refs")
+            _require(len(refs) == len(set(refs)),
+                     f"非 READY 产物 {name} evidence_refs 含重复项")
+            if status == ROUTE_INPUT_MISSING:
+                mis = prod.get("missing_inputs")
+                _require(isinstance(mis, list) and mis
+                         and all(isinstance(x, str) and x.strip() for x in mis),
+                         f"INPUT_MISSING 产物 {name} 必须带非空 missing_inputs")
+                _require(len(mis) == len(set(mis)),
+                         f"INPUT_MISSING 产物 {name} missing_inputs 含重复项")
+            expected_route_state = status
+            non_ready.append(name)
+        else:
+            raise QualityError(
+                f"E-G6A-06-018: 产物 {name}.status 缺失/未知 {status!r}"
+                " —— 失败关闭")
+        _require(rs[route] == expected_route_state,
+                 f"产物 {name}.status={status} 与 route_statuses[{route}]"
+                 f"={rs[route]} 不一致 —— 失败关闭")
+    # ── 非估值三产物精确形状 + 交叉一致 ──
+    calc = products.get("calc_ledger")
+    _exact_keys(calc, CALC_LEDGER_KEYS, "calc_ledger")
+    formula_count = calc.get("formula_count")
+    _require(isinstance(formula_count, int) and not isinstance(formula_count, bool)
+             and formula_count >= 0,
+             f"calc_ledger.formula_count 须为非负整数（实得 {formula_count!r}）")
+    # G6A-06 partial-route 返工：账本只含 READY 路由实际消费的假设。
+    #   · 无 READY 路由消费假设 → ledger 必须为空数组；
+    #   · 混合/全 READY → metric 序列必须**精确**等于预期假设集（规范顺序），
+    #     不允许多/少 —— 调用方提供但未被 READY 路由消费的假设不得出现。
+    expected_assumptions = _assumptions_for_statuses(rs)
+    expected_metrics = [f"{key}_assumption" for key in expected_assumptions]
+    ledger = calc.get("ledger")
+    _require(isinstance(ledger, list), "calc_ledger.ledger 非数组")
+    if expected_assumptions:
+        _require(ledger,
+                 "calc_ledger.ledger 非空数组（存在 READY 路由消费假设）")
+        _require(
+            [e.get("metric") for e in ledger] == expected_metrics,
+            f"calc_ledger metric 序列须精确等于预期假设集 "
+            f"{expected_metrics}（不允许多/少，含非 READY 路由的无关假设）")
+    else:
+        _require(not ledger,
+                 "无 READY 路由消费假设时 calc_ledger.ledger 必须为空")
+    seen_metrics = set()
+    for idx, entry in enumerate(ledger):
+        _exact_keys(entry, CALC_LEDGER_ENTRY_KEYS, f"calc_ledger.ledger[{idx}]")
+        _nonempty_string_fields(
+            entry, ("metric", "value", "source"), f"calc_ledger.ledger[{idx}]")
+        _require(entry["metric"] not in seen_metrics,
+                 f"calc_ledger.ledger[{idx}].metric 重复")
+        seen_metrics.add(entry["metric"])
+    claims_prod = products.get("claim_map")
+    _exact_keys(claims_prod, CLAIM_MAP_KEYS, "claim_map")
+    claims = claims_prod.get("claims")
+    _require(isinstance(claims, list), "claim_map.claims 非数组")
+    if expected_assumptions:
+        _require(claims,
+                 "claim_map.claims 非空数组（存在 READY 路由消费假设）")
+        _require(
+            [c.get("assumption") for c in claims] == list(expected_assumptions),
+            f"claim_map.claims 假设序列须精确等于预期假设集 "
+            f"{list(expected_assumptions)}（不允许多/少，含非 READY 路由的"
+            "无关假设）")
+    else:
+        _require(not claims, "无 READY 路由消费假设时 claim_map.claims 必须为空")
+    claim_ids: List[str] = []
+    for idx, c in enumerate(claims):
+        _exact_keys(c, CLAIM_ENTRY_KEYS, f"claim_map.claims[{idx}]")
+        _nonempty_string_fields(c, ("id", "text", "assumption", "value"),
+                                f"claim_map.claims[{idx}]")
+        _require(c["id"] not in claim_ids, f"claim_map.claims[{idx}].id 重复")
+        claim_ids.append(c["id"])
+    emissions_prod = products.get("emission_map")
+    _exact_keys(emissions_prod, EMISSION_MAP_KEYS, "emission_map")
+    emissions = emissions_prod.get("emissions")
+    _require(isinstance(emissions, list), "emission_map.emissions 非数组")
+    if expected_assumptions:
+        _require(emissions,
+                 "emission_map.emissions 非空数组（存在 READY 路由消费假设）")
+    else:
+        _require(not emissions,
+                 "无 READY 路由消费假设时 emission_map.emissions 必须为空")
+    _require(len(emissions) == len(claims),
+             "emission_map 与 claim_map 条目数不一致（交叉换配失败关闭）")
+    for idx, e in enumerate(emissions):
+        _exact_keys(e, EMISSION_ENTRY_KEYS, f"emission_map.emissions[{idx}]")
+        _nonempty_string_fields(
+            e, ("visible_span", "claim_node", "rendered_value", "assumption"),
+            f"emission_map.emissions[{idx}]")
+        c = claims[idx]
+        _require(e["claim_node"] == c["id"],
+                 f"emission_map.emissions[{idx}].claim_node ≠ claim_map"
+                 f"（{e['claim_node']!r} vs {c['id']!r}）—— 交叉不一致")
+        _require(e["visible_span"] == f"span:{c['id']}",
+                 f"emission_map.emissions[{idx}].visible_span 与 claim id 不符")
+        _require(e["rendered_value"] == c["value"],
+                 f"emission_map.emissions[{idx}].rendered_value ≠ claim value")
+        _require(e["assumption"] == c["assumption"],
+                 f"emission_map.emissions[{idx}].assumption ≠ claim assumption")
+    material_open = [it for it in items
+                     if it.get("material") is True and it.get("status") == OPEN]
+    if material_open or non_ready:
+        return QUALITY_PARTIAL, False
+    return QUALITY_FULL, True
 
 
 GENERATORS = {
@@ -382,6 +1090,8 @@ def frozen_inputs_payload(ctx: ResearchContext) -> dict:
       · approved 快照的不可变身份（snapshot_id/version）与 sha256
       · open_items_policy 全部 dataclass 字段
         （tolerance/owner_role/due_date/blocks_gate）
+      · valuation_routes 四路估值声明（state/reason/evidence_refs/missing_inputs；
+        legacy 上下文缺省 = 全 READY 的确定性展开）
 
     缺 policy、字段形态不符 → RecomputeError E-G6A-05-003 失败关闭；
     JSON 不可规范序列化的对象在 canonical 序列化时同样失败关闭（见
@@ -447,6 +1157,9 @@ def frozen_inputs_payload(ctx: ResearchContext) -> dict:
             "owner_role": p.owner_role,
             "due_date": p.due_date,
             "blocks_gate": p.blocks_gate,
+        },
+        "valuation_routes": {
+            r: _declared_routes(ctx)[r].to_dict() for r in VALUATION_ROUTES
         },
     }
 
@@ -564,6 +1277,9 @@ def recompute_all(ctx: ResearchContext) -> RecomputeResult:
     _resolve_open_items_policy(ctx)
     before = frozen_inputs_hash(ctx)
     v = ctx.values()
+    # G6A-06 partial-route 返工：READY 路由所需假设必须在产物生成前以非空
+    # 字符串存在（E-G6A-06-020 失败关闭）；非 READY 路由不要求任何假设。
+    _validate_ready_route_assumptions(ctx, v)
     res = RecomputeResult()
     for name in PRODUCT_ORDER:
         prod = GENERATORS[name](ctx, v)
@@ -694,6 +1410,7 @@ def freeze_candidate_from_recompute(store: ArtifactStore, ctx: ResearchContext,
     frozen_inputs_payload(ctx)
     canonical = recompute_all(ctx)
     _validate_recompute_binding(recompute, canonical)
+    quality_status, release_eligible = quality_from_products(canonical.products)
     candidate = {
         "schema_version": "1.0.0",
         "kind": CANDIDATE_KIND,
@@ -705,6 +1422,8 @@ def freeze_candidate_from_recompute(store: ArtifactStore, ctx: ResearchContext,
         "product_hashes": canonical.shas,
         "approved_snapshot": _frozen_approved_sha256(ctx),
         "frozen_inputs_hash": canonical.frozen_inputs_hash,
+        "quality_status": quality_status,
+        "release_eligible": release_eligible,
     }
     data = canonical_bytes(candidate)
     _assert_write_boundary(ctx, canonical)

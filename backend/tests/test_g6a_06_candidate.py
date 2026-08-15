@@ -106,7 +106,14 @@ def _ctx(approve=None, **over):
     )
 
 
-def _request_payload(approve=None):
+def _routes():
+    """G6A-06 PARTIAL：四路估值声明，默认全 READY。"""
+    return {r: {"state": "READY"} for r in ("fcff", "fcfe", "relative",
+                                            "pe_roe_pb")}
+
+
+def _request_payload(approve=None, *, routes=None, facts=None,
+                     source_commit=_REV_A, source_tree=_TREE_A):
     """受管 JSON 入口的合成请求；批准正文只能由 proposal + decision 重建。"""
     values = {
         "growth": ("A-GROWTH", "0.08"),
@@ -126,12 +133,15 @@ def _request_payload(approve=None):
         for key in (approve or ())
     ]
     return {
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "run_id": "same-run",
+        "source_revision": {"source_commit": source_commit,
+                            "source_tree": source_tree},
         "context": {
             "contract": {"contract_id": "C-600089", "scope": "600089.SH"},
-            "facts": {"fcff": "400000000", "fcfe": "300000000",
-                      "eps": "0.60", "book_per_share": "5.00"},
+            "facts": facts if facts is not None else {
+                "fcff": "400000000", "fcfe": "300000000",
+                "eps": "0.60", "book_per_share": "5.00"},
             "macro": {"wacc_floor": "0.08"},
             "formula_specs": {"fcff": {"formula": "..."}},
             "valuation_inputs": {
@@ -151,6 +161,7 @@ def _request_payload(approve=None):
                 "tolerance": "0.15", "owner_role": "U",
                 "due_date": "2026-08-31", "blocks_gate": "G3-06",
             },
+            "valuation_routes": _routes() if routes is None else routes,
         },
     }
 
@@ -201,9 +212,13 @@ class _StoreBase(unittest.TestCase):
     def freeze(self, ctx=None, run_id="same-run", rev=_REV_A, tree=_TREE_A,
                recompute=None):
         service = CandidateFreezeService(self.store)
-        recompute = recompute or recompute_all(ctx or _ctx())
-        return service.freeze_final_candidate(ctx or _ctx(), run_id, rev, tree,
-                                              recompute)
+        ctx = ctx or _ctx()
+        recompute = recompute or recompute_all(ctx)
+        payload = _request_payload(sorted(ctx.approved_keys()),
+                                   source_commit=rev, source_tree=tree)
+        return service.freeze_final_candidate(ctx, run_id, rev, tree,
+                                              recompute,
+                                              request_payload=payload)
 
 
 class TestFinalCandidateFreeze(_StoreBase):
@@ -486,6 +501,52 @@ class TestManagedProductionEntry(unittest.TestCase):
                     result.candidate_id, expected_source_commit=_REV_B,
                     expected_source_tree=_TREE_A)
             self.assertIn("E-G6A-06-017", str(cm.exception))
+
+    def test_request_source_revision_mismatch_zero_write(self):
+        """请求声明的 source revision ≠ 显式干净 checkout → E-G6A-06-002
+        失败关闭，按对象库计数证明零对象写入。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ArtifactStore(os.path.join(tmp, "objects"))
+            payload = _request_payload(["growth"], source_commit=_REV_B)
+            with self.assertRaises(RecomputeError) as cm:
+                freeze_final_candidate_from_payload(
+                    store, payload, source_commit=_REV_A, source_tree=_TREE_A)
+            self.assertIn("E-G6A-06-002", str(cm.exception))
+            self.assertEqual(_store_object_count(store), 0,
+                             "revision 不符不得写任何对象")
+
+    def test_request_source_revision_tree_mismatch_zero_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ArtifactStore(os.path.join(tmp, "objects"))
+            payload = _request_payload(["growth"], source_tree="c" * 40)
+            with self.assertRaises(RecomputeError) as cm:
+                freeze_final_candidate_from_payload(
+                    store, payload, source_commit=_REV_A, source_tree=_TREE_A)
+            self.assertIn("E-G6A-06-002", str(cm.exception))
+            self.assertEqual(_store_object_count(store), 0)
+
+    def test_request_source_revision_invalid_zero_write(self):
+        """请求 source_revision 非严格 40 位小写十六进制 → E-G6A-06-020
+        失败关闭，零写入。"""
+        bad = [("大写", "A" * 40), ("长度不足", "a" * 39),
+               ("非十六进制", "z" * 40), ("缺字段", None)]
+        for label, rev in bad:
+            with self.subTest(revision=label):
+                with tempfile.TemporaryDirectory() as tmp:
+                    store = ArtifactStore(os.path.join(tmp, "objects"))
+                    payload = _request_payload(["growth"])
+                    if rev is None:
+                        del payload["source_revision"]["source_commit"]
+                    else:
+                        payload["source_revision"]["source_commit"] = rev
+                    with self.assertRaises(CandidateRequestError) as cm:
+                        freeze_final_candidate_from_payload(
+                            store, payload,
+                            source_commit=_REV_A, source_tree=_TREE_A)
+                    self.assertIn("E-G6A-06-020", str(cm.exception),
+                                  f"{label} 必须失败关闭")
+                    self.assertEqual(_store_object_count(store), 0,
+                                     f"{label} 不得写任何对象")
 
     def test_cli_freeze_and_verify_call_app_service(self):
         tool = _load_candidate_tool()

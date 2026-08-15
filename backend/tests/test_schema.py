@@ -201,6 +201,48 @@ class TestWriterNormalizationAndPreconditions(unittest.TestCase):
             "raw_artifact", "L7_freeze", {"rights_gate_and_parse_ok": True}))
 
 
+class TestSchemaValidatorDefenseInDepth(unittest.TestCase):
+    """G6A-06 PARTIAL 返工：通用 const/enum（移除 null 旁路）+ 强 uniqueItems
+    （规范 JSON 身份，不可哈希/非 JSON 元素归一 SchemaError）+ maxItems。"""
+
+    def test_null_const_value_rejected(self):
+        """旧实现 `node.get(k) is not None` 使 null 值绕过 const —— 现在
+        null 必须逐字满足 const。"""
+        with self.assertRaises(sv.SchemaError) as cm:
+            sv._check(None, {"const": "READY"}, "state")
+        self.assertEqual(cm.exception.code, "E-SCHEMA-003")
+
+    def test_null_enum_value_rejected(self):
+        with self.assertRaises(sv.SchemaError):
+            sv._check(None, {"enum": ["FULL", "PARTIAL"]}, "quality_status")
+
+    def test_const_applies_to_non_object_nodes(self):
+        """const 检查不再限于对象属性 —— 数组元素/标量节点同样强制。"""
+        with self.assertRaises(sv.SchemaError):
+            sv._check("READY", {"const": "PASS"}, "status")
+        sv._check("READY", {"const": "READY"}, "status")
+
+    def test_unique_items_object_duplicate_identity_rejected(self):
+        """两个内容相同但实例不同的对象元素算重复 —— 不得再调 set() 泄漏
+        裸 TypeError。"""
+        with self.assertRaises(sv.SchemaError) as cm:
+            sv._check([{"a": 1}, {"a": 1}], {"uniqueItems": True}, "arr")
+        self.assertEqual(cm.exception.code, "E-SCHEMA-004")
+
+    def test_unique_items_non_json_element_normalized_to_schema_error(self):
+        """不可规范序列化的元素（如 set）归一为 SchemaError，不是裸 TypeError。"""
+        with self.assertRaises(sv.SchemaError):
+            sv._check([set()], {"uniqueItems": True}, "arr")
+
+    def test_unique_items_distinct_objects_pass(self):
+        """防误红：内容不同的对象元素不判重。"""
+        sv._check([{"a": 1}, {"a": 2}], {"uniqueItems": True}, "arr")
+
+    def test_max_items_rejected(self):
+        with self.assertRaises(sv.SchemaError):
+            sv._check([1, 2, 3], {"maxItems": 2}, "arr")
+
+
 if __name__ == "__main__":
     unittest.main()
 

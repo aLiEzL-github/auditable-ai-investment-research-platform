@@ -1,8 +1,32 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "title": "G6A-06 final candidate bundle root",
-  "description": "最终候选根对象；绑定冻结输入、实际代码 commit/tree 与 11 项可重载产品正文哈希。",
+  "description": "最终候选根对象；绑定冻结输入、实际代码 commit/tree、产生它的受管请求（request_hash，可重载重放）与精确 11 项可重载产品正文哈希。quality_status/release_eligible 只由 canonical 产物严格派生（PARTIAL 不得准出）；契约强制 FULL⇔release_eligible=true、PARTIAL⇔false。",
+  "definitions": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "product_names": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "calc_ledger",
+          "claim_map",
+          "emission_map",
+          "open_items",
+          "scenario_base",
+          "scenario_optimistic",
+          "scenario_pessimistic",
+          "valuation_fcfe",
+          "valuation_fcff",
+          "valuation_pe_roe_pb",
+          "valuation_relative"
+        ]
+      }
+    }
+  },
   "type": "object",
   "required": [
     "schema_version",
@@ -16,10 +40,13 @@
     "products",
     "product_hashes",
     "approved_snapshot",
-    "frozen_inputs_hash"
+    "frozen_inputs_hash",
+    "request_hash",
+    "quality_status",
+    "release_eligible"
   ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"const": "1.1.0"},
     "kind": {"const": "candidate"},
     "run_id": {"type": "string", "minLength": 1},
     "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
@@ -27,10 +54,58 @@
     "contract": {"type": "string", "minLength": 1},
     "scope": {"type": "string", "minLength": 1},
     "as_of": {"type": "string", "minLength": 1},
-    "products": {"type": "array", "items": {"type": "string"}},
-    "product_hashes": {"type": "object"},
-    "approved_snapshot": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "frozen_inputs_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    "products": {"$ref": "#/definitions/product_names"},
+    "product_hashes": {
+      "type": "object",
+      "required": [
+        "calc_ledger",
+        "claim_map",
+        "emission_map",
+        "open_items",
+        "scenario_base",
+        "scenario_optimistic",
+        "scenario_pessimistic",
+        "valuation_fcfe",
+        "valuation_fcff",
+        "valuation_pe_roe_pb",
+        "valuation_relative"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "calc_ledger": {"$ref": "#/definitions/sha256"},
+        "claim_map": {"$ref": "#/definitions/sha256"},
+        "emission_map": {"$ref": "#/definitions/sha256"},
+        "open_items": {"$ref": "#/definitions/sha256"},
+        "scenario_base": {"$ref": "#/definitions/sha256"},
+        "scenario_optimistic": {"$ref": "#/definitions/sha256"},
+        "scenario_pessimistic": {"$ref": "#/definitions/sha256"},
+        "valuation_fcfe": {"$ref": "#/definitions/sha256"},
+        "valuation_fcff": {"$ref": "#/definitions/sha256"},
+        "valuation_pe_roe_pb": {"$ref": "#/definitions/sha256"},
+        "valuation_relative": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "approved_snapshot": {"$ref": "#/definitions/sha256"},
+    "frozen_inputs_hash": {"$ref": "#/definitions/sha256"},
+    "request_hash": {"$ref": "#/definitions/sha256"},
+    "quality_status": {"enum": ["FULL", "PARTIAL"]},
+    "release_eligible": {"type": "boolean"}
   },
+  "oneOf": [
+    {
+      "properties": {
+        "quality_status": {"const": "FULL"},
+        "release_eligible": {"const": true}
+      },
+      "required": ["quality_status", "release_eligible"]
+    },
+    {
+      "properties": {
+        "quality_status": {"const": "PARTIAL"},
+        "release_eligible": {"const": false}
+      },
+      "required": ["quality_status", "release_eligible"]
+    }
+  ],
   "additionalProperties": false
 }
