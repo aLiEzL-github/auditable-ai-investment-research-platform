@@ -22,6 +22,20 @@
     （冻结输入 ∪ 已批准假设）取值；假设未批准时用冻结合同默认值 ——
     拒绝项由此不进入计算。
   · 全量回算 = 注册表内每个产物**都**被重新生成（变异：注册表缺一项即被抓）。
+  · OI-PF-195：执行前失败关闭校验 PRODUCT_ORDER 无重复，且
+    set(PRODUCT_ORDER) == set(PRODUCT_DEPS) == set(GENERATORS)，逐方向列差集；
+    单向检查（order 中每项有生成器）抓不住 GENERATORS 多出未登记项（静默遗漏）
+    与 PRODUCT_DEPS/order 漂移。
+   · OI-PF-196：candidate 绑定规范冻结输入哈希（frozen_inputs_hash）—— 全部
+     顶层冻结输入（contract/facts/macro/formula_specs/valuation_inputs 全部
+     dataclass 字段含 statuses/assumption_defaults/approved 不可变身份+sha256/
+     open_items_policy 全部字段）任一变化都改变哈希与候选身份，不依赖 run_id
+     或产物输出；缺 policy/字段形态不符/JSON 不可规范序列化 → RecomputeError
+     E-G6A-05-003 失败关闭，不生成 candidate（不用 str/repr 悄悄吞掉）。
+   · OI-PF-199：已冻结 AssumptionSnapshot 正文漂移失败关闭 —— 每次读取
+     sha256/approved_payloads 及冻结 candidate 前重算正文哈希并与冻结值比对，
+     直接篡改 snap.approved 使快照失效并转 RecomputeError E-G6A-05-003；
+     正文深拷贝防浅拷贝/返回值别名（见 assumption_snapshot.py）。
   · 旧候选失效并保留：失效记录（candidate_invalidation）另行落库，
     旧对象不删除（内容寻址不可变），新候选内容寻址冻结。
 """
@@ -312,6 +326,195 @@ def _prod_sha(product: dict) -> str:
     return hashlib.sha256(canonical_bytes(product)).hexdigest()
 
 
+# ════════════════════════════════════════════════════════════════
+# OI-PF-196：规范冻结输入载荷与哈希（candidate 绑定全部冻结输入）
+# ════════════════════════════════════════════════════════════════
+
+def _dict_field(value, name: str) -> None:
+    """顶层冻结输入字段形态校验（OI-PF-196 失败关闭）。"""
+    if not isinstance(value, dict):
+        raise RecomputeError(
+            f"E-G6A-05-003: {name} 字段形态不符（须为 dict，实得 "
+            f"{type(value).__name__}）—— 失败关闭")
+
+
+def _statuses_field(vi: ValuationInputs) -> Dict[str, str]:
+    """OI-PF-199：ValuationInputs.statuses 是 frozen_inputs_payload **显式展开
+    的嵌套结构** —— 形态校验失败关闭。
+
+    非 dict（含 statuses=None，实得 NoneType）→ RecomputeError E-G6A-05-003，
+    不得让 `dict(vi.statuses)` 泄漏裸 TypeError；也不得用 str/repr 吞掉非法值。
+    """
+    s = vi.statuses
+    if not isinstance(s, dict):
+        raise RecomputeError(
+            f"E-G6A-05-003: valuation_inputs.statuses 字段形态不符（须为 dict，"
+            f"实得 {type(s).__name__}）—— 失败关闭")
+    return dict(s)
+
+
+def frozen_inputs_payload(ctx: ResearchContext) -> dict:
+    """OI-PF-196：规范冻结输入载荷 —— **唯一实现**、固定 key、稳定排序。
+
+    完整覆盖 ResearchContext 全部顶层冻结输入：
+      · contract / facts / macro / formula_specs / assumption_defaults
+      · valuation_inputs 全部 dataclass 字段（scope/currency/as_of/price/
+        shares_outstanding/net_debt/minority_interest/industry_commodity/
+        statuses）
+      · approved 快照的不可变身份（snapshot_id/version）与 sha256
+      · open_items_policy 全部 dataclass 字段
+        （tolerance/owner_role/due_date/blocks_gate）
+
+    缺 policy、字段形态不符 → RecomputeError E-G6A-05-003 失败关闭；
+    JSON 不可规范序列化的对象在 canonical 序列化时同样失败关闭（见
+    `frozen_inputs_hash`），**不用 str/repr 悄悄吞掉**。
+
+    OI-PF-199：显式展开的嵌套结构（如 valuation_inputs.statuses）须校验形态，
+    非 dict（含 None）→ RecomputeError E-G6A-05-003（`_statuses_field`），
+    不得泄漏裸 TypeError。
+    """
+    _dict_field(ctx.contract, "contract")
+    _dict_field(ctx.facts, "facts")
+    _dict_field(ctx.macro, "macro")
+    _dict_field(ctx.formula_specs, "formula_specs")
+    _dict_field(ctx.assumption_defaults, "assumption_defaults")
+    if not isinstance(ctx.valuation_inputs, ValuationInputs):
+        raise RecomputeError(
+            f"E-G6A-05-003: valuation_inputs 字段形态不符（须为 "
+            f"ValuationInputs，实得 {type(ctx.valuation_inputs).__name__}）"
+            f"—— 失败关闭")
+    if not isinstance(ctx.approved, AssumptionSnapshot):
+        raise RecomputeError(
+            f"E-G6A-05-003: approved 字段形态不符（须为 AssumptionSnapshot，"
+            f"实得 {type(ctx.approved).__name__}）—— 失败关闭")
+    p = ctx.open_items_policy
+    if p is None:
+        raise RecomputeError(
+            "E-G6A-05-003: 冻结输入缺 open_items_policy —— 失败关闭，"
+            "不默认补值")
+    if not isinstance(p, OpenItemsPolicy):
+        raise RecomputeError(
+            f"E-G6A-05-003: open_items_policy 字段形态不符（须为 "
+            f"OpenItemsPolicy，实得 {type(p).__name__}）—— 失败关闭")
+    try:
+        approved_sha = ctx.approved.sha256
+    except Exception as exc:
+        raise RecomputeError(
+            f"E-G6A-05-003: 批准快照不可用（OI-PF-196 失败关闭）—— {exc!r}")
+    vi = ctx.valuation_inputs
+    return {
+        "contract": ctx.contract,
+        "facts": ctx.facts,
+        "macro": ctx.macro,
+        "formula_specs": ctx.formula_specs,
+        "valuation_inputs": {
+            "scope": vi.scope,
+            "currency": vi.currency,
+            "as_of": vi.as_of,
+            "price": vi.price,
+            "shares_outstanding": vi.shares_outstanding,
+            "net_debt": vi.net_debt,
+            "minority_interest": vi.minority_interest,
+            "industry_commodity": vi.industry_commodity,
+            "statuses": _statuses_field(vi),
+        },
+        "assumption_defaults": ctx.assumption_defaults,
+        "approved": {
+            "snapshot_id": ctx.approved.snapshot_id,
+            "version": ctx.approved.version,
+            "sha256": approved_sha,
+        },
+        "open_items_policy": {
+            "tolerance": p.tolerance,
+            "owner_role": p.owner_role,
+            "due_date": p.due_date,
+            "blocks_gate": p.blocks_gate,
+        },
+    }
+
+
+def frozen_inputs_hash(ctx: ResearchContext) -> str:
+    """OI-PF-196：规范冻结输入载荷的 64 位 sha256 —— **唯一哈希实现**。
+
+    与回算产物输出无关：任何顶层冻结输入变化（含不被任何产物读取的字段：
+    macro / valuation_inputs.statuses / currency / policy 等）都改变本哈希，
+    进而改变 candidate_id。
+
+    JSON 不可规范序列化（set/Decimal/dataclass 实例等）→ RecomputeError
+    E-G6A-05-003 失败关闭，不得生成 candidate；不用 str/repr 吞掉。
+    """
+    payload = frozen_inputs_payload(ctx)
+    try:
+        data = canonical_bytes(payload)
+    except (TypeError, ValueError) as exc:
+        raise RecomputeError(
+            f"E-G6A-05-003: 冻结输入不可规范序列化（OI-PF-196 失败关闭）"
+            f"—— {type(exc).__name__}: {exc}")
+    return hashlib.sha256(data).hexdigest()
+
+
+def _frozen_approved_sha256(ctx: ResearchContext) -> str:
+    """冻结 candidate 前取已批准快照哈希（OI-PF-199 防御纵深）。
+
+    frozen_inputs_hash 已先对 sha256 做完整性重算并失败关闭；此处再读一次
+    同样走 `AssumptionSnapshot.sha256` 的正文重算路径 —— 任何在两次读取
+    之间的正文漂移都转 RecomputeError E-G6A-05-003，绝不带漂移正文入库。
+    """
+    try:
+        return ctx.approved.sha256
+    except Exception as exc:
+        raise RecomputeError(
+            f"E-G6A-05-003: 批准快照不可用（OI-PF-199 冻结前校验失败关闭）"
+            f"—— {exc!r}")
+
+
+def _validate_registry() -> None:
+    """OI-PF-195：全量回算前**失败关闭**校验注册表一致性。
+
+    三个注册表（PRODUCT_ORDER / PRODUCT_DEPS / GENERATORS）必须互为真源：
+      · PRODUCT_ORDER 无重复
+      · set(PRODUCT_ORDER) == set(PRODUCT_DEPS) == set(GENERATORS)
+
+    只做单向检查（order 中每项都有生成器）抓不住三类漂移：
+      · GENERATORS 多出未登记项 —— 生成器在跑但产物不进 order，静默遗漏
+        （原失败载荷：GENERATORS["unregistered_probe"] 后 len=12 却只算 11）
+      · GENERATORS 缺已登记项 —— order 里的产物没有生成器
+      · PRODUCT_DEPS 与 PRODUCT_ORDER 漂移 —— 落库依赖与执行顺序脱节
+    报错逐方向列差集/重复，不得只报笼统「不一致」。
+    """
+    problems: List[str] = []
+    order = list(PRODUCT_ORDER)
+    seen = set()
+    dupes = sorted({n for n in order if n in seen or seen.add(n)})
+    if dupes:
+        problems.append(f"PRODUCT_ORDER 重复项: {dupes}")
+    s_order = set(order)
+    s_deps = set(PRODUCT_DEPS)
+    s_gen = set(GENERATORS)
+    if s_order - s_deps:
+        problems.append(f"PRODUCT_ORDER 有而 PRODUCT_DEPS 无: "
+                        f"{sorted(s_order - s_deps)}")
+    if s_deps - s_order:
+        problems.append(f"PRODUCT_DEPS 有而 PRODUCT_ORDER 无: "
+                        f"{sorted(s_deps - s_order)}")
+    if s_order - s_gen:
+        problems.append(f"PRODUCT_ORDER 有而 GENERATORS 无: "
+                        f"{sorted(s_order - s_gen)}")
+    if s_gen - s_order:
+        problems.append(f"GENERATORS 有而 PRODUCT_ORDER 无: "
+                        f"{sorted(s_gen - s_order)}")
+    if s_deps - s_gen:
+        problems.append(f"PRODUCT_DEPS 有而 GENERATORS 无: "
+                        f"{sorted(s_deps - s_gen)}")
+    if s_gen - s_deps:
+        problems.append(f"GENERATORS 有而 PRODUCT_DEPS 无: "
+                        f"{sorted(s_gen - s_deps)}")
+    if problems:
+        raise ProductMissing(
+            f"E-G6A-05-001: 全量回算注册表不一致（OI-PF-195 失败关闭）—— "
+            f"{'；'.join(problems)}")
+
+
 @dataclass
 class RecomputeResult:
     products: Dict[str, dict] = field(default_factory=dict)
@@ -324,16 +527,18 @@ class RecomputeResult:
 def recompute_all(ctx: ResearchContext) -> RecomputeResult:
     """全量回算：注册表内每个产物都重新生成（F-3）。
 
-    变异注入：把 GENERATORS/PRODUCT_DEPS 里的某一项摘掉，本函数的
-    产出就少一个产物 —— 测试对 product_ids() 与 PRODUCT_ORDER 逐项
-    断言，缺任一即 FAIL（全量，不接受抽样）。
+    OI-PF-195：执行前先失败关闭校验三个注册表一致性（_validate_registry），
+    任一方向漂移（order 重复 / deps 漂移 / generators 多一项或少一项）
+    都拒绝回算 —— 不允许「静默少算一个产物」或「生成器跑空转」。
+
+    变异注入：把 GENERATORS/PRODUCT_DEPS 里的某一项摘掉，本函数在
+    **执行前**失败关闭抛 ProductMissing（E-G6A-05-001）—— 不是产出
+    少一个产物，而是根本不产出；测试断言抛错且报错点名差集方向与摘掉的项。
     """
+    _validate_registry()
     v = ctx.values()
     res = RecomputeResult()
     for name in PRODUCT_ORDER:
-        if name not in GENERATORS:
-            raise ProductMissing(f"E-G6A-05-001: 产物 {name} 无生成器 —— "
-                                 f"注册表与生成器不一致（全量回算不可抽样）")
         prod = GENERATORS[name](ctx, v)
         res.products[name] = prod
         res.shas[name] = _prod_sha(prod)
@@ -361,7 +566,19 @@ class CandidateFreeze:
 def freeze_candidate_from_recompute(store: ArtifactStore, ctx: ResearchContext,
                                     run_id: str,
                                     recompute: RecomputeResult) -> CandidateFreeze:
-    """按回算产物组装候选并内容寻址冻结（candidate hash = 内容哈希）。"""
+    """按回算产物组装候选并内容寻址冻结（candidate hash = 内容哈希）。
+
+    OI-PF-196：候选绑定规范冻结输入哈希（frozen_inputs_hash）—— 全部顶层
+    冻结输入任一变化（含不被任何产物读取的字段）都改变哈希与候选身份，
+    不依赖 run_id 或产物输出。缺 policy / 字段形态不符 / JSON 不可规范
+    序列化 → RecomputeError E-G6A-05-003 失败关闭，**不生成 candidate**。
+
+    OI-PF-199：冻结 candidate 前必须经过正文完整性校验 —— frozen_inputs_hash
+    读取 approved.sha256 时重算正文哈希，直接篡改 snap.approved 的载荷在此
+    转 RecomputeError E-G6A-05-003，绝不静默接受漂移正文、绝不为已篡改批准
+    内容生成 candidate。
+    """
+    fih = frozen_inputs_hash(ctx)
     candidate = {
         "schema_version": "1.0.0",
         "run_id": run_id,
@@ -370,7 +587,8 @@ def freeze_candidate_from_recompute(store: ArtifactStore, ctx: ResearchContext,
         "as_of": ctx.valuation_inputs.as_of,
         "products": recompute.product_ids(),
         "product_hashes": recompute.shas,
-        "approved_snapshot": ctx.approved.sha256,
+        "approved_snapshot": _frozen_approved_sha256(ctx),
+        "frozen_inputs_hash": fih,
     }
     data = canonical_bytes(candidate)
     store.store(CANDIDATE_KIND, data)

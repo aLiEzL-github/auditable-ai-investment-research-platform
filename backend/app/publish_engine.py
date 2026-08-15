@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from artifact_store import ArtifactStore
+from open_item_registry import CLOSED, OPEN, SUPERSEDED
 
 # ════════════════════════════════════════════════════════════════
 # 内容寻址（G4-01，D-3 CAS）
@@ -217,21 +218,73 @@ def compute_closure(store: ArtifactStore, manifest: dict) -> ClosureResult:
     )
 
 
-def audit_open_items(store: ArtifactStore, manifest: dict) -> None:
-    """G4-07：未关材料性开放项使 release_eligible=false。
+# 开放项状态**直接复用 open_item_registry 的真实合同**（OI-PF-198）——
+# 不复制字符串真源（复制会与 G3-14 合同漂移）。open_item_registry 仅依赖
+# stdlib、不反向导入 publish_engine，故无循环导入。未知状态**不默认
+# CLOSED** —— 支持集外的 status 一律视为畸形并失败关闭。
+OPEN_ITEM_STATUSES = (OPEN, CLOSED, SUPERSEDED)
 
-    闭包内 kind=open_item 的对象：status=OPEN ∧ material=true → FAIL。
+
+def audit_open_items(store: ArtifactStore, manifest: dict) -> None:
+    """G4-07：未关材料性开放项使 release_eligible=false；**失败关闭**。
+
+    原实现 `except ValueError: continue` 把畸形开放项**静默跳过** ——
+    内容寻址正确的 `b"not-json"` 以 kind=open_item 接入完整闭包后，
+    audit_open_items 不抛、audit_candidate 报 eligible、发布放行（OI-PF-198）。
+    现改为对每个 kind=open_item 的对象**逐项严格校验**，任一畸形都抛可机检
+    错误（E-G4-07-007），不得 continue：
+      · store 读取失败 / UTF-8 解码失败 / JSON 解析失败 / JSON 非对象
+      · body.kind != open_item / open_item_id 缺失或非字符串
+      · status 缺失或不在支持集（OPEN/CLOSED/SUPERSEDED）/ material 非 bool
+    唯一 ID 取**真实合同字段 open_item_id**（OpenItem.to_dict()）—— 不保留
+    假合同的 `id` 双读（OI-PF-198）。status=OPEN ∧ material=true →
+    E-G4-07-005 阻断；合法 CLOSED/SUPERSEDED 或 OPEN+material=false 正向不阻断。
     """
     for oid, meta in manifest.get("objects", {}).items():
         if meta.get("kind") != "open_item":
             continue
         try:
-            obj = json.loads(store.load(oid).decode("utf-8"))
+            raw = store.load(oid)
+        except (ValueError, OSError) as e:
+            raise ValueError(
+                f"E-G4-07-007: open_item 对象读取失败: {oid[:12]}…（{e}）")
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ValueError(
+                f"E-G4-07-007: open_item 非 UTF-8: {oid[:12]}…")
+        try:
+            obj = json.loads(text)
         except ValueError:
-            continue
-        if obj.get("status") == "OPEN" and obj.get("material"):
-            raise ValueError(f"E-G4-07-005: 未关材料性开放项在闭包内: "
-                             f"{obj.get('title', oid[:12])}")
+            raise ValueError(
+                f"E-G4-07-007: open_item JSON 解析失败: {oid[:12]}…")
+        if not isinstance(obj, dict):
+            raise ValueError(
+                f"E-G4-07-007: open_item 非 JSON 对象: {oid[:12]}…"
+                f"（{type(obj).__name__}）")
+        if obj.get("kind") != "open_item":
+            raise ValueError(
+                f"E-G4-07-007: open_item body.kind 不符: {oid[:12]}…"
+                f" = {obj.get('kind')!r}")
+        item_id = obj.get("open_item_id")
+        if not isinstance(item_id, str) or not item_id:
+            raise ValueError(
+                f"E-G4-07-007: open_item open_item_id 缺失/非字符串: {oid[:12]}…")
+        status = obj.get("status")
+        if status not in OPEN_ITEM_STATUSES:
+            raise ValueError(
+                f"E-G4-07-007: open_item status 不受支持（未知状态不默认为"
+                f" CLOSED）: {oid[:12]}… = {status!r}")
+        material = obj.get("material")
+        if not isinstance(material, bool):
+            raise ValueError(
+                f"E-G4-07-007: open_item material 非 bool: {oid[:12]}…"
+                f" = {material!r}")
+        if status == OPEN and material:
+            # 展示 ID/说明从真实合同字段取（OI-PF-198）：open_item_id + description
+            raise ValueError(
+                f"E-G4-07-005: 未关材料性开放项在闭包内: {item_id}"
+                f"（{obj.get('description') or ''}）")
 
 
 def assert_cross_domain_clean(manifest: dict) -> None:
@@ -292,7 +345,8 @@ class AuditResult:
 def audit_candidate(store: ArtifactStore, manifest: dict,
                     candidate_digest: Optional[str] = None) -> AuditResult:
     """G4-02：任一适用质量门非 PASS 或 materially critical Claim 有缺口
-    → release_eligible=false。七门逐一断言，覆盖门报适用门数（⑨）。
+    → release_eligible=false。七个实质门逐一断言 + coverage 覆盖门报适用门数
+    （⑨），共 8 门。
 
     **审计结论须绑定被审候选**（OI-PF-174）。原实现收下 candidate_digest
     却从不读取 —— 实测 'AAAA' / 'BBBB' / None 三种入参**产出逐字相同**，
@@ -396,7 +450,19 @@ def audit_candidate(store: ArtifactStore, manifest: dict,
         failures.append(str(e))
         gates["security"] = "FAIL"
 
-    # ⑦ 覆盖：适用门数 N 逐门断言（⑨：N=0 与 N 门全过可分辨）
+    # ⑦ 开放项（G4-07 / OI-PF-193）：未关材料性 OpenItem 在闭包内 → FAIL。
+    # 原实现 audit_open_items 独立可查，audit_candidate 却从不执行它 ——
+    # 实测 OPEN+material 时 audit_open_items 已抛 E-G4-07-005，本函数仍报
+    # release_eligible=True，唯一谓词与发布随之放行（OI-PF-193 原失败载荷）。
+    # 现把它并入真实审计门，失败须同时出现在 gates 与 failures 中（可机检）。
+    try:
+        audit_open_items(store, manifest)
+        gates["open_items"] = "PASS"
+    except ValueError as e:
+        failures.append(str(e))
+        gates["open_items"] = "FAIL"
+
+    # ⑧ 覆盖：适用门数 N 逐门断言（⑨：N=0 与 N 门全过可分辨）
     applicable = [k for k in gates if k != "coverage"]
     if not applicable:
         failures.append("E-G4-02-008: 无适用质量门 —— 空跑不可 PASS")
@@ -468,21 +534,38 @@ def create_approval(store: ArtifactStore, session, manifest: dict,
                     candidate_digest: Optional[str] = None,
                     approved_at: Optional[str] = None,
                     token: str = APPROVE_TOKEN,
-                    acknowledged: bool = True) -> "ApprovalRow":
+                    *, acknowledged: bool) -> "ApprovalRow":
     """G4-04：批准绑定完整 CurrentKey + subject root + 输入哈希。
 
     聊天“继续”不算批准 —— token 必须是显式 APPROVE（L12 端点人工发起）。
+    人工确认不可省略（OI-PF-193）：acknowledged 为**必填关键字参数**，
+    缺失（TypeError）或 False（E-PRECOND-002）均不得批准，显式 True 才通过。
+    **批准 key 必须与清单 CurrentKey 完整一致（OI-PF-197）**：写入前校验
+    key.workflow / scope_id / current_key 与 manifest 全部相等，错 key 即抛
+    E-G4-04-006 且**不留任何 Approval 行**（校验先于 session.add）。
     """
     from repository import Approval
     from schema_validate import assert_writer
     if token != APPROVE_TOKEN:
         raise ValueError(f"E-G4-04-002: 聊天“继续”不算批准 —— token 须为 {APPROVE_TOKEN!r}")
+    # OI-PF-197：写入前校验传入 key 与 manifest 的 workflow/scope_id/current_key
+    # 完整一致 —— 错 key 失败且不留 Approval（校验先于任何 DB 写入）。
+    if (key.workflow != manifest.get("workflow")
+            or key.scope_id != manifest.get("scope_id")
+            or key.current_key != manifest.get("current_key", "")):
+        raise ValueError(
+            f"E-G4-04-006: 批准 key {key} 与清单 CurrentKey 不符"
+            f"（{manifest.get('workflow')}/{manifest.get('scope_id')}/"
+            f"{manifest.get('current_key', '')}）—— 跨域批准被拒")
     root = approval_subject_root(store, manifest)
     ih = inputs_hash(manifest, candidate_digest)
-    # 写权断言（B-2b (i)）：subject_root_hash_bound = 根哈希已真实计算；
-    # acknowledged = L12 批准端点（人工操作路径）的确认
+    # 写权断言（B-2b (i)）：subject_root_hash_bound **由实际闭包验证/根哈希
+    # 结果导出**（approval_subject_root 在闭包不完整时已抛 E-G4-04-001，
+    # 到达此处即 root 是真实计算的 64 位摘要，禁止字面 True）；acknowledged =
+    # L12 批准端点（人工操作路径）的显式确认，bool 真值由 MANUAL 前置把关。
     assert_writer("approval", "L12_approval_endpoint", {
-        "subject_root_hash_bound": True, "acknowledged": bool(acknowledged)})
+        "subject_root_hash_bound": bool(root and len(root) == 64),
+        "acknowledged": acknowledged})
     appr = Approval(
         id=f"APR_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')}",
         schema_version="1.0.0",
@@ -503,12 +586,29 @@ def create_approval(store: ArtifactStore, session, manifest: dict,
     return appr
 
 
-def is_release_eligible(session, approval, manifest: dict,
+def is_release_eligible(session, store: ArtifactStore, approval, manifest: dict,
+                        key: CurrentKey,
                         candidate_digest: Optional[str] = None,
                         audit: Optional[AuditResult] = None) -> Tuple[bool, str]:
-    """唯一准出谓词：批准 ACTIVE ∧ 输入哈希一致 ∧ 审计 eligible。
+    """唯一准出谓词：批准 ACTIVE ∧ 完整 CurrentKey ∧ 清单绑定 ∧ 审计 eligible。
 
-    人工风险接受不能绕门：仅凭 risk_acceptance 标记不改变结论。
+    **目标 key 必填、不可省略（OI-PF-197）**：谓词在使用时重新核对
+    **持久化**批准的全部绑定字段，不能只在创建时检查（原实现只查
+    ACTIVE/token/inputs_hash —— 研究 manifest 用 SYS_DESIGN_KEY 批准的载荷
+    因此放行并写入研究 release/current）：
+      · workflow / scope_id / current_key == 目标 key（E-G4-04-006）
+      · object_ref == resolve_subject_root(manifest)（E-G4-04-006）
+      · subject_root_hash == approval_subject_root(store, manifest)
+        （当场重算，E-G4-04-006）
+      · status == ACTIVE、token == APPROVE、inputs_hash == 现算输入哈希
+    当前 manifest/candidate 任一绑定不符均拒绝。人工风险接受不能绕门：
+    仅凭 risk_acceptance 标记不改变结论。
+
+    **审计不可省略、不可伪造（OI-PF-193）**：谓词自行从
+    store + manifest + candidate_digest 重算完整审计（audit_candidate，
+    其中已并入 audit_open_items 的失败关闭开放项门）。调用方传入的
+    audit 仅作一致性核对（被审对象与 eligible 必须与重算结果一致），
+    即使不传也不会因此放行 —— 不再存在 audit=None -> 放行。
     """
     from repository import Approval
     appr = session.get(Approval, approval.id) if hasattr(approval, "id") else approval
@@ -516,10 +616,44 @@ def is_release_eligible(session, approval, manifest: dict,
         return False, "E-G4-04-003: 批准非 ACTIVE（未批准 / 已失效）"
     if appr.token != APPROVE_TOKEN:
         return False, "E-G4-04-002: 批准 token 非 APPROVE"
+    # OI-PF-197：目标 key 须与**清单 CurrentKey 直接一致** —— 不能只靠
+    # 「批准与 key 一致」（发布侧才查跨域）。否则直接调用谓词时，一份
+    # workflow/scope 属系统设计域、object_ref/hash 却绑定研究清单的伪造批准
+    # 会对研究清单 + SYS_DESIGN_KEY 报 True（跨域准出）。谓词自身必须失败关闭。
+    if (key.workflow != manifest.get("workflow")
+            or key.scope_id != manifest.get("scope_id")
+            or key.current_key != manifest.get("current_key", "")):
+        return False, "E-G4-04-006: 目标 key 与清单 CurrentKey 不符（跨域准出）"
+    # OI-PF-197：重新核对持久化批准的完整 CurrentKey 与目标 key（不得只在
+    # 创建时检查 —— 直接构造/持久化后篡改同样必须被拒）。
+    if (appr.workflow != key.workflow or appr.scope_id != key.scope_id
+            or appr.current_key != key.current_key):
+        return False, "E-G4-04-006: 批准 CurrentKey 与目标 key 不符（跨域批准）"
     if appr.inputs_hash != inputs_hash(manifest, candidate_digest):
         return False, "E-G4-04-004: 输入变化批准失效（inputs_hash 不符）"
-    if audit is not None and not audit.release_eligible:
+    # OI-PF-197：object_ref 必须与 resolve_subject_root(manifest) 一致。
+    try:
+        subject_root = resolve_subject_root(manifest)
+    except ValueError as e:
+        return False, f"E-G4-04-006: subject root 无法解析: {e}"
+    if appr.object_ref != subject_root:
+        return False, "E-G4-04-006: 批准 object_ref 与清单 subject root 不符"
+    real = audit_candidate(store, manifest, candidate_digest)
+    if audit is not None:
+        if audit.audited_subject != real.audited_subject:
+            return False, "E-G4-04-005: 传入审计与被审对象不符（伪造）"
+        if audit.release_eligible != real.release_eligible:
+            return False, "E-G4-04-005: 传入审计与真实审计不符（伪造）"
+    if not real.release_eligible:
         return False, "E-G4-04-005: 审计门未全 PASS —— 准出谓词为假"
+    # OI-PF-197：subject_root_hash 必须与 approval_subject_root(store, manifest)
+    # **当场一致** —— 批准后闭包变化/批准被篡改都必须在此被拒。
+    try:
+        expected_root = approval_subject_root(store, manifest)
+    except ValueError as e:
+        return False, str(e)
+    if appr.subject_root_hash != expected_root:
+        return False, "E-G4-04-006: 批准 subject_root_hash 与当场重算根不符"
     return True, ""
 
 
@@ -535,7 +669,7 @@ def publish_release(store: ArtifactStore, session, manifest: dict,
                     key: CurrentKey, approval, candidate_digest: Optional[str] = None,
                     changed_by: str = "L11_release",
                     released_at: Optional[str] = None,
-                    writer: str = "L11_release") -> "ReleaseRow":
+                    *, writer: str) -> "ReleaseRow":
     """G4-03：先写内容寻址工件并验哈希，再以 DB 事务更新 release/pointer。
 
     规则：
@@ -547,86 +681,98 @@ def publish_release(store: ArtifactStore, session, manifest: dict,
       · 并发（同域同 seq 二次提交）唯一约束拒绝（E-G4-03-009）
       · 工件失败（闭包对象缺失/篡改）拒绝（E-G4-03-004）
       · 孤儿永不成为 current（D-5）
+      · **writer 必填关键字参数，无合法缺省（OI-PF-193）** —— 缺省值恰为
+        writers.json 白名单唯一合法值时，断言只能挡住主动自称非法写者的调用方。
     """
     from sqlalchemy.exc import IntegrityError
-    from repository import Approval, CurrentPointer, Release
+    from repository import CurrentPointer, Release
 
-    # 唯一准出谓词的一部分：批准须 ACTIVE 且绑定本清单输入（E-G4-04-003/004）
-    appr = session.get(Approval, approval.id) if hasattr(approval, "id") else approval
-    if appr is None or appr.status != "ACTIVE":
-        raise ValueError("E-G4-04-003: 批准非 ACTIVE —— 未批准不得发布")
-    if appr.inputs_hash != inputs_hash(manifest, candidate_digest):
-        raise ValueError("E-G4-04-004: 输入变化批准失效 —— 不得发布")
+    # 唯一准出判据：复用 is_release_eligible（批准 ACTIVE ∧ token APPROVE ∧
+    # 完整 CurrentKey 与目标 key 一致 ∧ 清单/候选绑定 ∧ 审计 eligible）。
+    # 审计由谓词自行从 store+manifest+candidate_digest 重算（含失败关闭的
+    # 开放项门）；**目标 key 必传**（OI-PF-197），**不得在本函数里复制一份
+    # 更窄的批准/输入/闭包逻辑后自行宣称成功**（OI-PF-193）。
+    eligible, why = is_release_eligible(session, store, approval, manifest,
+                                        key, candidate_digest)
+    if not eligible:
+        raise ValueError(why)
 
     # 阶段 1：工件预写并验哈希（内容寻址；任何失败即拒绝，不触碰 DB）
     try:
         closure = compute_closure(store, manifest)
     except ValueError as e:
         raise ValueError(f"E-G4-03-004: 闭包校验失败: {e}")
-    if not closure.complete or closure.count == 0:
+    closure_ok = closure.complete and closure.count > 0
+    if not closure_ok:
         raise ValueError(
             f"E-G4-03-004: 工件失败 —— 闭包不完整（count={closure.count} "
             f"dangling={len(closure.dangling)} dead={len(closure.dead)})")
     # D-5：孤儿不得成为 current —— 发布路径只接受闭包内对象（subject root 在闭包内）
-    if resolve_subject_root(manifest) not in closure.reachable:
+    root_ok = resolve_subject_root(manifest) in closure.reachable
+    if not root_ok:
         raise ValueError("E-G4-03-010: 孤儿不得成为 current —— subject root 不在闭包内")
     # 跨 workflow/scope/key：清单 CurrentKey 与发布目标必须一致（不得跨域发布）
-    if (manifest.get("workflow") != key.workflow
-            or manifest.get("scope_id") != key.scope_id
-            or manifest.get("current_key", "") != key.current_key):
+    domain_ok = (manifest.get("workflow") == key.workflow
+                 and manifest.get("scope_id") == key.scope_id
+                 and manifest.get("current_key", "") == key.current_key)
+    if not domain_ok:
         raise ValueError(
             f"E-G4-03-008: 清单 CurrentKey 与发布目标不符（跨域发布）")
+
+    # 阶段 2：DB 只读判定 —— 幂等早退 / 不同 root 冲突 / 父版本 CAS。
+    # 全部判定在写 release/current 之前完成：任何失败即拒绝且无 DB 残留。
+    session.rollback()
+    # 同 subject root 幂等：该域该清单已发布 → 返回既有 release，不动指针
+    existing = session.query(Release).filter_by(
+        workflow=key.workflow, scope_id=key.scope_id,
+        current_key=key.current_key).all()
+    same_root = [r for r in existing if r.subject_root_hash == manifest["subject_root"]]
+    if same_root and same_root[0].manifest_hash == manifest["id"]:
+        return same_root[0]
+
+    pointer = session.query(CurrentPointer).filter_by(
+        workflow=key.workflow, scope_id=key.scope_id,
+        current_key=key.current_key).order_by(
+        CurrentPointer.seq.desc()).first()
+    cur_seq = pointer.seq if pointer else 0
+    cur_manifest = None
+    if pointer is not None:
+        cur_rel = session.get(Release, pointer.release_id)
+        cur_manifest = cur_rel.manifest_hash if cur_rel else None
+
+    if existing and not same_root:
+        # 不同 root 冲突硬失败（不得任选其一）
+        raise ValueError(
+            f"E-G4-03-006: 不同 subject root 冲突硬失败 —— "
+            f"{key} 已有 release {existing[0].version}")
+    if cur_seq == 0:
+        # 首次发布：parent 必须为 null
+        parent_ok = not manifest.get("parent")
+        if not parent_ok:
+            raise ValueError(
+                f"E-G4-03-005: 首次发布要求 parent=null，实为 "
+                f"{manifest['parent'][:12]}…（{key}）")
+    else:
+        # 陈旧父拒绝：parent 必须 = 当前 release 的 manifest 哈希
+        parent_ok = manifest.get("parent") == cur_manifest
+        if not parent_ok:
+            raise ValueError(
+                f"E-G4-03-007: 陈旧父拒绝 —— manifest.parent="
+                f"{str(manifest.get('parent'))[:12]}… ≠ 当前 {str(cur_manifest)[:12]}…")
 
     # B-2b (i)（第十四轮审核）：写权经 assert_writer 走 writers.json 矩阵
     # （release / current_pointer 条目：writer=L11_release，never 含
     # LLM/L8/L9/L10 等；前置 MACHINE exit_predicate_and_parent_cas）。
-    # exit_predicate_and_parent_cas = 上面各项校验全部通过（批准 ACTIVE ∧
-    # 输入一致 ∧ 闭包完整 ∧ 跨域一致）—— 到达此行即谓词为真（校验失败
-    # 已提前抛错）。
+    # exit_predicate_and_parent_cas **由完整准出结果真实导出**（OI-PF-193）：
+    # 谓词 eligible ∧ 闭包完整 ∧ 根在闭包内 ∧ 跨域一致 ∧ 父 CAS 成功 ——
+    # 全部来自上面的实际判定结果，禁止字面 True。
     from schema_validate import assert_writer
-    _pred_ok = True
-    assert_writer("release", writer, {"exit_predicate_and_parent_cas": _pred_ok})
-    assert_writer("current_pointer", writer, {"exit_predicate_and_parent_cas": _pred_ok})
+    exit_ok = eligible and closure_ok and root_ok and domain_ok and parent_ok
+    assert_writer("release", writer, {"exit_predicate_and_parent_cas": exit_ok})
+    assert_writer("current_pointer", writer, {"exit_predicate_and_parent_cas": exit_ok})
 
-    # 阶段 2：DB 事务（单事务提交 release + pointer）
+    # 阶段 3：DB 事务（单事务提交 release + pointer）
     try:
-        session.rollback()
-        # 同 subject root 幂等：该域该清单已发布 → 返回既有 release，不动指针
-        existing = session.query(Release).filter_by(
-            workflow=key.workflow, scope_id=key.scope_id,
-            current_key=key.current_key).all()
-        same_root = [r for r in existing if r.subject_root_hash == manifest["subject_root"]]
-        if same_root and same_root[0].manifest_hash == manifest["id"]:
-            return same_root[0]
-
-        pointer = session.query(CurrentPointer).filter_by(
-            workflow=key.workflow, scope_id=key.scope_id,
-            current_key=key.current_key).order_by(
-            CurrentPointer.seq.desc()).first()
-        cur_seq = pointer.seq if pointer else 0
-        cur_manifest = None
-        if pointer is not None:
-            cur_rel = session.get(Release, pointer.release_id)
-            cur_manifest = cur_rel.manifest_hash if cur_rel else None
-
-        if existing and not same_root:
-            # 不同 root 冲突硬失败（不得任选其一）
-            raise ValueError(
-                f"E-G4-03-006: 不同 subject root 冲突硬失败 —— "
-                f"{key} 已有 release {existing[0].version}")
-        if cur_seq == 0:
-            # 首次发布：parent 必须为 null
-            if manifest.get("parent"):
-                raise ValueError(
-                    f"E-G4-03-005: 首次发布要求 parent=null，实为 "
-                    f"{manifest['parent'][:12]}…（{key}）")
-        else:
-            # 陈旧父拒绝：parent 必须 = 当前 release 的 manifest 哈希
-            if manifest.get("parent") != cur_manifest:
-                raise ValueError(
-                    f"E-G4-03-007: 陈旧父拒绝 —— manifest.parent="
-                    f"{str(manifest.get('parent'))[:12]}… ≠ 当前 {str(cur_manifest)[:12]}…")
-
         rel = Release(
             id=manifest["id"],
             schema_version="1.0.0",

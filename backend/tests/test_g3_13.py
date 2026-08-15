@@ -97,6 +97,24 @@ class TestDecideAndSnapshot(unittest.TestCase):
             snap.approved_payloads()
         self.assertIn("E-G3-13-010", str(ctx.exception))
 
+    def test_build_unserializable_drift_fails_closed(self):
+        """批准后、build 前 payload 漂移为不可 JSON 序列化值（set）：
+        不得泄漏裸 TypeError —— build 置失效、坏 payload 不进入正文，
+        sha256/approved_payloads 均抛 PayloadChanged E-G3-13-010
+        （与可序列化漂移同一可机检合同）。"""
+        reg = AssumptionRegistry()
+        p = AssumptionProposal("A-X", {"x": "1"}, "L8")
+        reg.propose(p)
+        reg.decide("A-X", APPROVED, "U", "2026-08-15T00:00:00Z", "APPROVE")
+        p.payload["x"] = {"bad"}  # 批准后、build 前改为不可 JSON 序列化值
+        snap = AssumptionSnapshot("S").build(reg)  # 不得抛裸 TypeError
+        self.assertTrue(snap.invalidated, "不可序列化漂移必须置失效")
+        self.assertNotIn("A-X", snap.approved, "坏 payload 不得进入快照正文")
+        for accessor in (lambda: snap.sha256, snap.approved_payloads):
+            with self.assertRaises(PayloadChanged) as ctx:
+                accessor()
+            self.assertIn("E-G3-13-010", str(ctx.exception))
+
     def test_hash_bound_to_proposal(self):
         reg = AssumptionRegistry()
         p = AssumptionProposal("A-5", {"k": "v"}, "L8")

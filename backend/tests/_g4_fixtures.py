@@ -11,7 +11,8 @@
   · worksheet     —— 底稿（合成）
   · test          —— 测试记录（合成）
   · code_config   —— 代码/配置版本（合成）
-  · open_item     —— 开放项（CLOSED 或 OPEN+material 两态）
+  · open_item     —— 开放项（CLOSED 或 OPEN+material 两态；唯一 ID 用
+                    真实合同字段 open_item_id，不定义第二套假合同）
 """
 import json
 import os
@@ -21,6 +22,7 @@ APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 
 from artifact_store import ArtifactStore
+from open_item_registry import OpenItem
 from publish_engine import canonical_bytes, content_id, freeze_object
 
 
@@ -77,9 +79,15 @@ def build_claim(store, statement: str, refs, materiality: str = "MATERIAL") -> s
 
 def build_open_item(store, status: str = "CLOSED", material: bool = False,
                     title: str = "OI-FIXTURE") -> str:
-    obj = {"schema_version": "1.0.0", "kind": "open_item",
-           "id": title, "status": status, "material": material,
-           "title": title}
+    """由真实合同 OpenItem(...).to_dict() 构造（OI-PF-198）。
+
+    body = schema_version/kind + OpenItem.to_dict()，唯一 ID 是 open_item_id
+    （description/owner_role/due_date/blocks_gate/closure_evidence/status），
+    不含假合同的 `id`/`title` —— 测试不再定义第二套合同，fixture 不会再漂回。
+    """
+    item = OpenItem(open_item_id=title, description=title, material=material,
+                    owner_role="U-fixture", status=status)
+    obj = {"schema_version": "1.0.0", "kind": "open_item", **item.to_dict()}
     return freeze_object(store, "open_item", obj)
 
 

@@ -1,4 +1,4 @@
-"""写权断言的**覆盖守卫**（OI-PF-183 / OI-PF-184）。
+"""写权断言的**覆盖守卫**（OI-PF-183 / OI-PF-184 / OI-PF-193）。
 
 单点修复挡不住下一次：`cas_insert` 之所以成为洞，不是因为有人决定它不需要
 断言，而是因为**没有任何东西要求每条写路径都接断言**。四个方法接了，
@@ -11,10 +11,14 @@
   X-2  变异注入：造一个不接断言的写方法 → X-1 的判据须判红
        （**用原缺陷形态** —— cas_insert 修复前的函数体，规则 ⑩）
   X-3  _OBJ_TYPE 须覆盖全部 ORM 模型，且每个值都在 contracts/writers.json 内
-  X-4  四个受控写法的 writer 参数**不得有缺省值**
-       （缺省值恰为合法值 = 断言只能挡住主动自称非法的调用方，OI-PF-184）
-  X-5  assert_writer 的 context 实参内不得出现字面 True
-       （前置须由实际校验结果填入，不得硬编码）
+  X-4  全部 backend/app/*.py 中调用 assert_writer 的函数，writer 参数
+       **不得有缺省值**（缺省值恰为合法值 = 断言只能挡住主动自称非法的调用方，
+       OI-PF-184）。此前只扫 repository.py —— publish_release 的
+       writer="L11_release" 合法缺省因此漏网（OI-PF-193）。
+  X-5  全部 backend/app/*.py 中 assert_writer 的 context 实参内不得出现
+       字面 True（前置须由实际校验结果填入，不得硬编码）。
+       此前只扫 repository.py —— publish_engine 的 subject_root_hash_bound /
+       exit_predicate_and_parent_cas 两处字面 True 因此漏网（OI-PF-193）。
 """
 import ast
 import json
@@ -112,6 +116,59 @@ def _uncovered(src: str):
     return out
 
 
+def _app_sources() -> dict:
+    """backend/app/*.py 的源码（filename → src）。"""
+    out = {}
+    for fn in sorted(os.listdir(_APP)):
+        if fn.endswith(".py"):
+            with open(os.path.join(_APP, fn), encoding="utf-8") as f:
+                out[fn] = f.read()
+    return out
+
+
+def _writer_default_offenders(src: str):
+    """X-4：调用 assert_writer 的函数，writer 参数带缺省值 → 判红。
+
+    同时覆盖位置参数（含默认值）与关键字参数（kw_defaults）—— 关键字
+    keyword-only 若带缺省同样违规（如 `*, writer='L11_release'`）。
+    """
+    tree = ast.parse(src)
+    out = []
+    for n in ast.walk(tree):
+        if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not _asserts_writer(n):
+            continue
+        args = n.args
+        pos = args.args
+        if args.defaults:
+            for a, d in zip(pos[len(pos) - len(args.defaults):], args.defaults):
+                if a.arg == "writer":
+                    out.append((f"{n.name}:{a.lineno}", ast.unparse(d)))
+        for a, d in zip(args.kwonlyargs, args.kw_defaults):
+            if a.arg == "writer" and d is not None:
+                out.append((f"{n.name}:{a.lineno}", ast.unparse(d)))
+    return out
+
+
+def _literal_true_offenders(src: str):
+    """X-5：assert_writer 的 context dict 实参含字面 True → 判红。"""
+    tree = ast.parse(src)
+    out = []
+    for n in ast.walk(tree):
+        if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                and n.func.id == "assert_writer"):
+            continue
+        for arg in list(n.args) + [kw.value for kw in n.keywords]:
+            if not isinstance(arg, ast.Dict):
+                continue
+            for k, v in zip(arg.keys, arg.values):
+                if isinstance(v, ast.Constant) and v.value is True:
+                    key = k.value if isinstance(k, ast.Constant) else "?"
+                    out.append(f"{key}=True@{n.lineno}")
+    return out
+
+
 class TestWriteGuardCoverage(unittest.TestCase):
 
     def setUp(self):
@@ -200,46 +257,73 @@ class TestWriteGuardCoverage(unittest.TestCase):
         self.assertEqual(unknown, [],
                          f"_OBJ_TYPE 指向 writers.json 中不存在的对象：{unknown}")
 
-    # ── X-4 writer 不得有缺省值 ─────────────────────────────────────
+    # ── X-4 writer 不得有缺省值（全部 backend/app/*.py）────────────
     def test_writer_param_has_no_default(self):
-        tree = ast.parse(self.src)
         offenders = []
-        for n in ast.walk(tree):
-            if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            if not _asserts_writer(n):
-                continue
-            args = n.args.args[len(n.args.args) - len(n.args.defaults):] \
-                if n.args.defaults else []
-            for a, d in zip(args, n.args.defaults):
-                if a.arg == "writer":
-                    offenders.append((n.name, ast.unparse(d)))
+        for fn, src in _app_sources().items():
+            for loc, d in _writer_default_offenders(src):
+                offenders.append(f"{fn}:{loc}(writer={d})")
         self.assertEqual(
             offenders, [],
-            "writer 带缺省值的方法："
-            + "; ".join(f"{n}(writer={d})" for n, d in offenders)
+            "writer 带缺省值的方法（全 app 扫描）："
+            + "; ".join(offenders)
             + " —— 缺省值恰为契约白名单的合法值时，断言只能挡住"
-              "「主动自称非法写者」的调用方（OI-PF-184）")
+              "「主动自称非法写者」的调用方（OI-PF-184 / OI-PF-193）")
 
-    # ── X-5 前置实参不得硬编码字面 True ─────────────────────────────
+    def test_guard_goes_red_on_writer_default_elsewhere(self):
+        """X-4 变异注入：publish_engine.py 新增 writer 合法缺省调用点 → 判红。
+
+        这正是 OI-PF-193 原失败载荷的形状：release 的 writer='L11_release'
+        合法缺省只在 publish_engine.py，repository 扫描看不见它。
+        """
+        src = _app_sources()["publish_engine.py"]
+        mutant = src + (
+            "\n\n"
+            "def _mutant_release(store, session, manifest, key, approval,\n"
+            "                    writer='L11_release'):\n"
+            "    from schema_validate import assert_writer\n"
+            "    assert_writer('release', writer,"
+            " {'exit_predicate_and_parent_cas': True})\n")
+        self.assertNotEqual(mutant, src, "变异未生效")
+        self.assertTrue(
+            any("_mutant_release" in n for n, _ in _writer_default_offenders(mutant)),
+            "新增带 writer 合法缺省的调用点未被判红")
+        # 未变异的原文须仍然是干净的（防误红）
+        self.assertEqual(_writer_default_offenders(src), [])
+
+    # ── X-5 前置实参不得硬编码字面 True（全部 backend/app/*.py）────
     def test_precondition_context_has_no_literal_true(self):
-        tree = ast.parse(self.src)
         offenders = []
-        for n in ast.walk(tree):
-            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-                    and n.func.id == "assert_writer"):
-                continue
-            for arg in list(n.args) + [kw.value for kw in n.keywords]:
-                if not isinstance(arg, ast.Dict):
-                    continue
-                for k, v in zip(arg.keys, arg.values):
-                    if isinstance(v, ast.Constant) and v.value is True:
-                        key = k.value if isinstance(k, ast.Constant) else "?"
-                        offenders.append(f"{key}=True@L{n.lineno}")
+        for fn, src in _app_sources().items():
+            for o in _literal_true_offenders(src):
+                offenders.append(f"{fn}:{o}")
         self.assertEqual(
             offenders, [],
-            f"assert_writer 的 context 内有硬编码 True：{offenders} —— "
-            f"MACHINE 前置须由实际校验结果填入（OI-PF-184 ②）")
+            f"assert_writer 的 context 内有硬编码 True（全 app 扫描）："
+            f"{offenders} —— MACHINE 前置须由实际校验结果填入"
+            f"（OI-PF-184 ② / OI-PF-193）")
+
+    def test_guard_goes_red_on_literal_true_context(self):
+        """X-5 变异注入：publish_engine.py 新增 context 字面 True → 判红。
+
+        这是 OI-PF-193 的第二个载荷形状：subject_root_hash_bound /
+        exit_predicate_and_parent_cas 的字面 True 只在 publish_engine.py。
+        """
+        src = _app_sources()["publish_engine.py"]
+        mutant = src + (
+            "\n\n"
+            "def _mutant_release2(store, session, manifest, key, approval,"
+            " *, writer):\n"
+            "    from schema_validate import assert_writer\n"
+            "    assert_writer('current_pointer', writer,"
+            " {'exit_predicate_and_parent_cas': True})\n")
+        self.assertNotEqual(mutant, src, "变异未生效")
+        self.assertTrue(
+            any("exit_predicate_and_parent_cas=True" in o
+                for o in _literal_true_offenders(mutant)),
+            "新增 context 字面 True 未被判红")
+        # 未变异的原文须仍然是干净的（防误红）
+        self.assertEqual(_literal_true_offenders(src), [])
 
 
 if __name__ == "__main__":
