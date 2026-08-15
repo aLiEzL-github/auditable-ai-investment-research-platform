@@ -11,8 +11,10 @@
 
 结论语义（如实载明，不签署）：
   · G6A-06 = REVIEW_REQUIRED（单人期，ADR-012 §3）→ G6-01 前置不满足
-    → 汇合结论 = G6_JOINT_BLOCKED（非 PASS、非失败 —— 结构性受阻，
-    解除路径 = VD-02 重开条款）
+    → 汇合结论 = G6_JOINT_BLOCKED（非 PASS、非失败 —— 结构性受阻）
+  · G6A-06 = RED_TEAM_SINGLE_PERSON_ATTESTED 且 ADR-026 八条件齐备
+    → G6_JOINT_PASSED_SINGLE_PERSON_RED_TEAM（可签精确较弱断言，绝不冒充
+      独立红队或 G6_JOINT_READY）
   · 三分支并列可见：G6A（执行 3 + 挂起 3）· G6B（4×NOT_APPLICABLE）
     · G6C（3 任务 DONE，VD-26 恒 PENDING）
 """
@@ -44,91 +46,15 @@ PORTFOLIO = _portfolio_root()
 
 
 # ── ADR-026：单人期红队的精确状态 ────────────────────────────────────
-# 条件 8（有效期）的判据**只在 red_team_marker_check 里有一份**，此处 import。
-# 不另写一遍 —— OI-PF-173 记的正是「同一判据四份实现，无守卫保证其一致」。
+# ADR-026 的结构判据只在 red_team_marker_check 里有一份。Gate 6 与 Gate 6A
+# 共用它，避免一个生成器接受而另一个拒绝同一份记录。
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from red_team_marker_check import expiry_problem   # noqa: E402
-
-_RT_SOLO = "RED_TEAM_SINGLE_PERSON_ATTESTED"
-
-
-def _rt_solo_missing(rec):
-    """ADR-026 §4 七条件的机检，返回未满足项的说明列表（空 = 全部满足）。
-
-    **缺失 ≠ 空列表**（规则 ㉟）：`scope_not_covered` 为空列表意思是
-    「已查，没有未覆盖维度」；字段缺失意思是「没查」。二者必须可分辨 ——
-    而 OI-PF-186 正是范围外的东西咬人，所以这一格不许留白。
-
-    本函数只查**结构**，查不了**实质** —— 红队审查做没做真、判得对不对，
-    机器判不了。这一边界与 E-4 同类，已写入 ADR-026 §6 与手册 §6。
-    """
-    miss = []
-
-    # 条件 1：可复现证据（命令 + 输出），不接受「看过了没问题」
-    ev = rec.get("red_team_evidence")
-    if not isinstance(ev, list) or not ev:
-        miss.append("缺 red_team_evidence（须为非空列表，每项含 check/command/output）")
-    else:
-        for i, e in enumerate(ev):
-            if not isinstance(e, dict) or not all(
-                    str(e.get(k) or "").strip() for k in ("check", "command", "output")):
-                miss.append(f"red_team_evidence[{i}] 的 check/command/output 不齐")
-                break
-
-    # 条件 2：范围穷举 + **显式列出未覆盖维度**
-    if not isinstance(rec.get("reviewed_products"), list) or not rec.get("reviewed_products"):
-        miss.append("缺 reviewed_products（审查靶面须穷举）")
-    if "scope_not_covered" not in rec:
-        miss.append("**缺 scope_not_covered 字段** —— 未覆盖维度不写出来等于假装没有"
-                    "（OI-PF-186：九轮范围内的审查，最大遗漏落在全部范围之外）；"
-                    "空列表表示「已查无遗漏」，与字段缺失不同")
-
-    # 条件 3：agent 发现作为输入线索逐条处置，不得直接当结论
-    dis = rec.get("agent_findings_disposition")
-    if not isinstance(dis, list):
-        miss.append("缺 agent_findings_disposition（AGENT_ADVERSARIAL_REVIEW 的发现"
-                    "须逐条记采信/否决及理由；手册 §4：不得直接当作红队结论）")
-    else:
-        for i, d in enumerate(dis):
-            if not isinstance(d, dict) or not all(
-                    str(d.get(k) or "").strip()
-                    for k in ("open_item_id", "disposition", "basis")):
-                miss.append(f"agent_findings_disposition[{i}] 的 "
-                            f"open_item_id/disposition/basis 不齐")
-                break
-
-    # 条件 4：P0 = 0 · P1 = 0 · P2 三者齐备
-    fd = rec.get("findings")
-    if not isinstance(fd, dict) or "P0" not in fd or "P1" not in fd:
-        miss.append("缺 findings.P0 / findings.P1（须可机检的数值字段）")
-    elif fd.get("P0") or fd.get("P1"):
-        miss.append(f"findings P0={fd.get('P0')} · P1={fd.get('P1')} —— "
-                    f"基线 B §10A 要求两者均为 0")
-    else:
-        for i, p2 in enumerate(fd.get("P2") or []):
-            if not isinstance(p2, dict) or not all(
-                    str(p2.get(k) or "").strip()
-                    for k in ("owner", "due", "materiality", "basis")):
-                miss.append(f"findings.P2[{i}] 缺 owner/due/materiality/basis 之一 —— "
-                            f"「非材料性判定」是实质判断，判错即等于绕过 P0/P1")
-                break
-
-    # 条件 5/6：红队人 = 编制人这一事实须落库且显式为假
-    if not str(rec.get("red_team_reviewer") or "").strip():
-        miss.append("缺 red_team_reviewer（须落到具体的人）")
-    if rec.get("independent_red_team_present") is not False:
-        miss.append("independent_red_team_present 须**显式为 false** —— "
-                    "单人期红队人即编制人，该事实须落库而非省略"
-                    "（ADR-026 §4 条件 5/6）")
-    if not str(rec.get("independence") or "").strip():
-        miss.append("缺 independence（须写明红队人与编制人的实际关系，"
-                    "单人期即「同一自然人」）")
-
-    # 条件 8：有效期（U 于接受 ADR-026 时补入）
-    _exp = expiry_problem(rec)
-    if _exp:
-        miss.append(_exp)
-    return miss
+from red_team_marker_check import (  # noqa: E402
+    RT_SOLO as _RT_SOLO,
+    attestation_missing as _rt_solo_missing,
+    baseline_natural_persons,
+    independent_review_missing,
+)
 
 NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
 
@@ -224,14 +150,7 @@ def main() -> int:
     # G6A-06 取任何值都必然产生阻断项，**不存在通往 READY 的路径**。
     # 第 2 名自然人到位那天，不改本文件就产不出可签署的验收包，
     # 而「要改本文件」此前无任何记载。
-    _vd02 = open(os.path.join(PORTFOLIO, "decisions-v2", "VD-02.md"),
-                 encoding="utf-8").read()
-    _m02 = re.search(r"baseline_natural_persons\s*=\s*(\d+)", _vd02)
-    if not _m02:
-        # **取不到就判红，不判绿**：读不到人数即无从判断适用哪条分支。
-        _persons = None
-    else:
-        _persons = int(_m02.group(1))
+    _persons = baseline_natural_persons(PORTFOLIO)
     _solo = (_persons == 1)
 
     # ── 结论（㉑：由状态决定，不硬编码）────────────────────────────
@@ -250,7 +169,7 @@ def main() -> int:
         # **不允许 DONE** —— DONE 会被读作独立红队已完成，那是不真的。
         _st06 = _st_a.get("G6A-06")
         if _st06 == _RT_SOLO:
-            _miss = _rt_solo_missing(_rec("G6A-06") or {})
+            _miss = _rt_solo_missing(_rec("G6A-06") or {}, _persons)
             if _miss:
                 _blockers.append(
                     f"G6A-06 = {_RT_SOLO} 但 ADR-026 §4 的条件未齐："
@@ -281,23 +200,10 @@ def main() -> int:
                              f"但 G6A-06 状态 = {_st_a.get('G6A-06')} —— 须 DONE")
         else:
             _rec06 = _rec("G6A-06") or {}
-            # **查真实字段，不在全文里找词**。初版用 re.search 在整个 JSON
-            # 里找「红队人」—— 而该记录的验收条款原文就是「**红队人**与开发/
-            # 研究编制人不是同一自然人」，于是任何 G6A-06 记录都天然「有」。
-            # 那是匹配代理（词出现过）而非目标（该字段被填了具体的人）。
-            _rt = str(_rec06.get("red_team_reviewer") or "").strip()
-            _fd = _rec06.get("findings") or {}
-            if not _rt:
-                _blockers.append("G6A-06 = DONE 但记录**缺 red_team_reviewer 字段"
-                                 "或其值为空** —— 基线 B §10A 验收条款要求"
-                                 "「红队人与开发/研究编制人不是同一自然人」，"
-                                 "须落库到具体的人而非只在条款里出现该词")
-            elif not isinstance(_fd, dict) or "P0" not in _fd or "P1" not in _fd:
-                _blockers.append("G6A-06 = DONE 但记录**缺 findings.P0 / findings.P1** "
-                                 "—— 基线 B §10A 验收条款：P0=0、P1=0，须可机检")
-            elif _fd.get("P0") or _fd.get("P1"):
-                _blockers.append(f"G6A-06 的 findings 中 P0={_fd.get('P0')} · "
-                                 f"P1={_fd.get('P1')} —— 基线 B §10A 要求两者均为 0")
+            _independent_missing = independent_review_missing(_rec06)
+            if _independent_missing:
+                _blockers.append("G6A-06 = DONE 但独立红队字段未齐："
+                                 + "；".join(_independent_missing))
     if not _g6b_na_ok:
         _blockers.append(f"G6B 状态不符（实测 {_st_b}）—— 四项须 NOT_APPLICABLE")
     if not _g6c_done:
@@ -333,9 +239,13 @@ def main() -> int:
     L.append("## 1. 三分支并列可见（G6-01 汇合义务）\n")
     L.append("### 1.1 G6A 分支\n")
     L.append("```text")
+    _g6a06_semantics = (
+        "ADR-026 精确单人状态，独立性未满足"
+        if _solo_rt else "单人期 REVIEW_REQUIRED，ADR-012 §3"
+    )
     L.append(f"  执行 3 项（分列报数，⑨）：G6A-01={_st_a['G6A-01']}（PR #68）"
              f" · G6A-05={_st_a['G6A-05']}（PR #69）"
-             f" · G6A-06={_st_a['G6A-06']}（单人期 REVIEW_REQUIRED，ADR-012 §3）")
+             f" · G6A-06={_st_a['G6A-06']}（{_g6a06_semantics}）")
     L.append("  挂起 3 项：G6A-02/03/04 = NOT_APPLICABLE_PENDING_PROVIDER"
              "（可逆，VD-10=NONE；重开触发 +4.00 工时回填）")
     L.append("```\n")
@@ -356,8 +266,12 @@ def main() -> int:
     L.append("```text")
     L.append("  前置（基线 B §10 末原文）：G6A-06、G6C-03；且非 REMOVED 时 G6B-04")
     L.append("  —— 本项目 VD-14=REMOVED，故不含 G6B-04。")
-    L.append("  G6A-06 是**无条件**前置（G6B 才是有条件支线）—— 单人期")
-    L.append("  REVIEW_REQUIRED → G6-01 相应受阻（ADR-012 §5 明文，非本项目例外）")
+    L.append("  G6A-06 是**无条件**前置（G6B 才是有条件支线）。")
+    if _solo_rt:
+        L.append(f"  {_RT_SOLO} 不声称独立性要求已满足；ADR-026 只允许汇合")
+        L.append("  形成带 independent_red_team_present=false 的精确较弱 verdict。")
+    else:
+        L.append("  REVIEW_REQUIRED → G6-01 相应受阻（ADR-012 §5 明文，非本项目例外）")
     L.append("```\n")
 
     # ── §1.7 持续性风险节 ─────────────────────────────────────────
@@ -437,12 +351,18 @@ def main() -> int:
     # ── §4 风险与已知缺口 ─────────────────────────────────────────
     L.append("## 4. 风险与已知缺口（如实载明）\n")
     L.append("```text")
-    L.append("· **本包不是 Gate 6 PASS，也不构成签署。** G6-01 汇合受阻是")
-    L.append("  ADR-012 §5 记载的结构性状态：G6A-06 红队独立性在单人结构下")
-    L.append("  不可满足，G6-01 无条件前置因此不成立。解除路径唯一：")
-    L.append("  VD-02 重开条款（补到第 2 名自然人）")
-    L.append("· 汇合受阻 ≠ G6A/G6B/G6C 三支线记载无效 —— 三支线验收包均已")
-    L.append("  生成并各自载明状态（Gate6A/Gate6B/Gate6C-验收包.md）")
+    if _solo_rt and not _blockers:
+        L.append(f"· **本包只支持 {verdict} 这一精确较弱断言。**")
+        L.append("  G6A-06 的独立红队要求仍未满足；红队人与编制人是同一自然人。")
+        L.append("  任何下游把本 verdict 读作 G6_JOINT_READY、独立红队或独立安全审查，")
+        L.append("  都是错误升级；VD-02 补到第 2 名自然人时本状态自动失效并须重做。")
+    else:
+        L.append("· **本包不是 Gate 6 PASS，也不构成签署。** G6-01 汇合受阻是")
+        L.append("  ADR-012 §5 记载的结构性状态：G6A-06 红队独立性在单人结构下")
+        L.append("  不可满足，G6-01 无条件前置因此不成立。解除路径为 VD-02 重开条款")
+        L.append("  （补到第 2 名自然人）或完成 ADR-026 的精确单人红队路径。")
+    L.append("· G6A/G6B/G6C 三支线验收包均已生成并各自载明状态")
+    L.append("  （Gate6A/Gate6B/Gate6C-验收包.md）。")
     L.append("· VD-26 下 G6C 分支「CALIBRATION_PENDING 不冒充能力」已由")
     L.append("  H-8 表述守卫机检（仓库 CI + 台账 P6），不是文字提醒")
     L.append("```\n")
@@ -467,7 +387,7 @@ def main() -> int:
     _H.append("```text")
     _H.append(f"生成时刻   = {NOW}")
     _H.append("生成方式   = backend/tools/build_gate6_acceptance.py（全部数据实时采集）")
-    _H.append("依据       = 基线 B §10 末 G6-01 + ADR-012 §5 + VD-14/VD-26 + "
+    _H.append("依据       = 基线 B §10 末 G6-01 + ADR-012 §5 + ADR-026 + VD-14/VD-26 + "
               "ADR-021 §2 + ADR-022 §2/§3 + ADR-010 §3.1")
     _H.append("范围口径   = ADR-021 §2 并集逐字段：material ∧ OPEN ∧ "
               "category != 签署前置条件；blocks_development 含 G6-xx 必含 | "
@@ -476,8 +396,15 @@ def main() -> int:
     _H.append(f"结论       = **{verdict}**"
               + (f" —— {'；'.join(_blockers)}" if _blockers
                  else "（三分支并列可见且各自就绪）"))
-    _H.append("**本包不是 Gate 6 PASS。** G6-01 前置 G6A-06 单人期")
-    _H.append("REVIEW_REQUIRED → 汇合受阻（ADR-012 §5），不签署。")
+    if verdict == "G6_JOINT_PASSED_SINGLE_PERSON_RED_TEAM":
+        _H.append("**本包不是独立红队 Gate 6 PASS。** 它只形成 ADR-026 的精确较弱")
+        _H.append("签署对象；独立性要求仍未满足，且当前文件本身不构成签署。")
+    elif _solo_rt:
+        _H.append(f"**本包不是 Gate 6 PASS。** G6A-06 虽声明 {_RT_SOLO}，但")
+        _H.append("ADR-026 条件或其他汇合前置未齐；以上 blockers 须先清零，不签署。")
+    else:
+        _H.append("**本包不是 Gate 6 PASS。** G6-01 前置 G6A-06 单人期")
+        _H.append("REVIEW_REQUIRED → 汇合受阻（ADR-012 §5），不签署。")
     _H.append("independent_reviewer_present = false（VD-02 = 1 名自然人）")
     _H.append("```\n")
     _H.append("> **本包不构成签署。** 供批准人审阅的冻结材料；"

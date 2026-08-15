@@ -4,6 +4,7 @@
 依据：
   · G6A-执行计划.md §1A（基线 B §9 任务表）· §4（F-1…F-12）· §6
   · ADR-012（条件分支：01/05/06 执行；02/03/04 NOT_APPLICABLE_PENDING_PROVIDER）
+  · ADR-026（单人红队已实际执行时使用精确状态，不冒充独立红队或 DONE）
   · ADR-021 §2（范围口径：四字段逐字段，blocks_development 必含 G6A-\\d\\d）
   · ADR-022 §2/§3.1（blocks_data_flow="ALL" 不算命中，但须单列一节）
   · ADR-010 §3.1（三条债务清点义务，S3 逐条机检）
@@ -40,6 +41,14 @@ def _portfolio_root() -> str:
 
 
 PORTFOLIO = _portfolio_root()
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from red_team_marker_check import (  # noqa: E402
+    RT_SOLO,
+    attestation_missing,
+    baseline_natural_persons,
+    independent_review_missing,
+)
+
 NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
 
 # 与 audit_session.py 的 _SUB_EXCLUDE **逐字一致**（14 条）
@@ -113,19 +122,40 @@ def main() -> int:
     # ── G6A 任务状态实测 ──────────────────────────────────────────
     _tr = os.path.join(PORTFOLIO, "task-records")
     _st = {}
+    _records = {}
     for tid in EXEC_TASKS + SUSPENDED_TASKS:
         fp = os.path.join(_tr, f"{tid}.json")
         if os.path.exists(fp):
             _d = json.load(open(fp, encoding="utf-8"))
+            _records[tid] = _d
             _st[tid] = str(_d.get("task_status") or "?")
         else:
+            _records[tid] = {}
             _st[tid] = "NO_RECORD"
 
-    _exec_ok = all(_st[t] in ("DONE", "REVIEW_REQUIRED") for t in EXEC_TASKS)
+    _g6a06_state = _st["G6A-06"]
+    _persons = baseline_natural_persons(PORTFOLIO)
+    _g6a06_attested = _g6a06_state == RT_SOLO
+    _g6a06_missing = (attestation_missing(_records["G6A-06"], _persons)
+                       if _g6a06_attested else [])
+    _g6a06_independent_missing = (independent_review_missing(_records["G6A-06"])
+                                   if _g6a06_state == "DONE" else [])
+    _g6a06_independent_done = (_persons is not None and _persons >= 2
+                                and _g6a06_state == "DONE"
+                                and not _g6a06_independent_missing)
+    _exec_ok = all(_st[t] in ("DONE", "REVIEW_REQUIRED")
+                   for t in ("G6A-01", "G6A-05"))
     _susp_ok = all(_st[t] == "NOT_APPLICABLE_PENDING_PROVIDER"
                    for t in SUSPENDED_TASKS)
-    # F-6：单人期 G6A-06 必须 REVIEW_REQUIRED，不得径自判 PASS
-    _g6a06_ok = _st["G6A-06"] == "REVIEW_REQUIRED"
+    # F-6 + ADR-026：单人未审保持 REVIEW_REQUIRED，已审取精确单人状态；
+    # 补到第二人后单人状态失效，须由独立红队重做并转 DONE。
+    if _persons == 1:
+        _g6a06_ok = (_g6a06_state == "REVIEW_REQUIRED"
+                      or (_g6a06_attested and not _g6a06_missing))
+    elif _persons is not None and _persons >= 2:
+        _g6a06_ok = _g6a06_independent_done
+    else:
+        _g6a06_ok = False
 
     # ── 工程证据 ──────────────────────────────────────────────────
     _t_g6a01 = status_of(
@@ -158,12 +188,22 @@ def main() -> int:
                          f"（ADR-010 §4 不得 PASS）："
                          f"{[i['open_item_id'] for i in g6a_mat]}")
     if not _exec_ok:
-        _blockers.append(f"执行任务状态不符（实测 {_st}）—— 01/05 须 DONE，"
-                         f"06 单人期须 REVIEW_REQUIRED")
+        _blockers.append(f"执行任务状态不符（实测 {_st}）—— 01/05 须 DONE/REVIEW_REQUIRED")
     if not _g6a06_ok:
-        _blockers.append(f"**F-6：G6A-06 状态 = {_st['G6A-06']}，须 "
-                         f"REVIEW_REQUIRED** —— 单人期不得径自判 PASS"
-                         f"（ADR-012 §3）")
+        if _persons is None:
+            _blockers.append("VD-02 读不到 baseline_natural_persons；无法选择单人/双人分支")
+        elif _g6a06_attested:
+            _blockers.append(f"G6A-06 = {RT_SOLO} 但 ADR-026 §4 条件未齐："
+                             + "；".join(_g6a06_missing))
+        elif _persons >= 2:
+            _detail = ("；".join(_g6a06_independent_missing)
+                       if _g6a06_state == "DONE" else f"当前状态 = {_g6a06_state}")
+            _blockers.append(f"VD-02 = {_persons} 名自然人，G6A-06 须由独立红队完成并转 DONE；"
+                             + _detail)
+        else:
+            _blockers.append(f"**F-6：G6A-06 状态 = {_g6a06_state}** —— 单人期"
+                             f"只允许 REVIEW_REQUIRED（未审）或 {RT_SOLO}"
+                             "（已审但非独立），不得径自判 PASS/DONE")
     if not _susp_ok:
         _blockers.append(f"挂起任务标签不符（实测 {_st}）—— 02/03/04 须为 "
                          f"NOT_APPLICABLE_PENDING_PROVIDER（F-9，"
@@ -250,9 +290,15 @@ def main() -> int:
              f"#68 | F-1/F-2（注入检测、首轮冻结时序） |")
     L.append(f"| `G6A-05` | 批准或拒绝假设并确定性回算 | {_st['G6A-05']} | "
              f"#69 | F-3/F-4（全量回算、受影响落库） |")
-    L.append(f"| `G6A-06` | 只找错红队审查 | {_st['G6A-06']} | — | "
-             f"F-6：单人期 REVIEW_REQUIRED（ADR-012 §3），"
-             f"**不得径自判 PASS** |")
+    _g6a06_note = (
+        "ADR-026：实际审查已执行，独立性仍未满足；精确状态不得读作 DONE/PASS"
+        if _g6a06_attested else (
+        "基线独立红队已完成（VD-02 >= 2）"
+        if _g6a06_independent_done else
+        "F-6：单人期 REVIEW_REQUIRED（ADR-012 §3），不得径自判 PASS"
+        ))
+    L.append(f"| `G6A-06` | 只找错红队审查 | {_g6a06_state} | — | "
+             f"{_g6a06_note} |")
     L.append("")
     L.append("### 2.2 挂起部分（NOT_APPLICABLE_PENDING_PROVIDER，可逆 —— F-8）\n")
     L.append("```text")
@@ -310,9 +356,20 @@ def main() -> int:
     # ── §5 风险与已知缺口 ─────────────────────────────────────────
     L.append("## 5. 风险与已知缺口（如实载明）\n")
     L.append("```text")
-    L.append("· **G6A-06 单人期 REVIEW_REQUIRED → G6-01 汇合受阻**（ADR-012 §5：")
-    L.append("  G6A-06 是无条件前置；G6B 才是有条件支线）。解除路径 = VD-02")
-    L.append("  重开条款（补到第 2 名自然人）。**本包不声称 G6A-06 已 PASS**")
+    if _g6a06_attested:
+        L.append(f"· **G6A-06 = {RT_SOLO} 仍不满足独立红队要求。** ADR-026 只允许")
+        L.append("  Gate 6 使用显式较弱 verdict 并机械传播 independent_red_team_present=false；")
+        L.append("  本包不声称 G6A-06 已 DONE/PASS，补到第 2 名自然人时本状态自动失效。")
+    elif _g6a06_independent_done:
+        L.append("· G6A-06 已由独立自然人完成并记 DONE；独立性与 findings 仍由")
+        L.append("  Gate 6 汇合生成器按基线 B §10A 复核，本分支包不替代汇合签署。")
+    elif _persons is not None and _persons >= 2:
+        L.append("· VD-02 已进入双人分支，但 G6A-06 的独立红队 DONE 记录未齐；")
+        L.append("  不得回落到 ADR-026 单人状态，也不得把缺字段的 DONE 当作完成。")
+    else:
+        L.append("· **G6A-06 单人期 REVIEW_REQUIRED → G6-01 汇合受阻**（ADR-012 §5：")
+        L.append("  G6A-06 是无条件前置；G6B 才是有条件支线）。解除路径 = VD-02")
+        L.append("  重开条款（补到第 2 名自然人）。**本包不声称 G6A-06 已 PASS**")
     L.append("· G6A-05 的基线前置含 G6A-04（挂起）—— ADR-012 未处理该依赖，")
     L.append("  本包按 G6A-执行计划 §7 如实记载：AssumptionProposal 来源为人工")
     L.append("  研究路径（G3-13 语义），不依赖 LLM 角色输出")
@@ -343,7 +400,7 @@ def main() -> int:
     _H.append("```text")
     _H.append(f"生成时刻   = {NOW}")
     _H.append("生成方式   = backend/tools/build_gate6a_acceptance.py（全部数据实时采集）")
-    _H.append("依据       = G6A-执行计划.md §4 + 基线 §9 + ADR-012 + ADR-021 §2"
+    _H.append("依据       = G6A-执行计划.md §4 + 基线 §9 + ADR-012 + ADR-026 + ADR-021 §2"
               " + ADR-022 §2/§3 + ADR-010 §3.1")
     _H.append("范围口径   = ADR-021 §2 并集逐字段：material ∧ OPEN ∧ "
               "category != 签署前置条件；blocks_development 含 G6A-xx 必含 | "
@@ -352,11 +409,23 @@ def main() -> int:
               "另见 §1.7")
     _H.append(f"结论       = **{verdict}**"
               + (f" —— {'；'.join(_blockers)}" if _blockers
-                 else "（执行 3 项已就绪：01/05 DONE、06 REVIEW_REQUIRED；"
-                      "挂起 3 项标签与重开条件齐备；范围内材料性开放项为零）"))
-    _H.append("**本包不构成 G6-01 汇合 PASS** —— G6A-06 单人期 REVIEW_REQUIRED，")
-    _H.append("G6-01 相应受阻（ADR-012 §5）；汇合见 Gate6-验收包.md")
-    _H.append("independent_reviewer_present = false（VD-02 = 1 名自然人）")
+                 else f"（执行 3 项已就绪：01/05 DONE、06 {_g6a06_state}；"
+                       "挂起 3 项标签与重开条件齐备；范围内材料性开放项为零）"))
+    if _g6a06_attested:
+        _H.append("**本包不构成独立红队 PASS。** G6A-06 为 ADR-026 的精确单人状态；")
+        _H.append("Gate 6 只能使用带单人红队标记的较弱 verdict，见 Gate6-验收包.md")
+        _H.append("independent_red_team_present = false")
+    elif _g6a06_independent_done:
+        _H.append("G6A-06 已走双人独立红队 DONE 路径；Gate 6 汇合结论见 Gate6-验收包.md")
+    elif _persons is not None and _persons >= 2:
+        _H.append("**本包不构成 G6-01 汇合 PASS** —— 双人分支的独立红队 DONE 记录未齐；")
+        _H.append("不得回落到 ADR-026 单人状态，阻断详情见结论行。")
+    else:
+        _H.append("**本包不构成 G6-01 汇合 PASS** —— G6A-06 单人期 REVIEW_REQUIRED，")
+        _H.append("G6-01 相应受阻（ADR-012 §5）；汇合见 Gate6-验收包.md")
+    _H.append(f"independent_reviewer_present = "
+              f"{'true' if _g6a06_independent_done else 'false'}"
+              f"（VD-02 = {_persons if _persons is not None else 'UNKNOWN'} 名自然人）")
     _H.append("```\n")
     _H.append("> **本包不是 Gate 6A PASS。** 供批准人审阅的冻结材料；\n")
     L = _H + L
