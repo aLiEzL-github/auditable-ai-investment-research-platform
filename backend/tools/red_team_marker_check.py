@@ -17,6 +17,8 @@
   M-3  此时由 Gate 6 派生的产物（`gate-records/G6*.json`）须逐份携带该标记
   M-4  `G6A-06` 不处于该状态时，`Gate 6` 验收包**不得**出现该标记
        —— 防「标记贴错地方」与「标记留在原地而状态已变」
+  M-6  该状态须满足 ADR-026 §4 的完整结构条件；Gate 6 与 Gate 6A 生成器
+       复用同一判据，不允许「一个接受、另一个拒绝」
 
 用法：python3 backend/tools/red_team_marker_check.py [portfolio_root]
       （不传则取 PORTFOLIO_ROOT；两者皆无即拒 —— OI-PF-186 的 fail-closed）
@@ -24,6 +26,7 @@
 import glob
 import json
 import os
+import re
 import sys
 
 RT_SOLO = "RED_TEAM_SINGLE_PERSON_ATTESTED"
@@ -64,6 +67,110 @@ def expiry_problem(rec):
     return None
 
 
+def baseline_natural_persons(root):
+    """Read the VD-02 branch selector; unreadable input stays fail-closed."""
+    path = os.path.join(root, "decisions-v2", "VD-02.md")
+    try:
+        with open(path, encoding="utf-8") as stream:
+            text = stream.read()
+    except OSError:
+        return None
+    match = re.search(r"baseline_natural_persons\s*=\s*(\d+)", text)
+    return int(match.group(1)) if match else None
+
+
+def attestation_missing(rec, natural_persons):
+    """Return unmet ADR-026 single-person attestation conditions.
+
+    This is the single structural predicate shared by the Gate 6 and Gate 6A
+    generators.  It cannot establish that the human judgment is substantively
+    correct; it only rejects an incomplete or expired attestation record.
+    """
+    miss = []
+
+    evidence = rec.get("red_team_evidence")
+    if not isinstance(evidence, list) or not evidence:
+        miss.append("缺 red_team_evidence（须为非空列表，每项含 check/command/output）")
+    else:
+        for i, item in enumerate(evidence):
+            if not isinstance(item, dict) or not all(
+                    str(item.get(k) or "").strip()
+                    for k in ("check", "command", "output")):
+                miss.append(f"red_team_evidence[{i}] 的 check/command/output 不齐")
+                break
+
+    if not isinstance(rec.get("reviewed_products"), list) or not rec.get(
+            "reviewed_products"):
+        miss.append("缺 reviewed_products（审查靶面须穷举）")
+    if "scope_not_covered" not in rec:
+        miss.append("**缺 scope_not_covered 字段** —— 未覆盖维度不写出来等于假装没有"
+                    "（OI-PF-186：九轮范围内的审查，最大遗漏落在全部范围之外）；"
+                    "空列表表示『已查无遗漏』，与字段缺失不同")
+
+    dispositions = rec.get("agent_findings_disposition")
+    if not isinstance(dispositions, list) or not dispositions:
+        miss.append("缺非空 agent_findings_disposition（AGENT_ADVERSARIAL_REVIEW 的发现"
+                    "须逐条记采信/否决及理由；手册 §4：不得直接当作红队结论）")
+    else:
+        for i, item in enumerate(dispositions):
+            if not isinstance(item, dict) or not all(
+                    str(item.get(k) or "").strip()
+                    for k in ("open_item_id", "disposition", "basis")):
+                miss.append(f"agent_findings_disposition[{i}] 的 "
+                            "open_item_id/disposition/basis 不齐")
+                break
+
+    findings = rec.get("findings")
+    if not isinstance(findings, dict) or "P0" not in findings or "P1" not in findings:
+        miss.append("缺 findings.P0 / findings.P1（须可机检的数值字段）")
+    elif findings.get("P0") or findings.get("P1"):
+        miss.append(f"findings P0={findings.get('P0')} · P1={findings.get('P1')} —— "
+                    "基线 B §10A 要求两者均为 0")
+    else:
+        for i, item in enumerate(findings.get("P2") or []):
+            if not isinstance(item, dict) or not all(
+                    str(item.get(k) or "").strip()
+                    for k in ("owner", "due", "materiality", "basis")):
+                miss.append(f"findings.P2[{i}] 缺 owner/due/materiality/basis 之一 —— "
+                            "『非材料性判定』是实质判断，判错即等于绕过 P0/P1")
+                break
+
+    if not str(rec.get("red_team_reviewer") or "").strip():
+        miss.append("缺 red_team_reviewer（须落到具体的人）")
+    if rec.get("independent_red_team_present") is not False:
+        miss.append("independent_red_team_present 须**显式为 false** —— "
+                    "单人期红队人即编制人，该事实须落库而非省略"
+                    "（ADR-026 §4 条件 5/6）")
+    if not str(rec.get("independence") or "").strip():
+        miss.append("缺 independence（须写明红队人与编制人的实际关系，"
+                    "单人期即『同一自然人』）")
+
+    if natural_persons is None:
+        miss.append("VD-02 读不到 baseline_natural_persons，无法判断 ADR-026 条件 7")
+    elif natural_persons != 1:
+        miss.append(f"VD-02 = {natural_persons} 名自然人；ADR-026 条件 7："
+                    f"{RT_SOLO} 已自动失效，须由独立自然人重做并转 DONE")
+
+    expiry = expiry_problem(rec)
+    if expiry:
+        miss.append(expiry)
+    return miss
+
+
+def independent_review_missing(rec):
+    """Return unmet baseline B section 10A fields for the >=2-person branch."""
+    miss = []
+    if not str(rec.get("red_team_reviewer") or "").strip():
+        miss.append("缺 red_team_reviewer（独立红队须落到具体的人）")
+    findings = rec.get("findings")
+    if not isinstance(findings, dict) or "P0" not in findings or "P1" not in findings:
+        miss.append("缺 findings.P0 / findings.P1（须可机检的数值字段）")
+    elif findings.get("P0") or findings.get("P1"):
+        miss.append(f"findings P0={findings.get('P0')} · P1={findings.get('P1')} —— "
+                    "基线 B §10A 要求两者均为 0")
+    return miss
+
+
 def _root(argv) -> str:
     p = (argv[1] if len(argv) > 1 else None) or os.environ.get("PORTFOLIO_ROOT")
     if not p or not os.path.isdir(p):
@@ -88,6 +195,12 @@ def main() -> int:
     if solo and rec.get(MARKER) is not False:
         bad.append(f"M-1: G6A-06 = {RT_SOLO} 但 {MARKER} 不是显式 false"
                    f"（实测 {rec.get(MARKER)!r}）—— 该事实须落库，不得省略")
+
+    # ── M-6：ADR-026 完整结构 ──
+    if solo:
+        persons = baseline_natural_persons(root)
+        for problem in attestation_missing(rec, persons):
+            bad.append("M-6: " + problem)
 
     pkg_p = os.path.join(root, "Gate6-验收包.md")
     pkg = ""
@@ -144,6 +257,7 @@ def main() -> int:
     else:
         print(f"✅ G6A-06 = {RT_SOLO}：M-1 记录标记为 false · "
               f"M-2 验收包首屏含标记 · "
+              f"M-6 ADR-026 结构条件齐备 · "
               f"M-3 **检查派生产物 {n_derived} 份**"
               + ("（**为 0** —— 签署前 gate-records/G6*.json 尚不存在，"
                  "本判据此刻空转，签署后须复跑）" if n_derived == 0 else "，全部携带标记"))
