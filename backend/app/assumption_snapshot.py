@@ -179,6 +179,9 @@ class AssumptionSnapshot:
     _sha256）**不是公开构造入参** —— `init=False`，构造函数只接受
     snapshot_id/version；正文与内部状态只能由 build() 从验证过的 APPROVED
     事件派生。
+
+    OI-PF-206：批准假设键全局唯一 —— 同一假设键来自两个或以上不同批准
+    proposal 即 E-G3-13-012 失败关闭并置永久失效，快照不得携带冲突值。
     """
     snapshot_id: str
     version: int = 1
@@ -199,6 +202,13 @@ class AssumptionSnapshot:
         任何 build 前被直接预置/篡改的内部字段（approved 非空、_invalidated
         或 _sha256 已置位）→ 失败关闭 E-G3-13-011，绝不保留或静默清空后继续
         —— 未批准正文不得借 build 洗白进入计算。
+
+        OI-PF-206：对**所有验证过的**批准 payload 的假设键做全局唯一性检查
+        —— 先在临时结构完成验证，再整体提交进正文。同一假设键来自两个或以上
+        不同批准 proposal → 失败关闭 E-G3-13-012（错误点名冲突键与 proposal
+        id，不依赖事件顺序选胜者）；冲突快照置为永久失效态，**不把部分批准
+        正文留在 snapshot**，sha256/approved_payloads/ResearchContext.values
+        均不得返回冲突值（无静默清空后继续、无自动 supersede）。
         """
         if self._frozen:
             raise AssumptionError("E-G3-13-008: 快照已冻结")
@@ -207,6 +217,9 @@ class AssumptionSnapshot:
                 "E-G3-13-011: 快照正文/内部状态在 build 前已被预置污染"
                 "（OI-PF-201）—— approved/_invalidated/_sha256 只允许由 "
                 "build() 从 APPROVED 事件派生，直接写入即失败关闭")
+        # OI-PF-206：先在临时结构完成验证 —— 任何失败都不把部分批准正文
+        # 提交进 self.approved。
+        pending: Dict[str, dict] = {}
         for ev in registry.events:
             if ev.decision != APPROVED:
                 continue
@@ -224,7 +237,26 @@ class AssumptionSnapshot:
             if current != ev.payload_sha256:
                 self._invalidated = True
                 continue
-            self.approved[p.proposal_id] = copy.deepcopy(p.payload)
+            pending[p.proposal_id] = copy.deepcopy(p.payload)
+        # OI-PF-206：假设键全局唯一性 —— 不同批准 proposal 不得携带同一假设键。
+        owners: Dict[str, List[str]] = {}
+        for pid, payload in pending.items():
+            for key in payload:
+                owners.setdefault(key, []).append(pid)
+        conflicts = {k: sorted(ids) for k, ids in owners.items()
+                     if len(ids) > 1}
+        if conflicts:
+            # 冲突快照永久失效：不得进入计算、不得选择胜者（键与 proposal id
+            # 排序输出，错误与事件顺序无关）。
+            self._frozen = True
+            self._invalidated = True
+            detail = "；".join(
+                f"{key}←{ids}" for key, ids in sorted(conflicts.items()))
+            raise AssumptionError(
+                "E-G3-13-012: 批准假设键冲突（OI-PF-206）—— 同一假设键来自"
+                "多个不同批准 proposal，不得按事件顺序选择胜者："
+                f"{detail}；快照已置为永久失效，不得进入计算")
+        self.approved.update(pending)
         self._frozen = True
         self._sha256 = self._body_hash()
         return self

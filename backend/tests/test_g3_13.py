@@ -204,5 +204,104 @@ class TestSnapshotPreBuildContaminationFailClosed(unittest.TestCase):
                          .approved_payloads(), {})
 
 
+class TestApprovedKeyCollisionFailClosed(unittest.TestCase):
+    """OI-PF-206：批准假设键全局唯一性。
+
+    原失败载荷：两个独立 APPROVED proposal 携带同一假设键（如 A-1 与 A-2
+    都批准 {"growth": ...}），build 把两项都收进 approved，ResearchContext.
+    values() 按事件顺序静默采用最后写入值 —— last-write-wins 且能直接改变
+    估值输入。本类证明：冲突 build 必须 E-G3-13-012 失败关闭、快照永久失效、
+    不把部分批准正文留在 snapshot，且错误与批准顺序无关。
+    """
+
+    def _conflict_registry(self, order):
+        """批准顺序可变的冲突注册表：A-1 与 A-2 均批准同键 growth。"""
+        reg = AssumptionRegistry()
+        p1 = AssumptionProposal("A-1", {"growth": "0.05"}, proposed_by="L8")
+        p2 = AssumptionProposal("A-2", {"growth": "0.20"}, proposed_by="L8")
+        reg.propose(p1)
+        reg.propose(p2)
+        for i, pid in enumerate(order):
+            reg.decide(pid, APPROVED, "U",
+                       f"2026-08-12T12:00:0{i}Z", "APPROVE")
+        return reg
+
+    def test_conflicting_approved_keys_fail_closed(self):
+        """同一假设键来自两个不同批准 proposal → build 抛 E-G3-13-012 点名
+        冲突键与 proposal id；快照永久失效且不残留部分批准正文；
+        sha256/approved_payloads 均拒绝。"""
+        snap = AssumptionSnapshot("SNAP-CONFLICT")
+        with self.assertRaises(AssumptionError) as cm:
+            snap.build(self._conflict_registry(["A-1", "A-2"]))
+        msg = str(cm.exception)
+        self.assertIn("E-G3-13-012", msg, "冲突必须用新稳定错误码失败关闭")
+        self.assertIn("growth", msg, "错误必须点名冲突键")
+        self.assertIn("A-1", msg, "错误必须点名冲突 proposal id")
+        self.assertIn("A-2", msg, "错误必须点名冲突 proposal id")
+        self.assertTrue(snap.invalidated, "冲突快照必须置为永久失效态")
+        self.assertEqual(snap.approved, {},
+                         "冲突时不得把部分批准正文留在 snapshot")
+        with self.assertRaises(PayloadChanged):
+            snap.sha256
+        with self.assertRaises(PayloadChanged):
+            snap.approved_payloads()
+
+    def test_conflicting_approved_keys_order_reversal_same_error(self):
+        """加入顺序反转变异：两种批准顺序都稳定拒绝同一错误码 E-G3-13-012，
+        且错误文本逐字一致 —— 证明不再 last-write-wins（不得选胜者）。"""
+        err_a = err_b = None
+        snap_a = AssumptionSnapshot("SNAP-A")
+        snap_b = AssumptionSnapshot("SNAP-B")
+        with self.assertRaises(AssumptionError) as cm:
+            snap_a.build(self._conflict_registry(["A-1", "A-2"]))
+        err_a = str(cm.exception)
+        with self.assertRaises(AssumptionError) as cm:
+            snap_b.build(self._conflict_registry(["A-2", "A-1"]))
+        err_b = str(cm.exception)
+        self.assertIn("E-G3-13-012", err_a)
+        self.assertIn("E-G3-13-012", err_b)
+        self.assertEqual(err_a, err_b,
+                         "冲突错误不得随批准顺序变化（无事件顺序选胜者）")
+        self.assertTrue(snap_a.invalidated)
+        self.assertTrue(snap_b.invalidated)
+
+    def test_conflicting_keys_with_rejected_sibling_still_fails(self):
+        """同键冲突 + 不同键的拒绝项：拒绝项不进入计算，不能“救援”冲突
+        —— 仍 E-G3-13-012 失败关闭（拒绝项/冲突判定互不影响）。"""
+        reg = AssumptionRegistry()
+        p1 = AssumptionProposal("A-1", {"growth": "0.05"}, proposed_by="L8")
+        p2 = AssumptionProposal("A-2", {"growth": "0.20"}, proposed_by="L8")
+        p3 = AssumptionProposal("A-3", {"wacc": "0.09"}, proposed_by="L8")
+        reg.propose(p1)
+        reg.propose(p2)
+        reg.propose(p3)
+        reg.decide("A-1", APPROVED, "U", "2026-08-12T12:00:00Z", "APPROVE")
+        reg.decide("A-3", REJECTED, "U", "2026-08-12T12:00:01Z", "REJECT",
+                   rejection_reason="缺证据")
+        reg.decide("A-2", APPROVED, "U", "2026-08-12T12:00:02Z", "APPROVE")
+        snap = AssumptionSnapshot("SNAP-C")
+        with self.assertRaises(AssumptionError) as cm:
+            snap.build(reg)
+        self.assertIn("E-G3-13-012", str(cm.exception))
+        self.assertTrue(snap.invalidated)
+
+    def test_multiple_approved_distinct_keys_ok(self):
+        """不同键的多个批准 proposal（无冲突）→ 正常构建、不失效、正文完整。
+        唯一性检查只拦同键，不误伤不同键的多项批准。"""
+        reg = AssumptionRegistry()
+        p1 = AssumptionProposal("A-1", {"growth": "0.08"}, proposed_by="L8")
+        p2 = AssumptionProposal("A-2", {"wacc": "0.09"}, proposed_by="L8")
+        reg.propose(p1)
+        reg.propose(p2)
+        reg.decide("A-1", APPROVED, "U", "2026-08-12T12:00:00Z", "APPROVE")
+        reg.decide("A-2", APPROVED, "U", "2026-08-12T12:00:01Z", "APPROVE")
+        snap = AssumptionSnapshot("SNAP-OK").build(reg)
+        self.assertFalse(snap.invalidated)
+        self.assertEqual(snap.approved_payloads(),
+                         {"A-1": {"growth": "0.08"},
+                          "A-2": {"wacc": "0.09"}})
+        self.assertRegex(snap.sha256, r"^[0-9a-f]{64}$")
+
+
 if __name__ == "__main__":
     unittest.main()

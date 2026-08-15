@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0.0",
+  "title": "G6A-06 final candidate bundle root",
+  "description": "最终候选根对象；绑定冻结输入、实际代码 commit/tree 与 11 项可重载产品正文哈希。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "run_id",
+    "source_commit",
+    "source_tree",
+    "contract",
+    "scope",
+    "as_of",
+    "products",
+    "product_hashes",
+    "approved_snapshot",
+    "frozen_inputs_hash"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "kind": {"const": "candidate"},
+    "run_id": {"type": "string", "minLength": 1},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "source_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "contract": {"type": "string", "minLength": 1},
+    "scope": {"type": "string", "minLength": 1},
+    "as_of": {"type": "string", "minLength": 1},
+    "products": {"type": "array", "items": {"type": "string"}},
+    "product_hashes": {"type": "object"},
+    "approved_snapshot": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "frozen_inputs_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}

@@ -495,31 +495,42 @@ class TestCandidateFreezeAndInvalidation(unittest.TestCase):
         后冻结输入哈希与候选身份都变化。
         """
         with tempfile.TemporaryDirectory() as td:
-            store = ArtifactStore(td)
-            ctx = _ctx()
-            c1 = freeze_candidate_from_recompute(store, ctx, "same-run",
-                                                 recompute_all(ctx))
-            self.assertIn("frozen_inputs_hash", c1.candidate,
-                          "候选必须绑定规范冻结输入哈希（OI-PF-196）")
-            self.assertRegex(c1.candidate["frozen_inputs_hash"],
-                             r"^[0-9a-f]{64}$")
-            ctx2 = _ctx(approve=["growth"])
-            c2 = freeze_candidate_from_recompute(store, ctx2, "same-run",
-                                                 recompute_all(ctx2))
-            self.assertEqual(c1.candidate["run_id"], c2.candidate["run_id"],
-                             "同一 run_id —— 候选变化不得来自 run_id")
-            self.assertNotEqual(c1.candidate["frozen_inputs_hash"],
-                                c2.candidate["frozen_inputs_hash"],
-                                "批准假设后冻结输入哈希必须变")
-            self.assertNotEqual(c1.candidate_id, c2.candidate_id,
-                                "批准假设后候选必须变（冻结输入哈希驱动）")
-            # 失效并保留：旧对象仍可读（保留），失效记录落库（失效）
-            inv = invalidate_previous(store, c1.candidate_id,
-                                      c2.candidate_id,
-                                      reason="G6A-05 回算：growth 假设批准")
-            self.assertRegex(inv, r"^[0-9a-f]{64}$")
-            store.load(c1.candidate_id)   # 保留：读时哈希校验通过
-            self.assertIn("approved_snapshot", c2.candidate)
+            from repository import create_repository
+            store = ArtifactStore(os.path.join(td, "lib"))
+            repo = create_repository(os.path.join(td, "inv.sqlite3"))
+            repo.create_all()
+            s = repo.session()
+            try:
+                ctx = _ctx()
+                c1 = freeze_candidate_from_recompute(store, ctx, "same-run",
+                                                     recompute_all(ctx))
+                self.assertIn("frozen_inputs_hash", c1.candidate,
+                              "候选必须绑定规范冻结输入哈希（OI-PF-196）")
+                self.assertRegex(c1.candidate["frozen_inputs_hash"],
+                                 r"^[0-9a-f]{64}$")
+                self.assertEqual(c1.candidate["kind"], "candidate",
+                                 "候选须携带 G4 candidate schema 的 kind 判别")
+                ctx2 = _ctx(approve=["growth"])
+                c2 = freeze_candidate_from_recompute(store, ctx2, "same-run",
+                                                     recompute_all(ctx2))
+                self.assertEqual(c1.candidate["run_id"], c2.candidate["run_id"],
+                                 "同一 run_id —— 候选变化不得来自 run_id")
+                self.assertNotEqual(c1.candidate["frozen_inputs_hash"],
+                                    c2.candidate["frozen_inputs_hash"],
+                                    "批准假设后冻结输入哈希必须变")
+                self.assertNotEqual(c1.candidate_id, c2.candidate_id,
+                                    "批准假设后候选必须变（冻结输入哈希驱动）")
+                # 失效并保留：旧对象仍可读（保留），失效记录落库（失效）
+                inv = invalidate_previous(store, repo, c1.candidate_id,
+                                          c2.candidate_id,
+                                          reason="G6A-05 回算：growth 假设批准",
+                                          writer="L7_freeze")
+                self.assertRegex(inv, r"^[0-9a-f]{64}$")
+                store.load(c1.candidate_id)   # 保留：读时哈希校验通过
+                self.assertIn("approved_snapshot", c2.candidate)
+            finally:
+                s.close()
+                repo.engine.dispose()
 
     def test_frozen_candidate_idempotent_same_inputs_same_run(self):
         """OI-PF-196：同一完整 ctx + 同一 run_id + 同一 recompute 重复冻结
@@ -876,12 +887,24 @@ class TestCandidateFreezeAndInvalidation(unittest.TestCase):
                              "不可序列化输入失败关闭后不得产生任何 candidate")
 
     def test_invalidate_unknown_candidate_fails(self):
-        """失效记录引用不存在的旧候选 → 拒绝（保留无从谈起）。"""
+        """失效记录引用不存在的旧候选 → 拒绝（保留无从谈起，OI-PF-204）。"""
+        from repository import create_repository
         with tempfile.TemporaryDirectory() as td:
-            store = ArtifactStore(td)
-            with self.assertRaises(Exception) as ctx:
-                invalidate_previous(store, "0" * 64, "1" * 64, reason="x")
-            self.assertIn("E-G6A-05-002", str(ctx.exception))
+            store = ArtifactStore(os.path.join(td, "lib"))
+            repo = create_repository(os.path.join(td, "inv.sqlite3"))
+            repo.create_all()
+            s = repo.session()
+            try:
+                with self.assertRaises(RecomputeError) as ctx:
+                    invalidate_previous(store, repo, "0" * 64, "1" * 64,
+                                        reason="x", writer="L7_freeze")
+                self.assertIn("E-G6A-05-002", str(ctx.exception))
+                from repository import CandidateInvalidation
+                self.assertEqual(s.query(CandidateInvalidation).count(), 0,
+                                 "失败关闭不得写失效权威查询面")
+            finally:
+                s.close()
+                repo.engine.dispose()
 
 
 class TestSnapshotIntegrityFailClosed(unittest.TestCase):
@@ -1119,6 +1142,99 @@ class TestSnapshotIntegrityFailClosed(unittest.TestCase):
                           "未批准预置快照 freeze 必须失败关闭")
             self.assertEqual(_store_object_count(store), before,
                              "未批准预置快照不得新增任何 candidate 对象")
+
+
+class TestApprovedKeyCollisionCannotEnterCalc(unittest.TestCase):
+    """OI-PF-206：冲突批准快照不得进入 recompute/candidate。
+
+    原失败载荷：两个独立 APPROVED proposal 携带同一假设键，AssumptionSnapshot
+    保留两项，ResearchContext.values() 按事件顺序静默采用最后写入值（无冲突
+    错误、无显式 supersedes），能直接改变估值输入。本类证明：冲突快照永久
+    失效，values()/frozen_inputs_hash/freeze 全部失败关闭，ArtifactStore
+    零 candidate 写入，且加入顺序反转不改变拒绝结果。
+    """
+
+    def _conflict_snapshot(self, order, snapshot_id="SNAP-CONFLICT"):
+        """批准顺序可变的冲突快照：A-1 与 A-2 均批准同键 growth。"""
+        from assumption_snapshot import APPROVED, AssumptionError
+        from assumption_snapshot import AssumptionRegistry, AssumptionProposal
+        reg = AssumptionRegistry()
+        p1 = AssumptionProposal("A-1", {"growth": "0.05"}, proposed_by="L8")
+        p2 = AssumptionProposal("A-2", {"growth": "0.20"}, proposed_by="L8")
+        reg.propose(p1)
+        reg.propose(p2)
+        for i, pid in enumerate(order):
+            reg.decide(pid, APPROVED, "U",
+                       f"2026-08-12T12:00:0{i}Z", "APPROVE")
+        snap = AssumptionSnapshot(snapshot_id)
+        with self.assertRaises(AssumptionError) as cm:
+            snap.build(reg)
+        self.assertIn("E-G3-13-012", str(cm.exception))
+        return snap
+
+    def test_conflict_snapshot_cannot_enter_values_recompute_or_candidate(
+            self):
+        """冲突快照放进 ResearchContext：values() 拒绝、frozen_inputs_hash 转
+        RecomputeError E-G6A-05-003、freeze 失败关闭且**零 candidate 写入**
+        （对象库原计数证明）—— 不得用任一冲突键参与估值。"""
+        from assumption_snapshot import PayloadChanged
+        snap = self._conflict_snapshot(["A-1", "A-2"])
+        self.assertTrue(snap.invalidated, "冲突快照必须为永久失效态")
+        ctx = _ctx(approved=snap)
+        with self.assertRaises(PayloadChanged):
+            ctx.values()   # 冲突值不得出现在任何取值路径（无 last-write-wins）
+        with self.assertRaises(RecomputeError) as cm:
+            frozen_inputs_hash(ctx)
+        self.assertIn("E-G6A-05-003", str(cm.exception),
+                      "冲突快照冻结输入哈希必须失败关闭")
+        with self.assertRaises(RecomputeError) as cm2:
+            recompute_all(ctx)
+        self.assertIn("E-G6A-05-003", str(cm2.exception))
+        r = recompute_all(_ctx(approve=["growth"]))   # 健康回算结果
+        with tempfile.TemporaryDirectory() as td:
+            store = ArtifactStore(td)
+            before = _store_object_count(store)
+            with self.assertRaises(RecomputeError) as cm3:
+                freeze_candidate_from_recompute(store, ctx, "same-run", r)
+            self.assertIn("E-G6A-05-003", str(cm3.exception),
+                          "冲突快照 freeze 必须失败关闭")
+            self.assertEqual(
+                _store_object_count(store), before,
+                "冲突快照不得新增任何 candidate 对象（ArtifactStore 零写入）")
+
+    def test_conflict_order_reversal_no_last_write_wins(self):
+        """加入顺序反转变异：两种批准顺序都稳定拒绝同一错误码 E-G3-13-012，
+        且两个 ResearchContext 的 values() 都拒绝 —— 证明不再 last-write-wins
+        （没有一种顺序能“让某键值进入计算”）。"""
+        from assumption_snapshot import PayloadChanged
+        err_a = err_b = None
+        with self.assertRaises(RecomputeError) as cm:
+            frozen_inputs_hash(_ctx(approved=self._conflict_snapshot(
+                ["A-1", "A-2"], "SNAP-A")))
+        err_a = str(cm.exception)
+        with self.assertRaises(RecomputeError) as cm:
+            frozen_inputs_hash(_ctx(approved=self._conflict_snapshot(
+                ["A-2", "A-1"], "SNAP-B")))
+        err_b = str(cm.exception)
+        self.assertIn("E-G6A-05-003", err_a)
+        self.assertIn("E-G6A-05-003", err_b)
+        for order in (["A-1", "A-2"], ["A-2", "A-1"]):
+            with self.subTest(order=order):
+                ctx = _ctx(approved=self._conflict_snapshot(order))
+                with self.assertRaises(PayloadChanged):
+                    ctx.values()   # 两种顺序都拒绝，无一成为“胜者”
+
+    def test_conflict_snapshot_approved_body_not_returned(self):
+        """冲突快照正文不得可读：approved_payloads 与 sha256 均拒绝（无冲突
+        值可返回），冲突后再次 build 也不得重启（永久失效）。"""
+        from assumption_snapshot import PayloadChanged
+        snap = self._conflict_snapshot(["A-1", "A-2"])
+        self.assertEqual(snap.approved, {},
+                         "冲突不得把部分批准正文留在 snapshot")
+        for accessor in (lambda: snap.sha256, snap.approved_payloads):
+            with self.assertRaises(PayloadChanged) as cm:
+                accessor()
+            self.assertIn("E-G3-13-010", str(cm.exception))
 
 
 if __name__ == "__main__":
