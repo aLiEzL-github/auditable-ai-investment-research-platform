@@ -36,7 +36,7 @@ class TestAuditGates(unittest.TestCase):
     def _manifest(self, **kw):
         return fx.minimal_closure(self.store, self.key, **kw)
 
-    # ── 七门全 PASS → eligible ─────────────────────────────────────
+    # ── 7 实质门 + coverage 全 PASS → eligible ─────────────────────
     def test_all_gates_pass(self):
         m = self._manifest()
         a = audit_candidate(self.store, m)
@@ -47,8 +47,9 @@ class TestAuditGates(unittest.TestCase):
         self.assertEqual(a.gates["calculation"], "PASS")
         self.assertEqual(a.gates["rights"], "PASS")
         self.assertEqual(a.gates["security"], "PASS")
-        self.assertTrue(a.gates["coverage"].startswith("PASS"),
-                        "覆盖门须报适用门数")
+        self.assertEqual(a.gates["open_items"], "PASS")
+        self.assertEqual(a.gates["coverage"], "PASS(7 门适用)",
+                         "覆盖门须准确报适用门数（7 个实质门，总 8 门）")
 
     # ── materially critical Claim 缺证据边 → 不 eligible ───────────
     def test_critical_claim_gap_blocks(self):
@@ -87,6 +88,50 @@ class TestAuditGates(unittest.TestCase):
         a = audit_candidate(self.store, m)
         self.assertFalse(a.release_eligible)
         self.assertEqual(a.gates["calculation"], "FAIL")
+
+    # ── OI-PF-193：未关材料性 OpenItem 进入真实审计门 ──────────────
+    def test_open_material_item_fails_audit_gate(self):
+        """audit_candidate 必须执行 audit_open_items：OPEN+material → 拒绝。"""
+        m = self._manifest(open_item_status="OPEN", open_item_material=True)
+        a = audit_candidate(self.store, m)
+        self.assertFalse(a.release_eligible, "未关材料性开放项须使审计 FAIL")
+        self.assertEqual(a.gates["open_items"], "FAIL",
+                         "可机检 gate/失败列表须显式 FAIL（不得静默 PASS）")
+        self.assertTrue(any("E-G4-07-005" in f for f in a.failures),
+                        "failures 须含 E-G4-07-005")
+
+    def test_non_material_open_item_does_not_block_audit(self):
+        """防过度修复：OPEN 但 material=False 的非材料性开放项不阻断审计。"""
+        m = self._manifest(open_item_status="OPEN", open_item_material=False)
+        a = audit_candidate(self.store, m)
+        self.assertTrue(a.release_eligible, a.failures)
+        self.assertEqual(a.gates["open_items"], "PASS")
+
+    # ── OI-PF-198：畸形 open_item 使审计门显式 FAIL（不得静默跳过）──
+    def test_malformed_open_item_fails_audit_gate(self):
+        """内容寻址正确的 b"not-json" 以 kind=open_item 接入闭包 → 审计 FAIL。
+
+        原实现 `except ValueError: continue` 把它静默跳过，审计报 eligible、
+        open_items=PASS。现须 open_items=FAIL 且 failures 含 E-G4-07-007。
+        """
+        m = self._manifest()
+        old_oi = next(oid for oid, meta in m["objects"].items()
+                      if meta.get("kind") == "open_item")
+        notjson = self.store.store("open_item", b"not-json")
+        m["objects"][notjson] = {"kind": "open_item", "refs": []}
+        del m["objects"][old_oi]
+        cand = m["subject_root"]
+        m["objects"][cand] = dict(
+            m["objects"][cand],
+            refs=[notjson if r == old_oi else r
+                  for r in m["objects"][cand]["refs"]])
+        m["id"] = fx.content_id(m)
+        a = audit_candidate(self.store, m)
+        self.assertFalse(a.release_eligible, "畸形开放项须使审计 FAIL")
+        self.assertEqual(a.gates["open_items"], "FAIL",
+                         "可机检 gate 须显式 FAIL（不得静默 PASS）")
+        self.assertTrue(any("E-G4-07-007" in f for f in a.failures),
+                        "failures 须含 E-G4-07-007")
 
 
 class TestNbsAttribution(unittest.TestCase):

@@ -17,6 +17,7 @@
   · AssumptionSnapshot：不可变 —— 仅含已批准项；payload_hash 绑定每个
     批准项；approval 的 payload_hash 重算不符 → 快照失效（INVALIDATED）
 """
+import copy
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -181,29 +182,73 @@ class AssumptionSnapshot:
     _sha256: Optional[str] = None
 
     def build(self, registry: AssumptionRegistry) -> "AssumptionSnapshot":
-        """从批准事件构建：拒绝项不进入计算。"""
+        """从批准事件构建：拒绝项不进入计算。
+
+        OI-PF-199：批准 payload 以**可靠深拷贝**进入快照正文 —— 构建后
+        原 proposal 嵌套 payload 的变化不得反向漂移快照正文（防浅拷贝别名）。
+        """
         if self._frozen:
             raise AssumptionError("E-G3-13-008: 快照已冻结")
         for ev in registry.events:
             if ev.decision != APPROVED:
                 continue
             p = registry.proposals[ev.proposal_id]
-            # 批准 payload 任一字节变化 → 失效
-            if payload_hash(p.payload) != ev.payload_sha256:
+            # 批准 payload 任一字节变化 → 失效。G6-RT-FIX-04-R2：
+            # build 时若批准后 payload 漂移为**不可 JSON 序列化**值（如注入
+            # set），payload_hash 会抛裸 TypeError —— 与可序列化漂移同语义
+            # 失败关闭：置单向失效态、不把坏 payload 纳入正文，交由
+            # sha256/approved_payloads 统一抛 PayloadChanged E-G3-13-010。
+            try:
+                current = payload_hash(p.payload)
+            except (TypeError, ValueError):
                 self._invalidated = True
                 continue
-            self.approved[p.proposal_id] = dict(p.payload)
+            if current != ev.payload_sha256:
+                self._invalidated = True
+                continue
+            self.approved[p.proposal_id] = copy.deepcopy(p.payload)
         self._frozen = True
+        self._sha256 = self._body_hash()
+        return self
+
+    def _body_hash(self) -> str:
+        """正文当前内容的 sha256（OI-PF-199 完整性重算的真源）。"""
         blob = {"snapshot_id": self.snapshot_id, "version": self.version,
                 "approved": self.approved}
-        self._sha256 = hashlib.sha256(
+        return hashlib.sha256(
             json.dumps(blob, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-        return self
+
+    def _assert_integrity(self) -> None:
+        """OI-PF-199：正文漂移失败关闭 —— 每次读取 sha256 / approved_payloads
+        前重算正文哈希并与冻结值比对；不符（含直接篡改 snap.approved）→
+        快照失效 + 抛错，绝不静默返回缓存值。
+
+        G6-RT-FIX-04（OI-PF-199 返工）：`_invalidated` 是**单向永久失败态**
+        —— 先拒绝任何已失效快照，正文随后恢复也不得重新启用；`_body_hash()`
+        遇非 JSON/无法哈希正文同样置失效并转 PayloadChanged（保留异常链），
+        不泄漏裸 TypeError/ValueError。"""
+        if not self._frozen:
+            raise AssumptionError("E-G3-13-009: 未冻结快照")
+        if self._invalidated:
+            raise PayloadChanged(
+                "E-G3-13-010: 批准快照已失效（OI-PF-199）—— 单向永久失败态，"
+                "正文恢复不得重新启用，不得进入计算")
+        try:
+            current = self._body_hash()
+        except (TypeError, ValueError) as exc:
+            self._invalidated = True
+            raise PayloadChanged(
+                "E-G3-13-010: 批准快照正文无法哈希（OI-PF-199）—— 快照失效，"
+                "不得进入计算") from exc
+        if current != self._sha256:
+            self._invalidated = True
+            raise PayloadChanged(
+                "E-G3-13-010: 批准快照正文被篡改（OI-PF-199）—— 哈希不符，"
+                "快照失效，不得进入计算")
 
     @property
     def sha256(self) -> str:
-        if not self._frozen:
-            raise AssumptionError("E-G3-13-009: 未冻结快照无哈希")
+        self._assert_integrity()
         return self._sha256
 
     @property
@@ -211,10 +256,13 @@ class AssumptionSnapshot:
         return self._invalidated
 
     def approved_payloads(self) -> Dict[str, dict]:
-        """进入计算的唯一入口：拒绝项不在此；失效快照抛错。"""
+        """进入计算的唯一入口：拒绝项不在此；正文漂移/失效快照抛错。
+
+        OI-PF-199：返回**可靠深拷贝** —— 调用者修改返回值不得反向改变
+        快照正文（防返回值别名）；读取前先重算正文完整性。
+        """
         if self._invalidated:
             raise PayloadChanged(
                 "E-G3-13-010: 批准 payload 已变化 —— 快照失效，不得进入计算")
-        if not self._frozen:
-            raise AssumptionError("E-G3-13-009: 未冻结快照")
-        return dict(self.approved)
+        self._assert_integrity()
+        return copy.deepcopy(self.approved)

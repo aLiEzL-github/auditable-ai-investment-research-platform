@@ -6,6 +6,7 @@
 D-1：漏登记一个对象须 FAIL；须报出闭包内对象数（规则 ⑨）。
 D-2：构造两个候选 root 须 FAIL 而非任选其一。
 """
+import json
 import os
 import shutil
 import sys
@@ -121,6 +122,128 @@ class TestClosure(unittest.TestCase):
                                 open_item_status="CLOSED",
                                 open_item_material=False)
         self.assertIsNone(audit_open_items(self.store, m2))
+
+    # ── OI-PF-198：畸形 open_item 失败关闭（不得 continue 静默跳过）──
+    def _closure_with_open_item(self, body) -> dict:
+        """把任意 open_item 载荷（dict 或原始字节）接入完整闭包。"""
+        m = fx.minimal_closure(self.store, self.key)
+        old_oi = next(oid for oid, meta in m["objects"].items()
+                      if meta.get("kind") == "open_item")
+        payload = (body if isinstance(body, bytes)
+                   else json.dumps(body, ensure_ascii=False).encode("utf-8"))
+        digest = self.store.store("open_item", payload)   # 内容寻址正确
+        m["objects"][digest] = {"kind": "open_item", "refs": []}
+        del m["objects"][old_oi]
+        cand = m["subject_root"]
+        m["objects"][cand] = dict(
+            m["objects"][cand],
+            refs=[digest if r == old_oi else r
+                  for r in m["objects"][cand]["refs"]])
+        m["id"] = fx.content_id(m)
+        return m
+
+    def test_open_item_not_json_fails_closed(self):
+        """内容寻址正确的 b"not-json"：JSON 解析失败 → E-G4-07-007。"""
+        m = self._closure_with_open_item(b"not-json")
+        with self.assertRaises(ValueError) as cm:
+            audit_open_items(self.store, m)
+        self.assertIn("E-G4-07-007", str(cm.exception))
+
+    def test_open_item_json_list_fails_closed(self):
+        """JSON 非对象（数组）→ E-G4-07-007。"""
+        m = self._closure_with_open_item([1, 2, 3])
+        with self.assertRaises(ValueError) as cm:
+            audit_open_items(self.store, m)
+        self.assertIn("E-G4-07-007", str(cm.exception))
+
+    def test_open_item_wrong_body_kind_fails_closed(self):
+        """body.kind != open_item → E-G4-07-007（body 与登记元数据不符）。"""
+        body = {"schema_version": "1.0.0", "kind": "macro",
+                "open_item_id": "OI-X", "status": "CLOSED", "material": False}
+        m = self._closure_with_open_item(body)
+        with self.assertRaises(ValueError) as cm:
+            audit_open_items(self.store, m)
+        self.assertIn("E-G4-07-007", str(cm.exception))
+
+    def test_open_item_unknown_status_fails_closed(self):
+        """status 不在支持集（OPEN/CLOSED/SUPERSEDED）→ 拒，不默认为 CLOSED。"""
+        body = {"schema_version": "1.0.0", "kind": "open_item",
+                "open_item_id": "OI-X", "status": "IN_REVIEW", "material": False}
+        m = self._closure_with_open_item(body)
+        with self.assertRaises(ValueError) as cm:
+            audit_open_items(self.store, m)
+        self.assertIn("E-G4-07-007", str(cm.exception))
+        self.assertIn("IN_REVIEW", str(cm.exception),
+                      "未知状态不得被当作 CLOSED 放行")
+
+    def test_open_item_material_not_bool_fails_closed(self):
+        """material 非 bool（字符串 "true"）→ E-G4-07-007。"""
+        body = {"schema_version": "1.0.0", "kind": "open_item",
+                "open_item_id": "OI-X", "status": "OPEN", "material": "true"}
+        m = self._closure_with_open_item(body)
+        with self.assertRaises(ValueError) as cm:
+            audit_open_items(self.store, m)
+        self.assertIn("E-G4-07-007", str(cm.exception))
+
+    def test_open_item_missing_open_item_id_fails_closed(self):
+        """open_item_id 缺失/非字符串 → E-G4-07-007（唯一 ID 为真实合同字段）。"""
+        body = {"schema_version": "1.0.0", "kind": "open_item",
+                "status": "CLOSED", "material": False}
+        m = self._closure_with_open_item(body)
+        with self.assertRaises(ValueError) as cm:
+            audit_open_items(self.store, m)
+        self.assertIn("E-G4-07-007", str(cm.exception))
+
+    def test_open_item_legal_statuses_do_not_block(self):
+        """合法 SUPERSEDED/CLOSED（即使 material=True）与 OPEN+material=false 不阻断。"""
+        for status, material in (("SUPERSEDED", True), ("CLOSED", True),
+                                 ("CLOSED", False), ("OPEN", False)):
+            body = {"schema_version": "1.0.0", "kind": "open_item",
+                    "open_item_id": f"OI-{status}", "status": status,
+                    "material": material}
+            m = self._closure_with_open_item(body)
+            self.assertIsNone(audit_open_items(self.store, m),
+                              f"{status}+material={material} 不得阻断")
+
+    # ── OI-PF-198 回归：真实合同 OpenItem.to_dict() 接入完整闭包 ─────
+    def test_real_contract_open_item_wired_into_closure(self):
+        """真实合同 OpenItem(...).to_dict() 正向通过；OPEN+material 仍阻断。
+
+        body = schema_version/kind + OpenItem.to_dict()（唯一 ID = open_item_id，
+        不含假合同的 `id`）。CLOSED 与 OPEN+material=false 使 audit_open_items
+        与 audit_candidate 正向通过；OPEN+material=true 仍阻断（E-G4-07-005）。
+        此测试先断言 keys 含 open_item_id 且不含 id —— 防 fixture 再漂回假合同。
+        """
+        from open_item_registry import OpenItem
+        from publish_engine import audit_candidate
+        for status, material, expect_block in (
+                ("CLOSED", False, False),
+                ("OPEN", False, False),
+                ("OPEN", True, True)):
+            item = OpenItem(open_item_id="OI-REAL-001", description="真实字段",
+                            material=material, owner_role="U-fixture",
+                            status=status)
+            body = {"schema_version": "1.0.0", "kind": "open_item",
+                    **item.to_dict()}
+            keys = set(body.keys())
+            self.assertIn("open_item_id", keys,
+                          "真实合同须含 open_item_id")
+            self.assertNotIn("id", keys,
+                             "真实合同不得定义假 id 字段")
+            m = self._closure_with_open_item(body)
+            if expect_block:
+                with self.assertRaises(ValueError) as cm:
+                    audit_open_items(self.store, m)
+                self.assertIn("E-G4-07-005", str(cm.exception))
+                a = audit_candidate(self.store, m)
+                self.assertFalse(a.release_eligible)
+                self.assertEqual(a.gates["open_items"], "FAIL")
+            else:
+                self.assertIsNone(audit_open_items(self.store, m),
+                                  f"{status}+material={material} 不得阻断")
+                a = audit_candidate(self.store, m)
+                self.assertTrue(a.release_eligible, a.failures)
+                self.assertEqual(a.gates["open_items"], "PASS")
 
 
 class TestSubjectRoot(unittest.TestCase):
