@@ -173,22 +173,40 @@ class AssumptionRegistry:
 
 @dataclass
 class AssumptionSnapshot:
-    """不可变快照：仅含已批准项；approval 的 payload 重算不符即失效。"""
+    """不可变快照：仅含已批准项；approval 的 payload 重算不符即失效。
+
+    OI-PF-201：内部批准正文（approved）与状态字段（_frozen/_invalidated/
+    _sha256）**不是公开构造入参** —— `init=False`，构造函数只接受
+    snapshot_id/version；正文与内部状态只能由 build() 从验证过的 APPROVED
+    事件派生。
+    """
     snapshot_id: str
     version: int = 1
-    approved: Dict[str, dict] = field(default_factory=dict)  # proposal_id -> payload
-    _frozen: bool = False
-    _invalidated: bool = False
-    _sha256: Optional[str] = None
+    approved: Dict[str, dict] = field(init=False, repr=False,
+                                      default_factory=dict)
+    # proposal_id -> payload
+    _frozen: bool = field(init=False, repr=False, default=False)
+    _invalidated: bool = field(init=False, repr=False, default=False)
+    _sha256: Optional[str] = field(init=False, repr=False, default=None)
 
     def build(self, registry: AssumptionRegistry) -> "AssumptionSnapshot":
         """从批准事件构建：拒绝项不进入计算。
 
         OI-PF-199：批准 payload 以**可靠深拷贝**进入快照正文 —— 构建后
         原 proposal 嵌套 payload 的变化不得反向漂移快照正文（防浅拷贝别名）。
+
+        OI-PF-201：正文与内部状态只能由本方法从验证过的 APPROVED 事件派生。
+        任何 build 前被直接预置/篡改的内部字段（approved 非空、_invalidated
+        或 _sha256 已置位）→ 失败关闭 E-G3-13-011，绝不保留或静默清空后继续
+        —— 未批准正文不得借 build 洗白进入计算。
         """
         if self._frozen:
             raise AssumptionError("E-G3-13-008: 快照已冻结")
+        if self.approved or self._invalidated or self._sha256 is not None:
+            raise AssumptionError(
+                "E-G3-13-011: 快照正文/内部状态在 build 前已被预置污染"
+                "（OI-PF-201）—— approved/_invalidated/_sha256 只允许由 "
+                "build() 从 APPROVED 事件派生，直接写入即失败关闭")
         for ev in registry.events:
             if ev.decision != APPROVED:
                 continue

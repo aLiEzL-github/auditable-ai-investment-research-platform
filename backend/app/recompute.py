@@ -36,8 +36,22 @@
      sha256/approved_payloads 及冻结 candidate 前重算正文哈希并与冻结值比对，
      直接篡改 snap.approved 使快照失效并转 RecomputeError E-G6A-05-003；
      正文深拷贝防浅拷贝/返回值别名（见 assumption_snapshot.py）。
-  · 旧候选失效并保留：失效记录（candidate_invalidation）另行落库，
-    旧对象不删除（内容寻址不可变），新候选内容寻址冻结。
+   · 旧候选失效并保留：失效记录（candidate_invalidation）另行落库，
+     旧对象不删除（内容寻址不可变），新候选内容寻址冻结。
+   · OI-PF-200：每个 RecomputeResult 绑定产生它的上下文的规范冻结输入哈希
+     （frozen_inputs_hash）；recompute_all 在生成产物前后各取一次规范哈希并
+     比对，生成期间上下文漂移 → RecomputeError E-G6A-05-004 失败关闭。
+     freeze_candidate_from_recompute 冻结前**独立重算**当前 ResearchContext
+     的规范结果（canonical），并把调用方传入的回算结果逐项与独立重算结果比对
+     —— 调用方提供的绑定字段、products、shas 任一都不作为权威来源（改绑绑定
+     字段的陈旧结果、产物+记录哈希同步篡改都被独立重算比对拒绝）。绑定哈希
+     不一致 E-G6A-05-005 拒绝、键集漂移或产物/哈希与独立重算不符 E-G6A-05-006
+     拒绝；candidate 由独立重算结果组装，其 frozen_inputs_hash/product 数据
+     **仅**来自 canonical —— 均不存储 candidate，不加兼容路径。
+   · OI-PF-200（返工）：写入边界最终一致性校验 —— canonical 独立重算返回后、
+     存储前重算当前上下文规范冻结输入哈希并要求等于 canonical 绑定哈希；任何
+     canonical 返回后的上下文漂移都转 RecomputeError E-G6A-05-007 失败关闭，
+     零 candidate 写入（不携带更早上下文哈希，不组装混合候选）。
 """
 import hashlib
 import json
@@ -519,6 +533,7 @@ def _validate_registry() -> None:
 class RecomputeResult:
     products: Dict[str, dict] = field(default_factory=dict)
     shas: Dict[str, str] = field(default_factory=dict)
+    frozen_inputs_hash: Optional[str] = None
 
     def product_ids(self) -> Tuple[str, ...]:
         return tuple(sorted(self.products))
@@ -534,14 +549,28 @@ def recompute_all(ctx: ResearchContext) -> RecomputeResult:
     变异注入：把 GENERATORS/PRODUCT_DEPS 里的某一项摘掉，本函数在
     **执行前**失败关闭抛 ProductMissing（E-G6A-05-001）—— 不是产出
     少一个产物，而是根本不产出；测试断言抛错且报错点名差集方向与摘掉的项。
+
+    OI-PF-200：RecomputeResult 绑定**产生它的上下文**的规范冻结输入哈希
+    （frozen_inputs_hash）—— 生成产物前先取一次规范哈希（缺失/形态不符的
+    冻结输入在此已失败关闭 E-G6A-05-003），全部产物生成完毕后**再取一次**并
+    比对：任何生成期间对冻结输入的原地篡改（上下文漂移）都转 RecomputeError
+    E-G6A-05-004 失败关闭，绝不把漂移后的结果绑定给候选。
     """
     _validate_registry()
+    _resolve_open_items_policy(ctx)
+    before = frozen_inputs_hash(ctx)
     v = ctx.values()
     res = RecomputeResult()
     for name in PRODUCT_ORDER:
         prod = GENERATORS[name](ctx, v)
         res.products[name] = prod
         res.shas[name] = _prod_sha(prod)
+    after = frozen_inputs_hash(ctx)
+    if before != after:
+        raise RecomputeError(
+            f"E-G6A-05-004: 回算期间冻结输入上下文漂移（生成前 {before} "
+            f"≠ 生成后 {after}）—— 失败关闭，不产出候选绑定")
+    res.frozen_inputs_hash = before
     return res
 
 
@@ -563,6 +592,71 @@ class CandidateFreeze:
     recompute: RecomputeResult
 
 
+def _validate_recompute_binding(recompute: RecomputeResult,
+                                canonical: RecomputeResult) -> None:
+    """OI-PF-200：冻结前把调用方回算结果与**独立重算**的规范结果逐项比对。
+
+    绑定字段（frozen_inputs_hash）、products、shas 都由调用方提供、皆可被
+    改写，单独任何一项都不能证明结果来自当前上下文 —— 唯一权威是**从当前
+    ResearchContext 独立重算**得到的 canonical 结果：
+
+    ① 绑定哈希：recompute 的绑定哈希必须逐字等于独立重算的规范哈希 ——
+       「未绑定/手工构造」「绑定字段缺省」「改绑为当前上下文哈希但产物来自
+       其他上下文（陈旧结果）」一律拒绝 E-G6A-05-005，不存储候选；
+    ② 键集：products/shas 键集必须精确等于生产注册表（= canonical 键集）
+       —— 多出/缺失/漂移都拒 E-G6A-05-006；
+    ③ 产物哈希：每个记录哈希必须等于独立重算的对应产物规范哈希 ——
+       「产物+记录哈希同步篡改（自洽但非规范值）」与「陈旧产物」都在此被拒
+       E-G6A-05-006；
+    ④ 原地篡改：每个记录哈希还必须等于其传入产物自身的规范哈希 ——
+       只改产物不改哈希、或只改哈希不改产物都转 E-G6A-05-006。
+
+    不加兼容路径：任一项不符即拒绝，没有可接受的「旧形态」。
+    """
+    bound = recompute.frozen_inputs_hash
+    if bound != canonical.frozen_inputs_hash:
+        raise RecomputeError(
+            f"E-G6A-05-005: 回算结果绑定哈希 {bound!r} 与当前上下文独立重算"
+            f"规范哈希 {canonical.frozen_inputs_hash} 不一致（回算结果来自"
+            f"不同上下文或改绑字段）—— 拒绝存储候选")
+    keys = set(PRODUCT_ORDER)
+    if set(recompute.products) != keys or set(recompute.shas) != keys:
+        raise RecomputeError(
+            "E-G6A-05-006: 回算结果键集与生产注册表不符（产物/哈希多出或缺失）"
+            "—— 拒绝存储候选")
+    for name in PRODUCT_ORDER:
+        recorded = recompute.shas[name]
+        if recorded != canonical.shas[name]:
+            raise RecomputeError(
+                f"E-G6A-05-006: 记录哈希 {recorded} ≠ 独立重算规范哈希 "
+                f"{canonical.shas[name]}（陈旧产物或产物+记录哈希同步篡改："
+                f"{name}）—— 拒绝存储候选")
+        if recorded != _prod_sha(recompute.products[name]):
+            raise RecomputeError(
+                f"E-G6A-05-006: 记录哈希 {recorded} ≠ 产物规范哈希 "
+                f"{_prod_sha(recompute.products[name])}（产物或哈希被原地"
+                f"篡改：{name}）—— 拒绝存储候选")
+
+
+def _assert_write_boundary(ctx: ResearchContext,
+                           canonical: RecomputeResult) -> None:
+    """OI-PF-200（返工）：写入边界最终一致性校验。
+
+    canonical 独立重算返回后、ArtifactStore.store 之前，重算**当前上下文**的
+    规范冻结输入哈希并要求逐字等于 canonical 绑定哈希 —— 任何在 canonical
+    返回后对冻结输入的原地篡改（候选直接读取上下文的字段 contract/scope/
+    as_of/approved_snapshot 全部取自顶层冻结输入，由本哈希覆盖）都转
+    RecomputeError E-G6A-05-007 失败关闭，**零 candidate 写入**，绝不把
+    「canonical 产物 + 漂移后的候选字段」的混合候选落库。
+    """
+    now = frozen_inputs_hash(ctx)
+    if now != canonical.frozen_inputs_hash:
+        raise RecomputeError(
+            f"E-G6A-05-007: 写入前当前上下文冻结输入哈希 {now} ≠ 独立重算"
+            f"规范哈希 {canonical.frozen_inputs_hash}（canonical 返回后上下文"
+            f"漂移）—— 失败关闭，不写入候选")
+
+
 def freeze_candidate_from_recompute(store: ArtifactStore, ctx: ResearchContext,
                                     run_id: str,
                                     recompute: RecomputeResult) -> CandidateFreeze:
@@ -577,24 +671,42 @@ def freeze_candidate_from_recompute(store: ArtifactStore, ctx: ResearchContext,
     读取 approved.sha256 时重算正文哈希，直接篡改 snap.approved 的载荷在此
     转 RecomputeError E-G6A-05-003，绝不静默接受漂移正文、绝不为已篡改批准
     内容生成 candidate。
+
+    OI-PF-200：冻结前**独立重算**当前 ResearchContext 的规范结果（canonical），
+    并把调用方传入的 recompute 逐项与之比对 —— 绑定哈希不一致 E-G6A-05-005、
+    键集漂移或产物/哈希与独立重算不符 E-G6A-05-006，一律失败关闭且**不存储
+    candidate**；candidate 的 products/product_hashes/frozen_inputs_hash 由
+    独立重算结果组装，调用方提供的绑定字段/产物/哈希不作为权威来源。
+
+    OI-PF-200（返工）：写入边界 —— 存储前经 `_assert_write_boundary` 重算当前
+    上下文规范冻结输入哈希并要求等于 canonical 绑定哈希；canonical 返回后任何
+    上下文漂移转 RecomputeError E-G6A-05-007 失败关闭，零 candidate 写入。
+
+    入口先做形态校验（frozen_inputs_payload，缺 policy/字段形态不符 → 立即
+    E-G6A-05-003 失败关闭，不生成 candidate）；该校验结果不携带进候选 ——
+    候选的 frozen_inputs_hash 与 products/product_hashes 唯一来源是下方独立
+    重算的 canonical。
     """
-    fih = frozen_inputs_hash(ctx)
+    frozen_inputs_payload(ctx)
+    canonical = recompute_all(ctx)
+    _validate_recompute_binding(recompute, canonical)
     candidate = {
         "schema_version": "1.0.0",
         "run_id": run_id,
         "contract": ctx.contract.get("contract_id"),
         "scope": ctx.valuation_inputs.scope,
         "as_of": ctx.valuation_inputs.as_of,
-        "products": recompute.product_ids(),
-        "product_hashes": recompute.shas,
+        "products": canonical.product_ids(),
+        "product_hashes": canonical.shas,
         "approved_snapshot": _frozen_approved_sha256(ctx),
-        "frozen_inputs_hash": fih,
+        "frozen_inputs_hash": canonical.frozen_inputs_hash,
     }
     data = canonical_bytes(candidate)
+    _assert_write_boundary(ctx, canonical)
     store.store(CANDIDATE_KIND, data)
     cid = hashlib.sha256(data).hexdigest()
     return CandidateFreeze(candidate_id=cid, candidate=candidate,
-                           recompute=recompute)
+                           recompute=canonical)
 
 
 def invalidate_previous(store: ArtifactStore, old_candidate_id: str,

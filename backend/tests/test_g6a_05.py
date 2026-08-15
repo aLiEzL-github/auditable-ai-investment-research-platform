@@ -559,17 +559,21 @@ class TestCandidateFreezeAndInvalidation(unittest.TestCase):
                          "批准快照身份须为不可变 sha256")
 
     def test_frozen_inputs_hash_pins_every_top_level_input(self):
-        """OI-PF-196：相同 run_id 且**显式固定同一 recompute/product_hashes**
-        下，逐项扰动各顶层冻结输入 → frozen_inputs_hash 与 candidate_id 必须
-        变化 —— 不靠产品输出变化证明。
+        """OI-PF-196 + OI-PF-200：相同 run_id 下，逐项扰动各顶层冻结输入 →
+        frozen_inputs_hash 与 candidate_id 必须变化 —— 不靠产品输出变化证明。
+
+        每次扰动都**从扰动后的上下文重新全量回算**（OI-PF-200：RecomputeResult
+        绑定产生它的上下文的规范冻结输入哈希，旧测试把一个回算结果配给多个
+        上下文是无效正路径，已修正）；对产品输出不变的扰动，候选身份仍须由
+        绑定哈希驱动变化。
 
         覆盖原失败载荷（macro 增加冻结字段）、formula_specs 同长度换内容、
         valuation_inputs 未消费字段（currency/statuses）、policy 字段，
         以及 contract/facts/assumption_defaults/approved。
         """
         base = _ctx()
-        r = recompute_all(base)
         base_hash = frozen_inputs_hash(base)
+        base_r = recompute_all(base)
         cases = [
             ("contract 增加字段",
              _ctx(contract={"contract_id": "C-600089", "scope": "600089.SH",
@@ -598,25 +602,231 @@ class TestCandidateFreezeAndInvalidation(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as td:
             store = ArtifactStore(td)
-            c_base = freeze_candidate_from_recompute(store, base, "same-run", r)
+            c_base = freeze_candidate_from_recompute(store, base, "same-run",
+                                                     base_r)
             for label, mut in cases:
                 with self.subTest(perturb=label):
                     self.assertNotEqual(frozen_inputs_hash(mut), base_hash,
                                         f"{label} 未改变冻结输入哈希")
-                    c2 = freeze_candidate_from_recompute(store, mut,
-                                                         "same-run", r)
-                    self.assertEqual(c2.candidate["product_hashes"],
-                                     c_base.candidate["product_hashes"],
-                                     "product_hashes 须固定同一 recompute —— "
-                                     "不得变（不靠产品输出变化证明）")
+                    mut_r = recompute_all(mut)
+                    self.assertEqual(
+                        mut_r.frozen_inputs_hash, frozen_inputs_hash(mut),
+                        f"{label}: 回算结果必须绑定产生它的上下文的规范哈希")
+                    c2 = freeze_candidate_from_recompute(store, mut, "same-run",
+                                                         mut_r)
                     self.assertNotEqual(
                         c2.candidate["frozen_inputs_hash"],
                         c_base.candidate["frozen_inputs_hash"],
                         f"{label} 未改变候选内冻结输入哈希")
                     self.assertNotEqual(
                         c2.candidate_id, c_base.candidate_id,
-                        f"{label} 未改变候选身份（run_id 相同、product_hashes"
-                        f" 相同，只能由冻结输入哈希驱动）")
+                        f"{label} 未改变候选身份（run_id 相同，只能由冻结"
+                        f"输入哈希驱动）")
+                    if (c2.candidate["product_hashes"]
+                            == c_base.candidate["product_hashes"]):
+                        self.assertNotEqual(
+                            c2.candidate_id, c_base.candidate_id,
+                            f"{label} 产品输出不变时候选身份仍须由绑定哈希"
+                            f"驱动（不靠产品输出变化证明）")
+
+    def test_freeze_rejects_recompute_from_different_context(self):
+        """OI-PF-200：RecomputeResult 绑定产生它的上下文的规范冻结输入哈希；
+        把另一上下文的回算结果配给当前 ctx → 冻结前拒绝 E-G6A-05-005，
+        不存储 candidate（按对象库原计数证明，双向各一次）。"""
+        ctx_a = _ctx()
+        ctx_b = _ctx(approve=["growth"])
+        r_a = recompute_all(ctx_a)
+        r_b = recompute_all(ctx_b)
+        self.assertEqual(r_a.frozen_inputs_hash, frozen_inputs_hash(ctx_a),
+                         "回算结果必须绑定产生它的上下文的规范哈希")
+        self.assertEqual(r_b.frozen_inputs_hash, frozen_inputs_hash(ctx_b),
+                         "回算结果必须绑定产生它的上下文的规范哈希")
+        self.assertNotEqual(r_a.frozen_inputs_hash, r_b.frozen_inputs_hash,
+                            "不同上下文的绑定哈希必须不同")
+        with tempfile.TemporaryDirectory() as td:
+            store = ArtifactStore(td)
+            c_a = freeze_candidate_from_recompute(store, ctx_a, "same-run", r_a)
+            self.assertTrue(store.exists(c_a.candidate_id),
+                            "同上下文冻结正例必须成功")
+            after_positive = _store_object_count(store)
+            for label, ctx, r in [("ctx_b × r_a", ctx_b, r_a),
+                                  ("ctx_a × r_b", ctx_a, r_b)]:
+                with self.subTest(mispair=label):
+                    with self.assertRaises(RecomputeError) as cm:
+                        freeze_candidate_from_recompute(store, ctx, "same-run",
+                                                        r)
+                    self.assertIn("E-G6A-05-005", str(cm.exception),
+                                  f"{label} 必须拒绝跨上下文回算结果")
+                    self.assertEqual(
+                        _store_object_count(store), after_positive,
+                        f"{label} 拒绝后不得新增任何 candidate 对象")
+
+    def test_freeze_rejects_rebound_result_from_different_context(self):
+        """OI-PF-200：绑定字段可由调用方改写 —— 把 ctx_a 回算结果的
+        frozen_inputs_hash 改绑为当前 ctx_b 的规范哈希后再冻结，独立重算比对
+        必须拒绝（陈旧产物 E-G6A-05-006），不存储 candidate。
+
+        原失败载荷：旧冻结边界只信调用方提供的绑定字段与自洽校验，绑定字段
+        改绑后跨上下文的陈旧结果被当作当前上下文结果接受 —— 绑定字段本身
+        不构成来源证明。"""
+        ctx_a = _ctx()
+        ctx_b = _ctx(approve=["growth"])
+        r_a = recompute_all(ctx_a)
+        self.assertNotEqual(r_a.frozen_inputs_hash, frozen_inputs_hash(ctx_b),
+                            "fixture 前提：两个上下文的规范哈希必须不同")
+        r_a.frozen_inputs_hash = frozen_inputs_hash(ctx_b)   # 改绑绑定字段
+        with tempfile.TemporaryDirectory() as td:
+            store = ArtifactStore(td)
+            before = _store_object_count(store)
+            with self.assertRaises(RecomputeError) as cm:
+                freeze_candidate_from_recompute(store, ctx_b, "same-run", r_a)
+            self.assertIn("E-G6A-05-006", str(cm.exception),
+                          "改绑绑定字段的陈旧结果必须被独立重算比对拒绝")
+            self.assertEqual(_store_object_count(store), before,
+                             "拒绝后不得新增任何 candidate 对象")
+
+    def test_candidate_hash_binds_to_independent_canonical_result(self):
+        """OI-PF-200（返工）健康路径：候选 frozen_inputs_hash 必须逐字等于
+        独立重算 canonical 结果的绑定哈希 —— 不得携带更早/外部上下文哈希。"""
+        ctx = _ctx(approve=["growth"])
+        with tempfile.TemporaryDirectory() as td:
+            store = ArtifactStore(td)
+            canonical = recompute_all(ctx)
+            r = recompute_all(ctx)
+            self.assertEqual(r.frozen_inputs_hash, canonical.frozen_inputs_hash,
+                             "同一上下文的传入结果与独立重算绑定哈希必须一致")
+            c = freeze_candidate_from_recompute(store, ctx, "same-run", r)
+            self.assertEqual(
+                c.candidate["frozen_inputs_hash"], canonical.frozen_inputs_hash,
+                "候选冻结输入哈希必须来自独立重算规范结果")
+            self.assertEqual(
+                c.candidate["frozen_inputs_hash"], c.recompute.frozen_inputs_hash,
+                "候选绑定哈希必须等于候选所依 canonical 的绑定哈希")
+            self.assertTrue(store.exists(c.candidate_id),
+                            "健康路径冻结必须成功")
+
+    def test_freeze_rejects_post_canonical_context_drift(self):
+        """OI-PF-200（返工）：canonical 独立重算**返回后**、写入前上下文漂移
+        → 写入边界最终一致性校验失败关闭 E-G6A-05-007，零 candidate 写入。
+
+        原失败载荷：冻结边界在 canonical 之前取哈希并把该更早哈希带入候选，
+        canonical 返回后上下文漂移没有最终写入边界检查 —— 会落库「canonical
+        产物 + 漂移后候选字段」的混合候选。
+        """
+        import recompute as R
+        real = R.recompute_all
+        ctx = _ctx()
+        with tempfile.TemporaryDirectory() as td:
+            store = ArtifactStore(td)
+            r = real(ctx)
+            c_ok = freeze_candidate_from_recompute(store, ctx, "same-run", r)
+            self.assertTrue(store.exists(c_ok.candidate_id),
+                            "健康冻结正例必须成功")
+            before = _store_object_count(store)
+
+            def _drift_after_canonical(c):
+                res = real(c)                      # 独立重算（漂移前）
+                c.contract["drift"] = "post-canonical"   # canonical 返回后漂移
+                return res
+
+            R.recompute_all = _drift_after_canonical
+            try:
+                with self.assertRaises(RecomputeError) as cm:
+                    freeze_candidate_from_recompute(store, ctx, "same-run", r)
+                self.assertIn("E-G6A-05-007", str(cm.exception),
+                              "canonical 返回后上下文漂移必须写入边界失败关闭")
+            finally:
+                R.recompute_all = real
+            self.assertEqual(_store_object_count(store), before,
+                             "写入边界失败关闭不得新增任何 candidate 对象")
+
+    def test_context_drift_during_generation_fails_closed(self):
+        """OI-PF-200：回算期间上下文漂移（生成前后规范冻结输入哈希不一致）
+        → recompute_all 失败关闭抛 RecomputeError E-G6A-05-004，不产出结果。
+
+        变异注入：临时登记一个在生成时原地篡改 ctx.contract 的探针生成器，
+        使「生成后」规范哈希 ≠「生成前」规范哈希 —— 漂移必须被拒绝。
+        """
+        import recompute as R
+        state = _registry_state()
+        victim = "drift_probe"
+        try:
+            def _drift_gen(ctx, v):
+                ctx.contract["drift"] = "x"
+                return {"drift": True}
+
+            R.GENERATORS[victim] = _drift_gen
+            R.PRODUCT_DEPS[victim] = ()
+            R.PRODUCT_ORDER = tuple(state[0]) + (victim,)
+            self.assertIn(victim, R.PRODUCT_ORDER, "变异未生效")
+            with self.assertRaises(RecomputeError) as cm:
+                recompute_all(_ctx())
+            self.assertIn("E-G6A-05-004", str(cm.exception),
+                          "生成期间上下文漂移必须失败关闭")
+        finally:
+            _restore_registry(state)
+        self.assertIs(R.PRODUCT_ORDER, state[0], "PRODUCT_ORDER 对象身份未恢复")
+        self.assertIs(R.PRODUCT_DEPS, state[1], "PRODUCT_DEPS 身份未恢复（重绑定泄漏）")
+        self.assertIs(R.GENERATORS, state[2], "GENERATORS 身份未恢复（重绑定泄漏）")
+        self.assertEqual(R.PRODUCT_DEPS, state[3], "PRODUCT_DEPS 内容未恢复")
+        self.assertEqual(R.GENERATORS, state[4], "GENERATORS 内容未恢复")
+
+    def test_mutated_recompute_products_or_hashes_rejected_no_candidate_stored(
+            self):
+        """OI-PF-200：原地篡改回算产物/哈希、键集多出或缺失 → 冻结前拒绝
+        E-G6A-05-006，不存储 candidate（按对象库原计数证明）。
+
+        先以健康回算结果冻结正例建立基准对象计数，再逐项注入变异。
+        """
+        import recompute as R
+        ctx = _ctx()
+        with tempfile.TemporaryDirectory() as td:
+            store = ArtifactStore(td)
+            healthy = recompute_all(ctx)
+            c = freeze_candidate_from_recompute(store, ctx, "same-run", healthy)
+            self.assertTrue(store.exists(c.candidate_id),
+                            "绑定完整的健康结果必须可冻结")
+            after_positive = _store_object_count(store)
+
+            def _mut(mutator):
+                r = recompute_all(ctx)
+                mutator(r)
+                return r
+
+            def _sync_tamper(r):
+                """产物+记录哈希同步篡改（自洽但非规范值）：改产物并把记录
+                哈希同步重算为新产物的规范哈希 —— 自洽校验抓不住，只有独立
+                重算比对能拒。"""
+                r.products["calc_ledger"]["ledger"][0]["value"] = "0.99"
+                r.shas["calc_ledger"] = R._prod_sha(r.products["calc_ledger"])
+
+            cases = [
+                ("产物原地篡改（值）",
+                 _mut(lambda r: r.products["calc_ledger"]["ledger"][0]
+                      .update(value="0.99"))),
+                ("产物+记录哈希同步篡改（自洽但非规范值）",
+                 _mut(_sync_tamper)),
+                ("产物键集多出未登记项",
+                 _mut(lambda r: r.products.__setitem__("phantom", {"x": 1}))),
+                ("产物键集缺失已登记项",
+                 _mut(lambda r: r.products.pop("claim_map"))),
+                ("哈希键集缺失已登记项",
+                 _mut(lambda r: r.shas.pop("claim_map"))),
+                ("哈希键集多出未登记项",
+                 _mut(lambda r: r.shas.__setitem__("phantom", "0" * 64))),
+                ("记录哈希与产物规范哈希不一致",
+                 _mut(lambda r: r.shas.__setitem__("calc_ledger", "0" * 64))),
+            ]
+            for label, bad in cases:
+                with self.subTest(mutation=label):
+                    with self.assertRaises(RecomputeError) as cm:
+                        freeze_candidate_from_recompute(store, ctx, "same-run",
+                                                        bad)
+                    self.assertIn("E-G6A-05-006", str(cm.exception),
+                                  f"{label} 必须拒绝篡改回算结果")
+                    self.assertEqual(
+                        _store_object_count(store), after_positive,
+                        f"{label} 拒绝后不得新增任何 candidate 对象")
 
     def test_frozen_inputs_hash_fails_closed_on_missing_or_malformed_inputs(
             self):
@@ -873,6 +1083,42 @@ class TestSnapshotIntegrityFailClosed(unittest.TestCase):
                           "build-time 失效快照 freeze 必须失败关闭")
             self.assertEqual(_store_object_count(store), before,
                              "build-time 失效快照不得新增任何 candidate 对象")
+
+    def test_unapproved_prepopulation_cannot_enter_research_values(self):
+        """OI-PF-201 集成：未批准预置正文不得进入 ResearchContext.values()。
+
+        build 前直接 `snap.approved['A-FAKE'] = {...}` 注入未批准 payload →
+        build 必须 E-G3-13-011 失败关闭；被拒快照放进 ResearchContext 后
+        values() 抛错（快照不可用），注入值绝不出现在任何取值路径 —— 证明
+        拒绝发生在进入计算之前；freeze 转 RecomputeError 且不新增 candidate。
+        """
+        from assumption_snapshot import AssumptionError
+        reg = AssumptionRegistry()
+        p = AssumptionProposal("A-REAL", {"growth": "0.08"}, proposed_by="L8")
+        reg.propose(p)
+        reg.decide(p.proposal_id, APPROVED, "U", "2026-08-15T00:00:00Z",
+                   "APPROVE")
+        snap = AssumptionSnapshot("SNAP-CONTAMINATED")
+        snap.approved["A-FAKE"] = {"growth": "0.99"}   # 未批准预置
+        with self.assertRaises(AssumptionError) as cm:
+            snap.build(reg)
+        self.assertIn("E-G3-13-011", str(cm.exception),
+                      "未批准预置正文 build 必须失败关闭")
+        ctx = _ctx(approved=snap)
+        self.assertNotEqual(ctx.assumption_defaults["growth"], "0.99",
+                            "fixture 前提：0.99 只来自未批准预置")
+        with self.assertRaises(AssumptionError):
+            ctx.values()   # 被拒快照不可达取值路径，注入值不得进入计算
+        with tempfile.TemporaryDirectory() as td:
+            store = ArtifactStore(td)
+            r = recompute_all(_ctx(approve=["growth"]))
+            before = _store_object_count(store)
+            with self.assertRaises(RecomputeError) as cm2:
+                freeze_candidate_from_recompute(store, ctx, "same-run", r)
+            self.assertIn("E-G6A-05-003", str(cm2.exception),
+                          "未批准预置快照 freeze 必须失败关闭")
+            self.assertEqual(_store_object_count(store), before,
+                             "未批准预置快照不得新增任何 candidate 对象")
 
 
 if __name__ == "__main__":

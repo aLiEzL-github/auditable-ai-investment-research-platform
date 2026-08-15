@@ -138,5 +138,71 @@ class TestDecideAndSnapshot(unittest.TestCase):
         self.assertEqual(snap.sha256, sha_before)
 
 
+class TestSnapshotPreBuildContaminationFailClosed(unittest.TestCase):
+    """OI-PF-201：内部批准正文与状态字段不得作为公开构造入参；
+    build 前被直接预置/篡改 → E-G3-13-011 失败关闭，不保留不清空不洗白。
+
+    原失败载荷：`AssumptionSnapshot(id, approved={...})` 把未批准正文直接
+    构造进快照，或 build 前 `snap.approved['A-FAKE']={...}` —— 原 build 只
+    从事件累加批准项，预置的未批准项原样保留进正文并随 values() 进入计算。
+    """
+
+    def test_snapshot_constructor_rejects_prepopulated_approved(self):
+        """构造函数只接受 snapshot_id/version —— 预置 approved 一律 TypeError：
+        位置参数与关键字参数均不得进入（内部字段不是公开构造入参）。"""
+        with self.assertRaises(TypeError):
+            AssumptionSnapshot("S", 1, {"A-FAKE": {"growth": "0.99"}})
+        with self.assertRaises(TypeError):
+            AssumptionSnapshot("S", approved={"A-FAKE": {"growth": "0.99"}})
+        with self.assertRaises(TypeError):
+            AssumptionSnapshot("S", _invalidated=True)
+        with self.assertRaises(TypeError):
+            AssumptionSnapshot("S", _sha256="0" * 64)
+
+    def test_snapshot_build_rejects_mutated_prebuild_approved(self):
+        """build 前直接篡改内部字段 → E-G3-13-011 失败关闭，快照不可用：
+        已批准项不得被洗白、未批准预置项不得进入正文。"""
+        reg = AssumptionRegistry()
+        p = AssumptionProposal("A-OK", {"g": "8%"}, "L8")
+        reg.propose(p)
+        reg.decide("A-OK", APPROVED, "U", "2026-08-15T00:00:00Z", "APPROVE")
+        mutations = [
+            ("approved 预置未批准项",
+             lambda s: s.approved.__setitem__("A-FAKE", {"growth": "0.99"})),
+            ("_invalidated 预置为 True",
+             lambda s: setattr(s, "_invalidated", True)),
+            ("_sha256 预置非空",
+             lambda s: setattr(s, "_sha256", "0" * 64)),
+        ]
+        for label, mutate in mutations:
+            with self.subTest(mutation=label):
+                snap = AssumptionSnapshot("S")
+                mutate(snap)
+                with self.assertRaises(AssumptionError) as ctx:
+                    snap.build(reg)
+                self.assertIn("E-G3-13-011", str(ctx.exception),
+                              f"{label} 必须 E-G3-13-011 失败关闭")
+                self.assertFalse(snap._frozen, "被污染的 build 不得冻结快照")
+                with self.assertRaises(AssumptionError):
+                    snap.sha256   # 不可用：未冻结/被拒，不得产出可用哈希
+                with self.assertRaises(AssumptionError):
+                    snap.approved_payloads()   # 不可用：预置正文不得读出
+                self.assertNotIn("A-OK", snap.approved,
+                                 "被拒 build 不得把已批准项并入预置正文（不洗白）")
+
+    def test_empty_registry_builds_empty_snapshot(self):
+        """注册表零批准事件 → 空批准集快照，正文可用且不失效。"""
+        reg = AssumptionRegistry()
+        snap = AssumptionSnapshot("S-EMPTY").build(reg)
+        self.assertFalse(snap.invalidated)
+        self.assertEqual(snap.approved_payloads(), {},
+                         "零批准事件的注册表必须产出空批准集")
+        self.assertRegex(snap.sha256, r"^[0-9a-f]{64}$",
+                         "空正文快照哈希须可用（空集是合法态）")
+        # 干净空快照 build 可重复冻结（无污染即通过）
+        self.assertEqual(AssumptionSnapshot("S-EMPTY-2").build(reg)
+                         .approved_payloads(), {})
+
+
 if __name__ == "__main__":
     unittest.main()
