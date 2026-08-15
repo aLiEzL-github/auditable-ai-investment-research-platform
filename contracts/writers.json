@@ -2,7 +2,7 @@
   "$schema": "contracts/writers.schema.json",
   "schema_version": "1.0.0",
   "source": "G0-04 §2 写权矩阵（唯一合法写者 + 永远不能写的模块）",
-  "updated_at": "2026-08-08T17:25:00Z",
+  "updated_at": "2026-08-15T08:51:31Z",
   "matrix": {
     "raw_artifact": {
       "never": [
@@ -248,7 +248,28 @@
         }
       ],
       "enforcement": "NOT_APPLICABLE",
-      "enforcement_reason": "无 ORM 表 —— 经 ArtifactStore 内容寻址冻结（publish_engine.freeze_candidate / recompute.freeze_candidate_from_recompute）。"
+      "enforcement_reason": "无 ORM 表 —— 经 ArtifactStore 内容寻址冻结（publish_engine.freeze_candidate / recompute.freeze_candidate_from_recompute / candidate_service.freeze_final_candidate_from_payload）。"
+    },
+    "candidate_invalidation": {
+      "never": [
+        "LLM",
+        "L8",
+        "L9",
+        "L10",
+        "L11",
+        "L12"
+      ],
+      "writers": [
+        "L7_freeze"
+      ],
+      "preconditions": [
+        {
+          "check": "MACHINE",
+          "key": "candidates_frozen",
+          "description": "old/new 两端均经 store.load 校验为完整 candidate（JSON object + kind=candidate + 内容摘要匹配）"
+        }
+      ],
+      "enforcement": "ENFORCED"
     },
     "source": {
       "writers": [

@@ -38,6 +38,13 @@
      正文深拷贝防浅拷贝/返回值别名（见 assumption_snapshot.py）。
    · 旧候选失效并保留：失效记录（candidate_invalidation）另行落库，
      旧对象不删除（内容寻址不可变），新候选内容寻址冻结。
+   · OI-PF-204：失效事实须**同时**保留不可变审计证据（ArtifactStore 内容寻址
+     记录）并进入权威查询面（candidate_invalidation 表，按 old_candidate_id
+     唯一）—— 写失效前必须 store.load() 并验证 old/new 两端都是完整 candidate
+     对象（JSON object、kind=candidate、内容摘要匹配），缺失/内容损坏/其他
+     kind/new 不存在均失败关闭 E-G6A-05-002；重复相同失效应幂等，冲突
+     new/reason 拒绝 E-G6A-05-008，不得静默覆盖；create_approval /
+     is_release_eligible / publish_release 均以权威查询面拒绝已失效 candidate。
    · OI-PF-200：每个 RecomputeResult 绑定产生它的上下文的规范冻结输入哈希
      （frozen_inputs_hash）；recompute_all 在生成产物前后各取一次规范哈希并
      比对，生成期间上下文漂移 → RecomputeError E-G6A-05-004 失败关闭。
@@ -56,6 +63,7 @@
 import hashlib
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional, Tuple
 
@@ -80,10 +88,6 @@ class RecomputeError(ValueError):
 
 class ProductMissing(RecomputeError):
     """全量回算缺产物 —— 抽样/漏算（F-3 变异抓点）。"""
-
-
-class OldCandidateMissing(RecomputeError):
-    """失效记录引用的旧候选不可达 —— 不得「失效并保留」的假象。"""
 
 
 @dataclass(frozen=True)
@@ -692,6 +696,7 @@ def freeze_candidate_from_recompute(store: ArtifactStore, ctx: ResearchContext,
     _validate_recompute_binding(recompute, canonical)
     candidate = {
         "schema_version": "1.0.0",
+        "kind": CANDIDATE_KIND,
         "run_id": run_id,
         "contract": ctx.contract.get("contract_id"),
         "scope": ctx.valuation_inputs.scope,
@@ -709,23 +714,101 @@ def freeze_candidate_from_recompute(store: ArtifactStore, ctx: ResearchContext,
                            recompute=canonical)
 
 
-def invalidate_previous(store: ArtifactStore, old_candidate_id: str,
-                        new_candidate_id: str, reason: str) -> str:
-    """旧 candidate 失效并保留：
-    · 保留 —— 旧对象内容寻址不可变，仍在对象库中可读（校验即证）
-    · 失效 —— 失效记录落库（kind=candidate_invalidation），引用旧 id
+def _load_candidate_object(store: ArtifactStore, candidate_id: str,
+                           label: str) -> dict:
+    """OI-PF-204：失效前校验 candidate 完整（JSON object + kind=candidate +
+    内容摘要匹配）。`store.load` 本身已强制内容哈希 = 摘要（E-G2-02-005）；
+    任何缺失、内容损坏、非 JSON、非 JSON 对象、body.kind ≠ candidate 都转
+    RecomputeError E-G6A-05-002 失败关闭 —— 不得只查「旧摘要路径存在」。
     """
-    if not store.exists(old_candidate_id):
-        raise OldCandidateMissing(
-            f"E-G6A-05-002: 旧候选不可达 {old_candidate_id[:12]}… —— "
-            f"「失效并保留」无从谈起")
-    inv = {
-        "schema_version": "1.0.0",
-        "old_candidate_id": old_candidate_id,
-        "new_candidate_id": new_candidate_id,
-        "reason": reason,
-        "status": "INVALIDATED",
-    }
-    data = canonical_bytes(inv)
-    store.store(INVALIDATION_KIND, data)
-    return hashlib.sha256(data).hexdigest()
+    try:
+        raw = store.load(candidate_id)
+    except (TypeError, ValueError) as exc:
+        raise RecomputeError(
+            f"E-G6A-05-002: {label} candidate 不可达或内容损坏: "
+            f"{str(candidate_id)[:12]}…（{exc}）")
+    try:
+        obj = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise RecomputeError(
+            f"E-G6A-05-002: {label} candidate 非合法 JSON: "
+            f"{candidate_id[:12]}…（{type(exc).__name__}）")
+    if not isinstance(obj, dict):
+        raise RecomputeError(
+            f"E-G6A-05-002: {label} candidate 非 JSON 对象: "
+            f"{candidate_id[:12]}…（{type(obj).__name__}）")
+    if obj.get("kind") != CANDIDATE_KIND:
+        raise RecomputeError(
+            f"E-G6A-05-002: {label} candidate body.kind ≠ {CANDIDATE_KIND!r}"
+            f"（实得 {obj.get('kind')!r}）: {candidate_id[:12]}…")
+    return obj
+
+
+def invalidate_previous(store: ArtifactStore, repo, old_candidate_id: str,
+                        new_candidate_id: str, reason: str, *, writer: str,
+                        invalidated_at: Optional[datetime] = None) -> str:
+    """旧 candidate 失效并保留（OI-PF-204 权威化）。
+
+    失效事实**同时**落两处：
+      · 不可变审计证据 —— ArtifactStore kind=candidate_invalidation 内容寻址
+        冻结，id = 内容哈希，永不改写（旧对象仍可读，保留）。
+      · 权威查询面 —— candidate_invalidation 表按 old_candidate_id 唯一：
+        重复相同失效幂等返回既有证据 id；冲突 new/reason 拒绝
+        E-G6A-05-008，不得静默覆盖。
+
+    写失效前必须 `store.load()` 并验证 old/new 两端都是完整 candidate 对象
+    （JSON object、kind="candidate"、内容摘要匹配）—— 缺失、内容损坏、
+    其他 kind、new 不存在均稳定失败关闭 E-G6A-05-002（原实现只检查旧摘要
+    路径存在，旧对象可内容损坏或不是 candidate、新 candidate 可不存在）。
+
+    `repo` 为 Repository（事务/写权边界）：幂等/冲突预检经其会话查询，
+    权威查询面写入经 `Repository.record_candidate_invalidation`（唯一写点，
+    事务 + assert_writer + 并发唯一约束兜底）。`writer` 必填关键字参数
+    （OI-PF-184：无合法缺省）。
+    """
+    from repository import CandidateInvalidation
+    old = _load_candidate_object(store, old_candidate_id, "旧")
+    new = _load_candidate_object(store, new_candidate_id, "新")
+    if old_candidate_id == new_candidate_id:
+        raise RecomputeError(
+            "E-G6A-05-008: old/new candidate 相同 —— 自失效不能表示后继候选")
+    candidates_frozen = isinstance(old, dict) and isinstance(new, dict)
+    if not isinstance(reason, str) or not reason.strip():
+        raise RecomputeError(
+            "E-G6A-05-008: 失效 reason 缺失/非字符串 —— 不得静默覆盖")
+    session = repo.session()
+    try:
+        existing = session.query(CandidateInvalidation).filter_by(
+            old_candidate_id=old_candidate_id).first()
+        if existing is not None:
+            if (existing.new_candidate_id == new_candidate_id
+                    and existing.reason == reason):
+                # 幂等：审计证据仍在（不可变，读时哈希校验为兜底）
+                try:
+                    store.load(existing.id)
+                except ValueError as exc:
+                    raise RecomputeError(
+                        f"E-G6A-05-002: 失效审计证据缺失/损坏（幂等路径）: "
+                        f"{existing.id[:12]}…（{exc}）")
+                return existing.id
+            raise RecomputeError(
+                f"E-G6A-05-008: 冲突失效 —— {old_candidate_id[:12]}… 已失效指向 "
+                f"{existing.new_candidate_id[:12]}…，重复请求指向 "
+                f"{new_candidate_id[:12]}…（new/reason 冲突）不得静默覆盖")
+        inv = {
+            "schema_version": "1.0.0",
+            "old_candidate_id": old_candidate_id,
+            "new_candidate_id": new_candidate_id,
+            "reason": reason,
+            "status": "INVALIDATED",
+        }
+        data = canonical_bytes(inv)
+        inv_id = store.store(INVALIDATION_KIND, data)   # 不可变审计证据
+        return repo.record_candidate_invalidation(
+            session, old_candidate_id=old_candidate_id,
+            new_candidate_id=new_candidate_id, reason=reason,
+            invalidation_id=inv_id, writer=writer,
+            candidates_frozen=candidates_frozen,
+            invalidated_at=invalidated_at)
+    finally:
+        session.close()

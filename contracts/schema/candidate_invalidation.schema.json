@@ -1,0 +1,52 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "schema_version": "1.0.0",
+ "title": "candidate invalidation canonical schema",
+ "description": "候选失效事件（G6A-05/OI-PF-204）。失效事实须同时保留不可变审计证据（内容寻址对象）并进入权威查询面（按 old_candidate_id 唯一可查）；重复相同失效应幂等，冲突 new/reason 必须拒绝，不得静默覆盖。create_approval / is_release_eligible / publish_release 均以本表为唯一判据拒绝已失效 candidate。",
+ "type": "object",
+ "required": [
+  "id",
+  "schema_version",
+  "old_candidate_id",
+   "new_candidate_id",
+   "reason",
+   "status",
+   "invalidated_at",
+   "version"
+ ],
+ "properties": {
+  "schema_version": {
+   "type": "string"
+  },
+  "id": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "old_candidate_id": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "new_candidate_id": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "reason": {
+   "type": "string",
+   "minLength": 1
+  },
+  "status": {
+   "enum": [
+    "INVALIDATED"
+   ]
+  },
+  "invalidated_at": {
+   "type": "string",
+   "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+  },
+  "version": {
+   "type": "integer",
+   "minimum": 1
+  }
+ },
+ "additionalProperties": false
+}

@@ -17,12 +17,14 @@ import json
 import os
 import sqlite3
 import sys
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint,
     create_engine, event, text,
 )
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.types import TypeDecorator
 
@@ -311,6 +313,33 @@ class CurrentPointer(Base):
     version = Column(Integer, nullable=False, default=1)
 
 
+class CandidateInvalidation(Base):
+    """G6A-05/OI-PF-204 候选失效**权威查询面**：按 old_candidate_id 唯一可查。
+
+    失效事实**同时**落两处：
+      · 不可变审计证据 —— ArtifactStore kind=candidate_invalidation 内容寻址
+        冻结，本表 id 即其内容哈希（永不改写，读时哈希校验为兜底）
+      · 本表 —— 权威查询面：old_candidate_id 唯一（uq），重复相同失效幂等
+        返回既有行，冲突 new/reason 拒绝（不得静默覆盖）
+
+    create_approval / is_release_eligible / publish_release 全部以本表为
+    唯一判据拒绝已失效 candidate：失效后不得新增 Approval，失效前已有的
+    Approval 保留审计但不可准出，Release/CurrentPointer 不得新增。
+    """
+    __tablename__ = "candidate_invalidation"
+    __table_args__ = (UniqueConstraint("old_candidate_id",
+                                       name="uq_candidate_invalidation_old"),)
+
+    id = Column(String(64), primary_key=True)      # = 内容寻址审计证据哈希
+    schema_version = Column(String(16), nullable=False)
+    old_candidate_id = Column(String(64), nullable=False)
+    new_candidate_id = Column(String(64), nullable=False)
+    reason = Column(Text, nullable=False)
+    status = Column(String(16), nullable=False)    # INVALIDATED
+    invalidated_at = Column(DateTime, nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+
+
 # ── 写权类型表与前置判据（OI-PF-183 / OI-PF-184）──────────────────────
 #
 # `_OBJ_TYPE` 把 ORM 模型映射到 contracts/writers.json 的对象名。
@@ -330,6 +359,7 @@ _OBJ_TYPE = {
     Approval: "approval",
     Release: "release",
     CurrentPointer: "current_pointer",
+    CandidateInvalidation: "candidate_invalidation",
     # Job 定义在 jobs.py（与本模块共用 Base），在此按名字延迟登记 ——
     # 直接 import 会造成 repository ←→ jobs 循环依赖。见 _register_late()。
 }
@@ -464,6 +494,42 @@ class Repository:
             raise ValueError(
                 f"E-WRITE-004: CAS 版本冲突 expected={expected_version} actual={obj.version}")
         obj.version = expected_version + 1
+
+    def record_candidate_invalidation(self, session, *, old_candidate_id,
+                                      new_candidate_id, reason, invalidation_id,
+                                      writer, candidates_frozen, invalidated_at=None) -> str:
+        """OI-PF-204：失效事实写入权威查询面（repository 内唯一写点）。
+
+        只处理**写入面**：assert_writer 写权断言（candidates_frozen 前置由
+        调用方实际校验结果传入）+ 事务提交 + 并发唯一约束兜底。幂等/冲突的
+        预检在调用方（recompute.invalidate_previous）完成 —— 两处都只认同一张
+        candidate_invalidation 表、同一条按 old_candidate_id 的查询。并发同
+        old 二次提交由 uq_candidate_invalidation_old 唯一约束兜底后重读判
+        幂等/冲突，绝不静默覆盖。
+        """
+        assert_writer("candidate_invalidation", writer,
+                      {"candidates_frozen": candidates_frozen})
+        row = CandidateInvalidation(
+            id=invalidation_id, schema_version="1.0.0",
+            old_candidate_id=old_candidate_id,
+            new_candidate_id=new_candidate_id, reason=reason,
+            status="INVALIDATED",
+            invalidated_at=invalidated_at or datetime.now(timezone.utc),
+            version=1)
+        session.add(row)
+        try:
+            session.commit()
+            return invalidation_id
+        except IntegrityError:
+            session.rollback()
+            again = session.query(CandidateInvalidation).filter_by(
+                old_candidate_id=old_candidate_id).first()
+            if again is not None and again.new_candidate_id == new_candidate_id \
+                    and again.reason == reason:
+                return again.id
+            raise ValueError(
+                f"E-G6A-05-008: 冲突失效（并发）—— {old_candidate_id[:12]}… "
+                f"已由其他事务失效，重复请求不得静默覆盖")
 
     # ── G2-01 写路径（assert_writer 接入，X-4/J4）────────────────────
     #

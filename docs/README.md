@@ -31,6 +31,22 @@ curl -fsS http://127.0.0.1:8080/readyz   # 迁移与依赖就绪
 非默认端口示例：`APP_PORT=18099 python3 backend/app/main.py --bind 127.0.0.1`。
 `--bind` 为 main.py 的 CLI 参数；环境变量与 CLI 均可覆盖（Settings 校验 APP_PORT/BIND_HOST 非法值即退出）。
 
+## 最终 Candidate Bundle（G6A-06）
+
+最终候选只可从干净 Git checkout 生成；工具自动绑定实际 `HEAD` commit/tree，
+并将 candidate 与 11 项产品正文写入调用方指定的本地内容寻址对象库：
+
+```bash
+python3 backend/tools/final_candidate.py freeze \
+  --request "$REQUEST_JSON" --store "$OBJECT_STORE"
+python3 backend/tools/final_candidate.py verify \
+  --candidate-id "$CANDIDATE_ID" --store "$OBJECT_STORE"
+```
+
+请求文件须提供冻结上下文，以及用于重建 `AssumptionSnapshot` 的 proposals 和
+decisions；不接受直接注入 approved 正文。请求和对象库属于本地研究数据，
+不得提交仓库。工作树非干净、代码版本错配、正文缺失或哈希不符均失败关闭。
+
 ## 变更规则（G1-01 验收「后续改动只经分支/PR」）
 
 1. **main 禁止直推** —— 唯一豁免是 578ac18e（空仓初始分支创建），已用掉；

@@ -536,6 +536,54 @@ def inputs_hash(manifest: dict, candidate_digest: Optional[str] = None) -> str:
     return h.hexdigest()
 
 
+def invalidated_candidate(session, candidate_id: Optional[str]) -> Optional[str]:
+    """OI-PF-204 权威查询：candidate 是否已失效（按 old_candidate_id 唯一）。
+
+    返回 None（未失效）或可机检错误串（E-G6A-05-002）。candidate_id 为空
+    （未绑定候选）不判失效。create_approval / is_release_eligible /
+    publish_release 均以本查询为唯一判据 —— 不扫描 ArtifactStore、不读
+    仍无人消费的内容寻址记录。
+    """
+    from repository import CandidateInvalidation
+    if not candidate_id:
+        return None
+    row = session.query(CandidateInvalidation).filter_by(
+        old_candidate_id=candidate_id).first()
+    if row is None:
+        return None
+    return (f"E-G6A-05-002: subject candidate 已失效 {candidate_id[:12]}… "
+            f"→ 新候选 {row.new_candidate_id[:12]}…（{row.reason}）")
+
+
+def _lock_candidate_invalidation_for_publish(session, candidate_ids) -> None:
+    """在最终发布事务内锁定失效查询面并重核，关闭检查/写入 TOCTOU。
+
+    SQLite 以 BEGIN IMMEDIATE 串行化写者；PostgreSQL 以 SHARE 表锁阻止并发
+    INSERT/UPDATE/DELETE，直至 release/current 同事务提交。其他数据库不做
+    猜测式降级，直接失败关闭。
+    """
+    from sqlalchemy import text
+    session.rollback()
+    dialect = session.get_bind().dialect.name
+    try:
+        if dialect == "sqlite":
+            session.execute(text("BEGIN IMMEDIATE"))
+        elif dialect == "postgresql":
+            session.execute(text(
+                "LOCK TABLE candidate_invalidation IN SHARE MODE"))
+        else:
+            raise ValueError(
+                f"E-G6A-05-009: 数据库 {dialect!r} 无已验证的 candidate "
+                "失效并发锁策略 —— 失败关闭")
+        for candidate_id in candidate_ids:
+            why = invalidated_candidate(session, candidate_id)
+            if why:
+                raise ValueError(why)
+    except Exception:
+        session.rollback()
+        raise
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -568,6 +616,14 @@ def create_approval(store: ArtifactStore, session, manifest: dict,
             f"E-G4-04-006: 批准 key {key} 与清单 CurrentKey 不符"
             f"（{manifest.get('workflow')}/{manifest.get('scope_id')}/"
             f"{manifest.get('current_key', '')}）—— 跨域批准被拒")
+    # OI-PF-204：写 Approval 前拒绝已失效 subject root（含 candidate_digest
+    # 绑定）。权威查询面 = candidate_invalidation 表（按 old_candidate_id），
+    # 任一命中即失败关闭，不留任何 Approval 行（校验先于 session.add）。
+    _subj_root = resolve_subject_root(manifest)
+    for _cand in (_subj_root, candidate_digest):
+        _why = invalidated_candidate(session, _cand)
+        if _why:
+            raise ValueError(_why)
     root = approval_subject_root(store, manifest)
     ih = inputs_hash(manifest, candidate_digest)
     # 写权断言（B-2b (i)）：subject_root_hash_bound **由实际闭包验证/根哈希
@@ -649,6 +705,12 @@ def is_release_eligible(session, store: ArtifactStore, approval, manifest: dict,
         return False, f"E-G4-04-006: subject root 无法解析: {e}"
     if appr.object_ref != subject_root:
         return False, "E-G4-04-006: 批准 object_ref 与清单 subject root 不符"
+    # OI-PF-204：谓词**自行重核** subject candidate 未失效（不依赖创建时检查
+    # —— 批准后建立的失效事实同样必须在准出时被拒）。任一命中即拒绝。
+    for _cand in (subject_root, candidate_digest):
+        _why = invalidated_candidate(session, _cand)
+        if _why:
+            return False, _why
     real = audit_candidate(store, manifest, candidate_digest)
     if audit is not None:
         if audit.audited_subject != real.audited_subject:
@@ -782,11 +844,16 @@ def publish_release(store: ArtifactStore, session, manifest: dict,
     # 全部来自上面的实际判定结果，禁止字面 True。
     from schema_validate import assert_writer
     exit_ok = eligible and closure_ok and root_ok and domain_ok and parent_ok
-    assert_writer("release", writer, {"exit_predicate_and_parent_cas": exit_ok})
-    assert_writer("current_pointer", writer, {"exit_predicate_and_parent_cas": exit_ok})
 
-    # 阶段 3：DB 事务（单事务提交 release + pointer）
+    # 阶段 3：最终事务先锁定 candidate_invalidation 查询面并重核，再在同一
+    # 事务提交 release + pointer。首次谓词检查后的并发失效不得穿过 TOCTOU。
     try:
+        _lock_candidate_invalidation_for_publish(
+            session, (subject_root, candidate_digest))
+        assert_writer("release", writer,
+                      {"exit_predicate_and_parent_cas": exit_ok})
+        assert_writer("current_pointer", writer,
+                      {"exit_predicate_and_parent_cas": exit_ok})
         rel = Release(
             id=manifest["id"],
             schema_version="1.0.0",
@@ -828,7 +895,7 @@ def publish_release(store: ArtifactStore, session, manifest: dict,
         session.rollback()
         raise ValueError(
             f"E-G4-03-009: 并发冲突 —— {key} 同 seq 二次提交（唯一约束拒绝）")
-    except ValueError:
+    except Exception:
         session.rollback()
         raise
 
