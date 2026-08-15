@@ -154,7 +154,13 @@ class ClosureResult:
 
 
 def resolve_subject_root(manifest: dict) -> str:
-    """D-2：subject root 单一且明确。两个候选 root 必须 FAIL，不得任选其一。"""
+    """D-2：subject root 单一且明确；本函数是 subject root 唯一真源。
+
+    两个候选 root 必须 FAIL，不得任选其一。OI-PF-202：清单同时给出
+    subject_root_candidates 与 subject_root 时，候选须恰好 1 个且与显式
+    subject_root 逐字一致 —— 分叉双根（两字段各自指向不同 root）即
+    E-G4-07-003 失败关闭，不得偏爱任一字段；无回退、无向后兼容分支。
+    """
     cands = manifest.get("subject_root_candidates")
     if cands is not None:
         if len(cands) != 1:
@@ -162,6 +168,11 @@ def resolve_subject_root(manifest: dict) -> str:
                 f"E-G4-07-003: subject root 候选 {len(cands)} 个 —— 必须恰好 1 个，"
                 f"不得任选（{cands}）")
         root = cands[0]
+        explicit = manifest.get("subject_root")
+        if explicit is not None and explicit != root:
+            raise ValueError(
+                "E-G4-07-003: subject_root_candidates 与 subject_root 分叉双根"
+                f"（{str(root)[:12]}… vs {str(explicit)[:12]}…）—— 双字段须一致")
     else:
         root = manifest.get("subject_root")
         if not root:
@@ -696,6 +707,9 @@ def publish_release(store: ArtifactStore, session, manifest: dict,
                                         key, candidate_digest)
     if not eligible:
         raise ValueError(why)
+    # OI-PF-202：subject root 唯一真源 = resolve_subject_root —— 幂等比较与
+    # Release.subject_root_hash 持久化只使用解析结果，绝不读未校验的原始字段。
+    subject_root = resolve_subject_root(manifest)
 
     # 阶段 1：工件预写并验哈希（内容寻址；任何失败即拒绝，不触碰 DB）
     try:
@@ -708,7 +722,7 @@ def publish_release(store: ArtifactStore, session, manifest: dict,
             f"E-G4-03-004: 工件失败 —— 闭包不完整（count={closure.count} "
             f"dangling={len(closure.dangling)} dead={len(closure.dead)})")
     # D-5：孤儿不得成为 current —— 发布路径只接受闭包内对象（subject root 在闭包内）
-    root_ok = resolve_subject_root(manifest) in closure.reachable
+    root_ok = subject_root in closure.reachable
     if not root_ok:
         raise ValueError("E-G4-03-010: 孤儿不得成为 current —— subject root 不在闭包内")
     # 跨 workflow/scope/key：清单 CurrentKey 与发布目标必须一致（不得跨域发布）
@@ -726,7 +740,7 @@ def publish_release(store: ArtifactStore, session, manifest: dict,
     existing = session.query(Release).filter_by(
         workflow=key.workflow, scope_id=key.scope_id,
         current_key=key.current_key).all()
-    same_root = [r for r in existing if r.subject_root_hash == manifest["subject_root"]]
+    same_root = [r for r in existing if r.subject_root_hash == subject_root]
     if same_root and same_root[0].manifest_hash == manifest["id"]:
         return same_root[0]
 
@@ -781,7 +795,7 @@ def publish_release(store: ArtifactStore, session, manifest: dict,
             current_key=key.current_key,
             version=_version_str(cur_seq + 1),
             parent_cas=manifest.get("parent"),
-            subject_root_hash=manifest["subject_root"],
+            subject_root_hash=subject_root,
             manifest_hash=manifest["id"],
             approval_id=approval.id,
             released_at=datetime.fromisoformat(

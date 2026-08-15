@@ -25,7 +25,7 @@ import _g4_fixtures as fx
 from publish_engine import (RESEARCH_600089_KEY, SYS_DESIGN_KEY, CurrentKey,
                             approval_subject_root, create_approval,
                             current_release, gc_orphans, inputs_hash,
-                            publish_release)
+                            publish_release, resolve_subject_root)
 
 
 class TestPublishBase(unittest.TestCase):
@@ -96,6 +96,35 @@ class TestDomainSeparation(TestPublishBase):
         self.assertEqual(rel2.id, rel.id)
         cur = current_release(self.s, RESEARCH_600089_KEY)
         self.assertEqual(cur["seq"], 1, "幂等发布不得新增指针记录")
+
+    def test_matching_candidates_through_approval_and_publish(self):
+        """OI-PF-202 正向：匹配双字段（candidates=[subject_root]）批准并发布。
+
+        持久化的 Release.subject_root_hash 必须等于 resolve_subject_root
+        (manifest)（幂等比较与持久化都只用解析根，不读未校验原始字段）；
+        匹配双字段与普通单一 subject_root 同语义，幂等二次发布仍返回既有 release。
+        """
+        m = fx.minimal_closure(self.store, RESEARCH_600089_KEY)
+        root = resolve_subject_root(m)
+        m["subject_root_candidates"] = [root]
+        m["subject_root"] = root
+        m["id"] = fx.content_id(m)
+        appr = self._approve(m, RESEARCH_600089_KEY)
+        rel = publish_release(self.store, self.s, m, RESEARCH_600089_KEY, appr,
+                              released_at="2026-08-11T07:01:00Z",
+                              writer="L11_release")
+        self.assertEqual(rel.subject_root_hash, resolve_subject_root(m),
+                         "持久化 release 根必须等于 resolve_subject_root(manifest)")
+        cur = current_release(self.s, RESEARCH_600089_KEY)
+        self.assertEqual(cur["subject_root_hash"], resolve_subject_root(m),
+                         "current 指针的根哈希必须等于解析根")
+        # 匹配双字段幂等：同清单再次发布返回既有 release，指针不动
+        rel2 = publish_release(self.store, self.s, m, RESEARCH_600089_KEY, appr,
+                               released_at="2026-08-11T07:02:00Z",
+                               writer="L11_release")
+        self.assertEqual(rel2.id, rel.id)
+        self.assertEqual(current_release(self.s, RESEARCH_600089_KEY)["seq"], 1,
+                         "匹配双字段幂等发布不得新增指针记录")
 
     def test_different_root_hard_fail(self):
         m, appr, _ = self._publish_first(RESEARCH_600089_KEY)

@@ -21,7 +21,7 @@ import _g4_fixtures as fx
 from publish_engine import (RESEARCH_600089_KEY, SYS_DESIGN_KEY,
                             approval_subject_root, create_approval,
                             current_release, inputs_hash, is_release_eligible,
-                            publish_release)
+                            publish_release, resolve_subject_root)
 
 
 class TestApprovalFlow(unittest.TestCase):
@@ -329,6 +329,37 @@ class TestApprovalFlow(unittest.TestCase):
                 repo.engine.dispose()
             finally:
                 _sh.rmtree(tmp, ignore_errors=True)
+
+    # ── OI-PF-202：分叉双根在批准持久化前被拒，无 Approval/Release/指针 ──
+    def test_divergent_dual_root_rejected_before_approval(self):
+        """分叉双根（candidates=[root] 但 subject_root 指向他者）不得批准。
+
+        resolve_subject_root 是唯一真源：候选与显式 subject_root 不一致即
+        E-G4-07-003，且失败先于任何 DB 写入 —— Approval/Release/
+        CurrentPointer 计数全部保持不变。
+        """
+        from repository import Approval, CurrentPointer, Release
+        m = self._m()
+        root = resolve_subject_root(m)
+        other = fx.build_candidate(self.store, {"payload": {"ticker": "OTHER"}})
+        m["subject_root_candidates"] = [root]          # 候选正确
+        m["subject_root"] = other                      # 显式字段分叉
+        m["id"] = fx.content_id(m)
+        before_a = self.s.query(Approval).count()
+        before_r = self.s.query(Release).count()
+        before_p = self.s.query(CurrentPointer).count()
+        with self.assertRaises(ValueError) as cm:
+            create_approval(self.store, self.s, m, "U-fixture",
+                            RESEARCH_600089_KEY,
+                            approved_at="2026-08-11T07:00:00Z",
+                            acknowledged=True)
+        self.assertIn("E-G4-07-003", str(cm.exception))
+        self.assertEqual(self.s.query(Approval).count(), before_a,
+                         "分叉双根批准不得留任何 Approval 行")
+        self.assertEqual(self.s.query(Release).count(), before_r,
+                         "分叉双根不得写 release 行")
+        self.assertEqual(self.s.query(CurrentPointer).count(), before_p,
+                         "分叉双根不得写 current 指针行")
 
     # ── OI-PF-197：谓词须直接核对目标 key 与清单 CurrentKey ─────────
     def test_target_key_must_match_manifest_current_key(self):

@@ -286,6 +286,33 @@ class TestSubjectRoot(unittest.TestCase):
             resolve_subject_root(m)
         self.assertIn("E-G4-07-003", str(cm.exception))
 
+    def test_divergent_single_candidate_and_subject_root_rejected(self):
+        """OI-PF-202：双字段分叉（candidates=[root] 但 subject_root 指向他者）须拒。
+
+        resolve_subject_root 是 subject root 唯一真源。旧实现只读
+        subject_root_candidates、忽略显式 subject_root —— 分叉双根会被
+        静默采纳候选。现候选与显式字段不一致即 E-G4-07-003 失败关闭，
+        compute_closure / 批准 / 发布同一真源一致拒绝；无回退分支。
+        """
+        m = fx.minimal_closure(self.store, self.key)
+        root = resolve_subject_root(m)
+        other = fx.build_candidate(self.store, {"payload": {"ticker": "OTHER"}})
+        m["subject_root_candidates"] = [root]          # 候选正确
+        m["subject_root"] = other                      # 显式字段分叉
+        m["id"] = fx.content_id(m)
+        with self.assertRaises(ValueError) as cm:
+            resolve_subject_root(m)
+        self.assertIn("E-G4-07-003", str(cm.exception))
+        with self.assertRaises(ValueError):
+            compute_closure(self.store, m)
+        # 匹配双字段须通过（防过度修复）：candidates=[subject_root] 正常解析
+        m2 = fx.minimal_closure(self.store, self.key)
+        root2 = resolve_subject_root(m2)
+        m2["subject_root_candidates"] = [root2]
+        m2["subject_root"] = root2
+        m2["id"] = fx.content_id(m2)
+        self.assertEqual(resolve_subject_root(m2), root2)
+
 
 if __name__ == "__main__":
     unittest.main()
