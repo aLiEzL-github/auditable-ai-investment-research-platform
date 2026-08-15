@@ -2,7 +2,8 @@
 
 JSON Schema draft-07 **子集**实现（纯 stdlib，无外部依赖）：
   type / required / properties / enum / pattern / minLength / maxLength /
-  minimum / maximum / items / const / additionalProperties(false 语义)
+  minimum / maximum / items / minItems / uniqueItems / const /
+  additionalProperties(false 语义) / $ref（#/definitions/*） / oneOf
 
 写权断言：按 contracts/writers.json 的矩阵检查写者（G0-04 §2 可执行面）。
 验收（G1-02）：
@@ -28,7 +29,34 @@ class SchemaError(ValueError):
         super().__init__(f"{code}: {field} {detail}".strip())
 
 
-def _check(node, schema, path):
+def _check(node, schema, path, defs=None):
+    # $ref 解析：#/definitions/<name>（Draft-07 定义片段；本仓库契约已声明
+    # draft-07，definitions/oneOf 为合法子集能力 —— G6A-06 PARTIAL 用它们把
+    # 状态专属的 required/forbidden 字段条件写进契约，而不只依赖 app 代码）。
+    ref = schema.get("$ref")
+    if ref:
+        if ref.startswith("#/definitions/"):
+            name = ref[len("#/definitions/"):]
+            resolved = (defs or {}).get(name)
+            if resolved is None:
+                raise SchemaError("E-SCHEMA-001", path, f"未定义 $ref {ref}")
+            return _check(node, resolved, path, defs)
+        raise SchemaError("E-SCHEMA-001", path, f"不支持的 $ref {ref}")
+    # oneOf：恰一个分支满足（READY/INPUT_MISSING/NOT_EVALUATED 等状态专属
+    # 形状由各分支 required/properties/additionalProperties 共同表达 ——
+    # 未知状态/矛盾字段组合在此失败关闭，不给 app 代码留下宽放）。
+    if "oneOf" in schema:
+        matches = []
+        for sub in schema["oneOf"]:
+            try:
+                _check(node, sub, path, defs)
+                matches.append(sub)
+            except SchemaError:
+                continue
+        if len(matches) != 1:
+            raise SchemaError(
+                "E-SCHEMA-006", path,
+                f"oneOf 须恰好匹配 1 个分支，实得 {len(matches)}")
     if "type" in schema:
         t = schema["type"]
         if t == "object" and not isinstance(node, dict):
@@ -43,6 +71,14 @@ def _check(node, schema, path):
             raise SchemaError("E-SCHEMA-002", path, f"期望 integer 实为 {type(node).__name__}")
         if t == "boolean" and not isinstance(node, bool):
             raise SchemaError("E-SCHEMA-002", path, f"期望 boolean 实为 {type(node).__name__}")
+    # 通用 const / enum 检查（全部 JSON 标量；null 不得绕过 const）。
+    # 旧实现只在对象属性上下文用 `node.get(k) is not None` 查 const，null 值即
+    # 被静默跳过；此处改为节点级通用检查，任何节点类型与取值（含 null）都必须
+    # 逐字满足 const / 落在 enum 内。
+    if "const" in schema and node != schema["const"]:
+        raise SchemaError("E-SCHEMA-003", path, f"const 要求 {schema['const']!r}")
+    if "enum" in schema and node not in schema["enum"]:
+        raise SchemaError("E-SCHEMA-003", path, f"枚举外值 {node!r}")
     if isinstance(node, dict):
         props = schema.get("properties", {})
         for req in schema.get("required", []):
@@ -52,22 +88,35 @@ def _check(node, schema, path):
             if k not in props and schema.get("additionalProperties", True) is False:
                 raise SchemaError("E-SCHEMA-004", f"{path}.{k}", "未知字段")
             if k in props:
-                _check(v, props[k], f"{path}.{k}")
-        # 对象级 const 检查（如 prediction.calibration_pending）
-        for k, sub in props.items():
-            if "const" in sub and node.get(k) is not None and k in node and node[k] != sub["const"]:
-                raise SchemaError("E-SCHEMA-003", f"{path}.{k}", f"const 要求 {sub['const']!r}")
+                _check(v, props[k], f"{path}.{k}", defs)
     elif isinstance(node, list):
+        if "minItems" in schema and len(node) < schema["minItems"]:
+            raise SchemaError("E-SCHEMA-002", path,
+                              f"minItems {schema['minItems']}（实得 {len(node)}）")
+        if "maxItems" in schema and len(node) > schema["maxItems"]:
+            raise SchemaError("E-SCHEMA-002", path,
+                              f"maxItems {schema['maxItems']}（实得 {len(node)}）")
+        if schema.get("uniqueItems"):
+            # uniqueItems 用**规范 JSON 身份**比对（同一内容不同实例亦算重复），
+            # 不得对不可哈希元素调 set()（dict/list 会泄漏裸 TypeError）；不可
+            # 规范序列化的非 JSON 元素归一为 SchemaError。
+            try:
+                keys = [json.dumps(v, sort_keys=True) for v in node]
+            except (TypeError, ValueError) as exc:
+                raise SchemaError(
+                    "E-SCHEMA-004", path,
+                    f"uniqueItems 无法取得规范身份（非 JSON 元素: {exc!r}）"
+                    "—— 失败关闭") from exc
+            if len(keys) != len(set(keys)):
+                raise SchemaError("E-SCHEMA-004", path, "uniqueItems 含重复项")
         items = schema.get("items", {})
         for i, v in enumerate(node):
-            _check(v, items, f"{path}[{i}]")
+            _check(v, items, f"{path}[{i}]", defs)
     if isinstance(node, str):
         if "pattern" in schema and not re.search(schema["pattern"], node):
             raise SchemaError("E-SCHEMA-002", path, f"pattern 不匹配 {schema['pattern']}")
         if "minLength" in schema and len(node) < schema["minLength"]:
             raise SchemaError("E-SCHEMA-002", path, f"minLength {schema['minLength']}")
-        if "enum" in schema and node not in schema["enum"]:
-            raise SchemaError("E-SCHEMA-003", path, f"枚举外值 {node!r}")
     if isinstance(node, (int, float)):
         if "minimum" in schema and node < schema["minimum"]:
             raise SchemaError("E-SCHEMA-002", path, f"小于 minimum {schema['minimum']}")
@@ -85,7 +134,7 @@ def validate_object(obj_type, obj):
     if obj.get("schema_version") != schema.get("schema_version"):
         raise SchemaError("E-SCHEMA-005", "schema_version",
                           f"对象 {obj.get('schema_version')} vs 契约 {schema.get('schema_version')}")
-    _check(obj, schema, obj_type)
+    _check(obj, schema, obj_type, schema.get("definitions"))
     return None
 
 

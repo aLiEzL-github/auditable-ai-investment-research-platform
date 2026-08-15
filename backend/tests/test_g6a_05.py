@@ -269,15 +269,16 @@ class TestFullRecompute(unittest.TestCase):
                 self.assertEqual(set(diff["changed_products"]), expected,
                                  f"{key} 批准后 changed_products 与 PRODUCT_DEPS"
                                  f" 不一致（不允许多报/少报）")
-        # target_pe 判定显式覆盖四个产物：relative/pe_roe_pb 真实读取须在列，
-        # calc_ledger/claim_map 生成器不读 target_pe 须不在列（不随声明虚报）。
+        # target_pe 判定显式覆盖全部受影响产物：relative/pe_roe_pb 真实读取
+        # 须在列；G6A-06 partial-route 返工后 calc_ledger/claim_map/emission_map
+        # 在**全 READY** 下消费并集五键（relative/pe_roe_pb 消费 target_pe）
+        # → target_pe 批准同样改变它们（PRODUCT_DEPS 声明并集，不欠报）。
         r_base = recompute_all(_ctx())
         r_new = recompute_all(_ctx(approve=["target_pe"]))
         changed = set(recompute_diff(r_base, r_new)["changed_products"])
-        self.assertIn("valuation_relative", changed)
-        self.assertIn("valuation_pe_roe_pb", changed)
-        self.assertNotIn("calc_ledger", changed)
-        self.assertNotIn("claim_map", changed)
+        for name in ("valuation_relative", "valuation_pe_roe_pb",
+                     "calc_ledger", "claim_map", "emission_map"):
+            self.assertIn(name, changed)
 
     def test_open_items_mismatch_produces_strong_typed_items_and_diagnostics(
             self):
@@ -554,7 +555,14 @@ class TestCandidateFreezeAndInvalidation(unittest.TestCase):
         self.assertEqual(
             set(payload),
             {"contract", "facts", "macro", "formula_specs", "valuation_inputs",
-             "assumption_defaults", "approved", "open_items_policy"})
+             "assumption_defaults", "approved", "open_items_policy",
+             "valuation_routes"})
+        self.assertEqual(
+            set(payload["valuation_routes"]),
+            {"fcff", "fcfe", "relative", "pe_roe_pb"},
+            "valuation_routes 须展开四路声明（legacy 上下文 = 全 READY）")
+        for _r, _d in payload["valuation_routes"].items():
+            self.assertEqual(_d, {"state": "READY"})
         self.assertEqual(
             set(payload["valuation_inputs"]),
             {"scope", "currency", "as_of", "price", "shares_outstanding",

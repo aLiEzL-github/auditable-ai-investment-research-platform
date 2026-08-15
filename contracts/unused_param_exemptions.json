@@ -7,7 +7,6 @@
     "repository.py:process_bind_param:dialect": "SQLAlchemy TypeDecorator 协议签名 —— 由 SQLAlchemy 按位置调用",
     "repository.py:process_result_value:dialect": "同上，SQLAlchemy TypeDecorator 协议签名",
     "repository.py:_set_sqlite_pragma:connection_record": "SQLAlchemy event.listens_for(Engine, 'connect') 回调协议签名",
-    "llm_provider.py:complete:request": "@abstractmethod —— 抽象方法只声明签名，实现方使用该参数",
-    "recompute.py:_gen_claim_map:ctx": "产物生成器统一签名 _gen_*(ctx, v) —— PRODUCT_ORDER 按同一形态调用；本产物当前不依赖 ctx，但签名须与同族一致"
+    "llm_provider.py:complete:request": "@abstractmethod —— 抽象方法只声明签名，实现方使用该参数"
   }
 }

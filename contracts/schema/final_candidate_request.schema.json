@@ -1,13 +1,74 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "title": "G6A-06 final candidate freeze request",
-  "description": "本地最终候选冻结请求；approved snapshot 只能由 proposals 与 decisions 重建。",
+  "description": "本地最终候选冻结请求；approved snapshot 只能由 proposals 与 decisions 重建。valuation_routes 声明四路估值（fcff/fcfe/relative/pe_roe_pb）的状态，状态专属字段条件由契约 oneOf 表达（不靠 app 代码）：READY 不得带 reason/evidence_refs/missing_inputs；INPUT_MISSING 必须带非空 reason+evidence_refs+missing_inputs；NOT_EVALUATED 必须带非空 reason+evidence_refs 且不得带 missing_inputs。",
+  "definitions": {
+    "route_decl": {
+      "type": "object",
+      "oneOf": [
+        {
+          "description": "READY：该路已完成评估，不得携带任何非 READY 元数据。",
+          "properties": {
+            "state": {"const": "READY"}
+          },
+          "required": ["state"],
+          "additionalProperties": false
+        },
+        {
+          "description": "INPUT_MISSING：缺输入，须带非空 reason + 非空证据引用 + 非空 missing_inputs。",
+          "properties": {
+            "state": {"const": "INPUT_MISSING"},
+            "reason": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "evidence_refs": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1, "pattern": "\\S"}
+            },
+            "missing_inputs": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1, "pattern": "\\S"}
+            }
+          },
+          "required": ["state", "reason", "evidence_refs", "missing_inputs"],
+          "additionalProperties": false
+        },
+        {
+          "description": "NOT_EVALUATED：未评估，须带非空 reason + 非空证据引用，且不得带 missing_inputs。",
+          "properties": {
+            "state": {"const": "NOT_EVALUATED"},
+            "reason": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "evidence_refs": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1, "pattern": "\\S"}
+            }
+          },
+          "required": ["state", "reason", "evidence_refs"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
   "type": "object",
-  "required": ["schema_version", "run_id", "context"],
+  "required": ["schema_version", "run_id", "source_revision", "context"],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"const": "1.1.0"},
     "run_id": {"type": "string", "minLength": 1},
+    "source_revision": {
+      "description": "请求声明的期望代码版本：冻结时须与显式干净 checkout 提供的 source_commit/source_tree 逐字一致；候选根取同一值，复验时绑定请求 revision 必须与候选一致。",
+      "type": "object",
+      "required": ["source_commit", "source_tree"],
+      "properties": {
+        "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      },
+      "additionalProperties": false
+    },
     "context": {
       "type": "object",
       "required": [
@@ -18,7 +79,8 @@
         "valuation_inputs",
         "assumption_defaults",
         "approved_snapshot",
-        "open_items_policy"
+        "open_items_policy",
+        "valuation_routes"
       ],
       "properties": {
         "contract": {"type": "object"},
@@ -39,6 +101,17 @@
             "minority_interest": {"type": "string"},
             "industry_commodity": {"type": "string"},
             "statuses": {"type": "object"}
+          },
+          "additionalProperties": false
+        },
+        "valuation_routes": {
+          "type": "object",
+          "required": ["fcff", "fcfe", "relative", "pe_roe_pb"],
+          "properties": {
+            "fcff": {"$ref": "#/definitions/route_decl"},
+            "fcfe": {"$ref": "#/definitions/route_decl"},
+            "relative": {"$ref": "#/definitions/route_decl"},
+            "pe_roe_pb": {"$ref": "#/definitions/route_decl"}
           },
           "additionalProperties": false
         },

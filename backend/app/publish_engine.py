@@ -139,18 +139,109 @@ def freeze_manifest(store: ArtifactStore, manifest: dict) -> str:
 
 OBJECT_KINDS = ("candidate", "manifest", "evidence", "macro", "assumption",
                 "calc", "claim", "worksheet", "test", "code_config",
-                "open_item", "approval", "report")
+                "open_item", "approval", "report",
+                "final_candidate_request", "recompute_product")
+
+# 对象 id / manifest refs 项的统一摘要形态：非空 sha256（D-3 CAS，见
+# contracts/schema/manifest.schema.json 的 `^[0-9a-f]{64}$` 合同）。
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _ref_item_display(item) -> str:
+    """畸形 ref 项的安全渲染：短、确定性；混合类型下绝不崩溃（repr 兜底）。"""
+    try:
+        s = repr(item)
+    except Exception:
+        s = f"<{type(item).__name__}>"
+    return s[:24]
 
 
 @dataclass
 class ClosureResult:
-    complete: bool                    # 闭包完整 = 登记表全可达 ∧ 无外引用
+    complete: bool                    # 闭包完整 = 登记表全可达 ∧ 无外引用 ∧ 无最终候选依赖违规
     count: int                        # 闭包内对象数（⑨：0 与完整可分辨）
     reachable: Set[str]
     registered: Set[str]
     dangling: Set[str]                # 被引用但未登记（漏登记 → D-1 变异）
     dead: Set[str]                    # 已登记但不可达（闭包外非空）
     mismatch: Set[str]                # 版本漂移 / 内容与摘要不符
+    refs_violation: str = ""          # 1.1 最终候选 refs 与内部依赖不符的说明
+
+
+def _final_candidate_refs_violation(store: ArtifactStore,
+                                    manifest: dict) -> str:
+    """G6A-06 请求绑定/partial-route 硬化：**正文驱动**的最终候选依赖核定。
+
+    只认**正文**是最终候选的登记对象（schema_version 1.1.0 + kind=candidate），
+    不信任清单元数据 kind —— 正文是最终候选而元数据 kind 不符（如错标为
+    report）即 E-G4-07-008 失败关闭；其 metadata refs 必须**精确等于**内部
+    依赖的 12 个 digest（request_hash + 全部 11 项 product_hashes），且全部
+    已登记。缺/多/错配任一 ref，或任一依赖未登记 → 返回可机检违规说明
+    （闭包不完整）。
+
+    legacy G4 candidate（非 1.1）保持既有泛型 refs 行为，不适用本检查。
+    store.load 失败 / 正文不可解析 / 畸形 product_hash 值类型 / 畸形 refs
+    类型一律归一为违规说明（读取失败亦可由 compute_closure 的 mismatch 门
+    归一），不泄漏裸 TypeError/OSError；元数据声明候选但正文不可解析同样
+    失败关闭。refs 列表的**每个元素**须为非空 sha256 digest 字符串（与
+    manifest.schema.json `^[0-9a-f]{64}$` 合同一致）—— JSON 对象/列表/
+    空串/非摘要字符串一律 E-G4-07-008 失败关闭，绝不进入 set/排序裸抛
+    TypeError（渲染与比较在混合类型下安全）。
+    """
+    objects = manifest.get("objects", {})
+    for oid, meta in objects.items():
+        try:
+            raw = store.load(oid)
+        except (TypeError, ValueError, OSError):
+            continue    # 读取失败由 compute_closure 的 mismatch 门归一
+        try:
+            obj = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError, TypeError):
+            obj = None
+        if not isinstance(obj, dict):
+            if meta.get("kind") == "candidate":
+                return (f"E-G4-07-008: 候选 {str(oid)[:12]}… 正文不可解析"
+                        " —— 无法核定依赖，闭包不完整")
+            continue
+        if obj.get("schema_version") != "1.1.0" \
+                or obj.get("kind") != "candidate":
+            continue    # legacy G4 candidate / 非候选 —— 泛型 refs 行为
+        if meta.get("kind") != "candidate":
+            return (f"E-G4-07-008: 最终候选正文 {str(oid)[:12]}… 清单元数据 "
+                    f"kind={meta.get('kind')!r} ≠ candidate —— 声明与正文不符，"
+                    "闭包不完整")
+        req_hash = obj.get("request_hash")
+        product_hashes = obj.get("product_hashes")
+        if not isinstance(req_hash, str) or not req_hash \
+                or not isinstance(product_hashes, dict) or not product_hashes:
+            return (f"E-G4-07-008: 最终候选 {str(oid)[:12]}… 缺 request_hash/"
+                    "product_hashes 或形状畸形 —— 无法核定依赖，闭包不完整")
+        expected = {req_hash}
+        for name, digest in product_hashes.items():
+            if not isinstance(digest, str) or not digest:
+                return (f"E-G4-07-008: 最终候选 {str(oid)[:12]}… "
+                        f"product_hashes[{name!r}] 非字符串 —— 无法核定依赖，"
+                        "闭包不完整")
+            expected.add(digest)
+        refs = meta.get("refs")
+        if not isinstance(refs, list):
+            return (f"E-G4-07-008: 最终候选 {str(oid)[:12]}… 清单 refs 非列表"
+                    " —— 无法核定依赖，闭包不完整")
+        for _item in refs:
+            if not isinstance(_item, str) or not _SHA256_RE.fullmatch(_item):
+                return (f"E-G4-07-008: 最终候选 {str(oid)[:12]}… 清单 refs 含"
+                        f"非 digest 项（{_ref_item_display(_item)}）—— 须为"
+                        "非空 sha256 digest，无法核定依赖，闭包不完整")
+        actual = set(refs)
+        if actual != expected:
+            return (f"E-G4-07-008: 最终候选 {str(oid)[:12]}… 清单 refs 与内部"
+                    f"依赖不符（缺 {sorted(expected - actual)[:3]} 多 "
+                    f"{sorted(actual - expected)[:3]}）—— 闭包不完整")
+        missing = sorted(r for r in expected if r not in objects)
+        if missing:
+            return (f"E-G4-07-008: 最终候选 {str(oid)[:12]}… 依赖未登记"
+                    f"（{missing[:3]}）—— 闭包不完整")
+    return ""
 
 
 def resolve_subject_root(manifest: dict) -> str:
@@ -203,7 +294,17 @@ def compute_closure(store: ArtifactStore, manifest: dict) -> ClosureResult:
         if meta is None:
             dangling.add(oid)
             continue
-        for ref in meta.get("refs", []):
+        refs = meta.get("refs", [])
+        if not isinstance(refs, list):
+            refs = []    # 非列表 refs 由 refs_violation 归一，BFS 不裸崩（fail-closed）
+        for ref in refs:
+            if not isinstance(ref, str) or not ref:
+                # 畸形 ref 项（非空 digest 字符串）→ 确定性 dangling 标记，
+                # 闭包不完整（fail-closed）；绝不裸抛 TypeError、不在渲染/排序
+                # 上崩溃。合法 ref 恒为 64 位 sha256，带 "<malformed-ref:" 前缀
+                # 的标记永不与真实 digest 冲突。
+                dangling.add(f"<malformed-ref:{_ref_item_display(ref)}>")
+                continue
             if ref not in registered:
                 dangling.add(ref)
             elif ref not in reachable:
@@ -214,10 +315,13 @@ def compute_closure(store: ArtifactStore, manifest: dict) -> ClosureResult:
     for oid in reachable:
         try:
             store.load(oid)                     # 读时哈希校验 = 篡改必拒
-        except ValueError:
+        except (ValueError, OSError, TypeError):
             mismatch.add(oid)
 
-    complete = not dangling and not dead and not mismatch
+    refs_violation = _final_candidate_refs_violation(store, manifest)
+
+    complete = (not dangling and not dead and not mismatch
+                and not refs_violation)
     return ClosureResult(
         complete=complete,
         count=len(reachable),
@@ -226,6 +330,7 @@ def compute_closure(store: ArtifactStore, manifest: dict) -> ClosureResult:
         dangling=dangling,
         dead=dead,
         mismatch=mismatch,
+        refs_violation=refs_violation,
     )
 
 
@@ -379,7 +484,8 @@ def audit_candidate(store: ArtifactStore, manifest: dict,
             raise ValueError(
                 f"E-G4-02-001: 闭包不完整: dangling={len(closure.dangling)} "
                 f"dead={len(closure.dead)} mismatch={len(closure.mismatch)} "
-                f"count={closure.count}")
+                f"count={closure.count} refs_violation="
+                f"{closure.refs_violation or '无'}")
         gates["completeness"] = "PASS"
     except ValueError as e:
         failures.append(str(e))
@@ -584,6 +690,34 @@ def _lock_candidate_invalidation_for_publish(session, candidate_ids) -> None:
         raise
 
 
+def final_candidate_release_gate(store: ArtifactStore,
+                                 candidate_id: Optional[str], *,
+                                 expected_candidate: bool = False) -> Optional[str]:
+    """G6A-06 PARTIAL 发布资格门：最终候选**重载复验**后才可批准/准出/发布。
+
+    实现位于 `candidate_service.verify_stored_final_candidate`（不可钉版 stored
+    bundle 校验）：凡**强最终标记**（request_hash/product_hashes/source
+    revision/frozen_inputs_hash/quality_status/release_eligible）或
+    schema_version 1.1 的 candidate 都视为最终候选形状，须从 ArtifactStore
+    重载 candidate + 精确 11 项产品正文，逐项校验 digest/body/对象形态，重载
+    request_hash 绑定请求、重放 final_candidate_request→recompute_all 并要求
+    与候选逐字一致，再由 `quality_from_products` 严格重派生质量并比对根元数据
+    —— 候选根自证的 FULL/true 不再可信。畸形 → E-G6A-06-030；合法
+    PARTIAL/不可发布 → E-G6A-06-031；真 FULL 或真 legacy G4 候选（无强标记）
+    → None 放行。此处仅做**惰性导入**，避免 publish_engine↔recompute 的模块级
+    循环导入；质量算法不在本模块复制第二份。
+
+    `expected_candidate` 由调用点对每个被检 id 派生（create_approval /
+    is_release_eligible）：candidate_digest 恒为 True；subject_root 在
+    manifest.objects[subject_root].kind == "candidate" 时为 True。声明候选时
+    只有**精确** legacy G4 形状可跳过 —— kind 被删 + 剥离全部强标记的候选正文
+    不得借形状检查绕过（E-G6A-06-030）。
+    """
+    from candidate_service import verify_stored_final_candidate
+    return verify_stored_final_candidate(store, candidate_id,
+                                         expected_candidate=expected_candidate)
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -622,6 +756,18 @@ def create_approval(store: ArtifactStore, session, manifest: dict,
     _subj_root = resolve_subject_root(manifest)
     for _cand in (_subj_root, candidate_digest):
         _why = invalidated_candidate(session, _cand)
+        if _why:
+            raise ValueError(_why)
+    # G6A-06 PARTIAL：最终候选形状的批准须满足自身质量/发布元数据 ——
+    # PARTIAL / 不可发布 / 元数据缺失畸形一律失败关闭，不留 Approval 行。
+    # expected_candidate 由调用点派生：candidate_digest 恒为候选；subject_root
+    # 仅在清单元数据声明 kind=candidate 时为候选 —— 声明候选时，正文缺 kind 或
+    # 剥离全部强标记也不得借形状检查跳过（E-G6A-06-030）。
+    _root_meta = manifest.get("objects", {}).get(_subj_root, {})
+    for _cand, _exp in ((_subj_root, _root_meta.get("kind") == "candidate"),
+                        (candidate_digest, True)):
+        _why = final_candidate_release_gate(store, _cand,
+                                            expected_candidate=_exp)
         if _why:
             raise ValueError(_why)
     root = approval_subject_root(store, manifest)
@@ -709,6 +855,17 @@ def is_release_eligible(session, store: ArtifactStore, approval, manifest: dict,
     # —— 批准后建立的失效事实同样必须在准出时被拒）。任一命中即拒绝。
     for _cand in (subject_root, candidate_digest):
         _why = invalidated_candidate(session, _cand)
+        if _why:
+            return False, _why
+    # G6A-06 PARTIAL：谓词自行核最终候选形状的质量/发布元数据 —— PARTIAL /
+    # 不可发布 / 元数据缺失畸形一律拒绝（即使没有单独 DB OpenItem 行）。
+    # expected_candidate 同批准侧派生（candidate_digest 恒候选；subject_root
+    # 仅当清单元数据声明 kind=candidate）—— 正文缺 kind/剥离强标记不得跳过。
+    _root_meta = manifest.get("objects", {}).get(subject_root, {})
+    for _cand, _exp in ((subject_root, _root_meta.get("kind") == "candidate"),
+                        (candidate_digest, True)):
+        _why = final_candidate_release_gate(store, _cand,
+                                            expected_candidate=_exp)
         if _why:
             return False, _why
     real = audit_candidate(store, manifest, candidate_digest)
@@ -901,11 +1058,18 @@ def publish_release(store: ArtifactStore, session, manifest: dict,
 
 
 def gc_orphans(store: ArtifactStore, manifests: Sequence[dict]) -> List[str]:
-    """孤儿回收：不在任何 manifest 闭包内的对象。回收后仍不得成为 current（D-5）。"""
+    """孤儿回收：不在任何**完整** manifest 闭包内的对象。回收后仍不得成为
+    current（D-5）。
+
+    G6A-06 收口：只对「正确标定且登记完整」的清单保留依赖 —— 闭包不完整
+    （含最终候选正文与清单元数据不符、依赖未登记）的清单不扩展保护，其对象
+    一律按孤儿回收（fail-closed）。
+    """
     reachable: Set[str] = set()
     for m in manifests:
         closure = compute_closure(store, m)
-        reachable |= closure.reachable
+        if closure.complete and closure.count > 0:
+            reachable |= closure.reachable
     orphans: List[str] = []
     for p in store.root.rglob("*"):
         if not p.is_file():
