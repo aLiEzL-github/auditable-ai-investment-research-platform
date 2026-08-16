@@ -1,0 +1,100 @@
+{
+  "SYNTHETIC_FIXTURE": true,
+  "schema": "g7-02-company-input/1.0",
+  "baseline_id": "SYN_GB_600089_FULL",
+  "ticker": "600089",
+  "period": "2024-2025",
+  "source_id": "SRC_CNINFO",
+  "source_family": "600089-issuer-legal-filings",
+  "source_docs": [
+    {
+      "locator": "synthetic://g7-02/full/source-doc",
+      "registered_at": "2026-08-08T00:00:00+00:00",
+      "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_id": "SRC_CNINFO",
+      "source_family": "600089-issuer-legal-filings",
+      "action": "IMPORT",
+      "artifact_kind": "annual-report"
+    }
+  ],
+  "facts": {
+    "营业收入": {
+      "value": "1200000000.5",
+      "unit": "CNY",
+      "locator": "synthetic://g7-02/full/营业收入/2025-12-31",
+      "material": true
+    },
+    "归母净利润": {
+      "value": "90000000.25",
+      "unit": "CNY",
+      "locator": "synthetic://g7-02/full/归母净利润/2025-12-31",
+      "material": true
+    },
+    "货币资金": {
+      "value": "300000000.75",
+      "unit": "CNY",
+      "locator": "synthetic://g7-02/full/货币资金/2025-12-31",
+      "material": true
+    },
+    "营业收入_2024": {
+      "value": "1100000000.5",
+      "unit": "CNY",
+      "locator": "synthetic://g7-02/full/营业收入/2024-12-31",
+      "material": true
+    },
+    "归母净利润_2024": {
+      "value": "80000000.25",
+      "unit": "CNY",
+      "locator": "synthetic://g7-02/full/归母净利润/2024-12-31",
+      "material": true
+    },
+    "货币资金_2024": {
+      "value": "250000000.75",
+      "unit": "CNY",
+      "locator": "synthetic://g7-02/full/货币资金/2024-12-31",
+      "material": true
+    }
+  },
+  "back_source": {
+    "营业收入": {
+      "locator": "synthetic://g7-02/full/营业收入/2025-12-31",
+      "reviewed_by": "U2",
+      "state": "VERIFIED",
+      "at": "2026-08-08T00:00:00+00:00"
+    },
+    "归母净利润": {
+      "locator": "synthetic://g7-02/full/归母净利润/2025-12-31",
+      "reviewed_by": "U2",
+      "state": "VERIFIED",
+      "at": "2026-08-08T00:00:00+00:00"
+    },
+    "货币资金": {
+      "locator": "synthetic://g7-02/full/货币资金/2025-12-31",
+      "reviewed_by": "U2",
+      "state": "VERIFIED",
+      "at": "2026-08-08T00:00:00+00:00"
+    },
+    "营业收入_2024": {
+      "locator": "synthetic://g7-02/full/营业收入/2024-12-31",
+      "reviewed_by": "U2",
+      "state": "VERIFIED",
+      "at": "2026-08-08T00:00:00+00:00"
+    },
+    "归母净利润_2024": {
+      "locator": "synthetic://g7-02/full/归母净利润/2024-12-31",
+      "reviewed_by": "U2",
+      "state": "VERIFIED",
+      "at": "2026-08-08T00:00:00+00:00"
+    },
+    "货币资金_2024": {
+      "locator": "synthetic://g7-02/full/货币资金/2024-12-31",
+      "reviewed_by": "U2",
+      "state": "VERIFIED",
+      "at": "2026-08-08T00:00:00+00:00"
+    }
+  },
+  "status": "COMPLETE",
+  "registered_at": "2026-08-08T00:00:00+00:00",
+  "back_source_note": "SYNTHETIC：回源人=U2（合成身份，非自然人录入）；全部数值为合成值。",
+  "metric_coverage": {}
+}

@@ -1,0 +1,52 @@
+{
+  "SYNTHETIC_FIXTURE": true,
+  "schema": "g7-02-company-input/1.0",
+  "baseline_id": "SYN_GB_600089_MISSING_2024",
+  "ticker": "600089",
+  "period": "2025",
+  "source_id": "SRC_CNINFO",
+  "source_family": "600089-issuer-legal-filings",
+  "source_docs": [
+    {
+      "locator": "synthetic://g7-02/missing2024/source-doc",
+      "registered_at": "2026-08-08T00:00:00+00:00",
+      "artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "source_id": "SRC_CNINFO",
+      "source_family": "600089-issuer-legal-filings",
+      "action": "IMPORT",
+      "artifact_kind": "annual-report"
+    }
+  ],
+  "facts": {
+    "营业收入": {
+      "value": "1200000000.5",
+      "unit": "CNY",
+      "locator": "synthetic://g7-02/missing2024/营业收入/2025-12-31",
+      "material": true
+    },
+    "归母净利润": {
+      "value": "90000000.25",
+      "unit": "CNY",
+      "locator": "synthetic://g7-02/missing2024/归母净利润/2025-12-31",
+      "material": true
+    }
+  },
+  "back_source": {
+    "营业收入": {
+      "locator": "synthetic://g7-02/missing2024/营业收入/2025-12-31",
+      "reviewed_by": "U2",
+      "state": "VERIFIED",
+      "at": "2026-08-08T00:00:00+00:00"
+    },
+    "归母净利润": {
+      "locator": "synthetic://g7-02/missing2024/归母净利润/2025-12-31",
+      "reviewed_by": "U2",
+      "state": "VERIFIED",
+      "at": "2026-08-08T00:00:00+00:00"
+    }
+  },
+  "status": "COMPLETE",
+  "registered_at": "2026-08-08T00:00:00+00:00",
+  "back_source_note": "SYNTHETIC：缺 2024 年报期间的登记输入；顶层 status 仍为 COMPLETE，须由运行时如实降级 PARTIAL。",
+  "metric_coverage": {}
+}
