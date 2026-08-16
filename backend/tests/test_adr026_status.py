@@ -102,7 +102,10 @@ def _load_generator(filename, portfolio):
             os.environ.pop("PORTFOLIO_ROOT", None)
         else:
             os.environ["PORTFOLIO_ROOT"] = previous
-    module.status_of = lambda _cmd: "OK"
+    module._real_status_of = module.status_of
+    module.status_of = lambda cmd: (
+        "H-8 PASS \u2014\u2014 \u68c0\u67e5\u5bf9\u8c61 1 \u4e2a"
+        if "calibration_claim_check.py" in cmd else "OK")
     audit = "\u5408\u8ba1 72 \u9879\uff1aPASS 72 / FAIL 0"
     module.run = lambda _cmd: (0, audit, "")
     return module
@@ -185,6 +188,82 @@ class TestAdr026StatusReachability(unittest.TestCase):
             self.assertIn("G6_JOINT_PASSED_SINGLE_PERSON_RED_TEAM", package)
             self.assertNotIn("G6_JOINT_BLOCKED", package)
             self.assertIn("independent_red_team_present = false", package)
+
+    def test_gate6_status_parser_accepts_pass_without_false_not_run_label(self):
+        with tempfile.TemporaryDirectory() as temp:
+            portfolio = Path(temp)
+            _portfolio(portfolio, _attestation())
+            module = _load_generator("build_gate6_acceptance.py", portfolio)
+            module.run = lambda _cmd: (
+                0, "\u2705 H-8 \u8868\u8ff0\u5b88\u536b PASS \u2014\u2014 zero false claims", "")
+            status = module._real_status_of("unused")
+            self.assertIn("PASS", status)
+            self.assertNotIn("\u672a\u8dd1\u8d77\u6765", status)
+            module.run = lambda _cmd: (1, "PASS", "injected failure")
+            self.assertFalse(module.status_ok(module._real_status_of("unused")))
+            module.run = lambda _cmd: (0, "completed without marker", "")
+            self.assertFalse(module.status_ok(module._real_status_of("unused")))
+            module.run = lambda _cmd: (0, "PASS 1 / FAIL 1", "")
+            self.assertFalse(module.status_ok(module._real_status_of("unused")))
+
+    def test_gate6_blocks_when_any_engineering_check_fails(self):
+        failures = (
+            "backend.tests.test_g6a_01",
+            "backend.tests.test_g6c_01",
+            "unittest discover",
+            "calibration_claim_check.py",
+        )
+        for failed_command in failures:
+            with self.subTest(failed_command=failed_command):
+                with tempfile.TemporaryDirectory() as temp:
+                    portfolio = Path(temp)
+                    _portfolio(portfolio, _attestation())
+                    module = _load_generator("build_gate6_acceptance.py", portfolio)
+                    module.status_of = lambda cmd: (
+                        "FAILED injected" if failed_command in cmd else
+                        ("H-8 PASS \u2014\u2014 \u68c0\u67e5\u5bf9\u8c61 1 \u4e2a"
+                         if "calibration_claim_check.py" in cmd else "OK"))
+                    self.assertEqual(_run_generator(module), 0)
+                    package = (portfolio / "Gate6-\u9a8c\u6536\u5305.md").read_text(
+                        encoding="utf-8")
+                    self.assertIn("G6_JOINT_BLOCKED", package)
+                    self.assertIn("FAILED injected", package.split("## 1", 1)[0])
+
+        with tempfile.TemporaryDirectory() as temp:
+            portfolio = Path(temp)
+            _portfolio(portfolio, _attestation())
+            module = _load_generator("build_gate6_acceptance.py", portfolio)
+            module.status_of = lambda cmd: (
+                "H-8 PASS \u2014\u2014 \u68c0\u67e5\u5bf9\u8c61 0 \u4e2a"
+                if "calibration_claim_check.py" in cmd else "OK")
+            self.assertEqual(_run_generator(module), 0)
+            package = (portfolio / "Gate6-\u9a8c\u6536\u5305.md").read_text(
+                encoding="utf-8")
+            self.assertIn("G6_JOINT_BLOCKED", package)
+            self.assertIn("\u68c0\u67e5\u5bf9\u8c61 0 \u4e2a", package)
+
+    def test_gate6_blocks_when_ledger_audit_fails(self):
+        failures = (
+            (1, "\u5408\u8ba1 72 \u9879\uff1aPASS 72 / FAIL 0"),
+            (0, "\u5408\u8ba1 72 \u9879\uff1aPASS 72 / FAIL 1"),
+            (0, "\u5408\u8ba1 72 \u9879\uff1aPASS 71 / FAIL 0"),
+            (0, "\u5408\u8ba1 0 \u9879\uff1aPASS 0 / FAIL 0"),
+            (0, "audit completed without summary"),
+        )
+        for rc, audit_output in failures:
+            with self.subTest(rc=rc, audit_output=audit_output):
+                with tempfile.TemporaryDirectory() as temp:
+                    portfolio = Path(temp)
+                    _portfolio(portfolio, _attestation())
+                    module = _load_generator("build_gate6_acceptance.py", portfolio)
+                    module.run = lambda cmd: (
+                        (rc, audit_output, "") if "audit_session.py" in cmd else
+                        (0, "OK", ""))
+                    self.assertEqual(_run_generator(module), 0)
+                    package = (portfolio / "Gate6-\u9a8c\u6536\u5305.md").read_text(
+                        encoding="utf-8")
+                    self.assertIn("G6_JOINT_BLOCKED", package)
+                    self.assertIn(audit_output, package)
 
     def test_person_count_selects_single_or_independent_path(self):
         with tempfile.TemporaryDirectory() as temp:
