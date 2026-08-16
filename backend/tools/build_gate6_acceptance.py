@@ -71,11 +71,20 @@ def run(cmd):
 
 def status_of(cmd):
     rc, out, err = run(cmd)
-    m = re.findall(r"(OK|FAILED[^\n]*)", out or err)
-    if m:
-        return m[-1]
-    _tail = ((err or out).splitlines() or ["（无输出）"])[-1][:70]
-    return f"**未跑起来（rc={rc}）**：{_tail}"
+    text = out or err
+    _tail = (text.splitlines() or ["（无输出）"])[-1][:120]
+    if rc != 0:
+        return f"**未通过或未跑起来（rc={rc}）**：{_tail}"
+    if (re.search(r"\b(?:OK|PASS)\b", text)
+            and not re.search(r"\bFAIL(?:ED)?\b", text)):
+        return _tail
+    return f"**未返回可识别成功标记（rc=0）**：{_tail}"
+
+
+def status_ok(status):
+    return (not status.startswith("**")
+            and bool(re.search(r"\b(?:OK|PASS)\b", status))
+            and not bool(re.search(r"\bFAIL(?:ED)?\b", status)))
 
 
 def in_gate6(i):
@@ -153,6 +162,40 @@ def main() -> int:
     _persons = baseline_natural_persons(PORTFOLIO)
     _solo = (_persons == 1)
 
+    # 汇合 verdict 必须由当次工程检查共同决定。旧实现只把这些结果写进正文，
+    # 即使检查失败也不会进入 blockers，形成“证据红但结论仍通过”的 fail-open。
+    _t_g6a = status_of(
+        ".venv/bin/python -m unittest backend.tests.test_g6a_01 "
+        "backend.tests.test_g6a_05 2>&1 | tail -1")
+    _t_g6c = status_of(
+        ".venv/bin/python -m unittest backend.tests.test_g6c_01 "
+        "backend.tests.test_g6c_02 backend.tests.test_g6c_03 "
+        "backend.tests.test_calibration_guard 2>&1 | tail -1")
+    _t_all = status_of(
+        ".venv/bin/python -m unittest discover -s backend/tests -p 'test_*.py' "
+        "2>&1 | tail -1")
+    _t_guard = status_of(
+        ".venv/bin/python backend/tools/calibration_claim_check.py . "
+        "2>&1 | tail -1")
+    _guard_count = re.search(r"检查对象\s+(\d+)", _t_guard)
+    _guard_ok = bool(status_ok(_t_guard) and _guard_count
+                     and int(_guard_count.group(1)) > 0)
+    _rc_a, _o_a, _e_a = run(
+        f"python3 {os.path.join(PORTFOLIO, 'tools/audit_session.py')} "
+        f"{PORTFOLIO} 2>&1")
+    _m_a = re.search(r"合计 (\d+) 项：PASS (\d+) / FAIL (\d+)", _o_a or _e_a)
+    _audit_ok = bool(
+        _rc_a == 0 and _m_a
+        and int(_m_a.group(1)) > 0
+        and int(_m_a.group(1)) == int(_m_a.group(2))
+        and int(_m_a.group(3)) == 0
+    )
+    _audit = (
+        f"OK（{_m_a.group(1)} 项：PASS {_m_a.group(2)} / FAIL {_m_a.group(3)}）"
+        if _audit_ok else
+        f"**未全绿（rc={_rc_a}）**：{((_e_a or _o_a).splitlines() or ['（无输出）'])[-1][:120]}"
+    )
+
     # ── 结论（㉑：由状态决定，不硬编码）────────────────────────────
     _blockers = []
     if g6_mat:
@@ -212,6 +255,16 @@ def main() -> int:
         _blockers.append("VD-14 不再为 REMOVED —— 本文前提改变，G6B-04 须回填")
     if not _vd26_pending:
         _blockers.append("VD-26 不再为 CALIBRATION_PENDING —— 决策前提改变")
+    if not status_ok(_t_g6a):
+        _blockers.append(f"G6A 工程测试未全过（{_t_g6a}）")
+    if not status_ok(_t_g6c):
+        _blockers.append(f"G6C 工程测试未全过（{_t_g6c}）")
+    if not status_ok(_t_all):
+        _blockers.append(f"后端全量测试未全过（{_t_all}）")
+    if not _guard_ok:
+        _blockers.append(f"H-8 表述守卫未全绿（{_t_guard}）")
+    if not _audit_ok:
+        _blockers.append(f"台账审计未全绿（{_audit}）")
     # ── verdict（ADR-026）──────────────────────────────────────────
     # 单人期红队走完全部条件时，结论**不是** G6_JOINT_READY —— 那会被读作
     # 「独立红队已通过」。取一个把缺失写在名字里的状态（ADR-009 的方法论）。
@@ -325,27 +378,11 @@ def main() -> int:
     # ── §3 测试与守卫 ─────────────────────────────────────────────
     L.append("## 3. 测试命令、退出码与结果\n")
     L.append("```text")
-    _t_g6a = status_of(
-        ".venv/bin/python -m unittest backend.tests.test_g6a_01 "
-        "backend.tests.test_g6a_05 2>&1 | tail -1")
-    _t_g6c = status_of(
-        ".venv/bin/python -m unittest backend.tests.test_g6c_01 "
-        "backend.tests.test_g6c_02 backend.tests.test_g6c_03 "
-        "backend.tests.test_calibration_guard 2>&1 | tail -1")
-    _t_guard = status_of(
-        ".venv/bin/python backend/tools/calibration_claim_check.py . "
-        "2>&1 | tail -1")
     L.append(f"G6A-01/05 工程测试: {_t_g6a}")
     L.append(f"G6C 工程测试: {_t_g6c}")
+    L.append(f"后端全量测试: {_t_all}")
     L.append(f"H-8 表述守卫: {_t_guard}")
-    _rc_a, _o_a, _e_a = run(
-        f"python3 {os.path.join(PORTFOLIO, 'tools/audit_session.py')} "
-        f"{PORTFOLIO} 2>&1")
-    _m_a = re.search(r"合计 (\d+) 项：PASS (\d+) / FAIL (\d+)", _o_a or _e_a)
-    L.append(f"台账审计: " + (
-        f"OK（{_m_a.group(1)} 项：PASS {_m_a.group(2)} / FAIL {_m_a.group(3)}）"
-        if _m_a and _m_a.group(3) == "0"
-        else f"**未全绿**：{(_e_a or _o_a).splitlines()[-1][:70]}"))
+    L.append(f"台账审计: {_audit}")
     L.append("```\n")
 
     # ── §4 风险与已知缺口 ─────────────────────────────────────────
