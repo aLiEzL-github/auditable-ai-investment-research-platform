@@ -29,6 +29,9 @@ fixtures/real/
 .env
 .env.*
 !/.env.example  # G1-05 模板（无真实值，须入仓供 secret_scan 扫描）
+# G7-01 E2E 构建模式（VITE_API_MODE=http，无秘密，须入仓）——
+# 注意：gitignore 的「行尾 #」会并入模式本体，故注释必须独占一行
+!/frontend/.env.g7-e2e
 *.pem
 *.key
 id_ed25519*
@@ -57,6 +60,7 @@ htmlcov/
 node_modules/
 frontend/node_modules/
 frontend/dist/
+frontend/dist-g7-e2e/
 frontend/*.tsbuildinfo
 frontend/test-results/
 frontend/playwright-report/

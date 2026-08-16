@@ -1,0 +1,277 @@
+{
+ "schema": "g7-01-golden/1.0",
+ "synthetic": true,
+ "SYNTHETIC_FIXTURE": true,
+ "case_id": "G7-01-WRONG_BASIS",
+ "g7_case": "WRONG_BASIS",
+ "case_note": "口径/范围错配的合成例：跨范围错配（R01 scope ≠ 契约 scope）、单位口径错配（R06 unit 缺失）、累计/单季口径错配（R08 SINGLE，其算术已自洽 —— 错配不依赖算术凑巧失败）。expected 冻结 scope/period/unit/period_basis=ANNUAL。数值全部为合成值，不复制任何真实披露/研报。",
+ "source": "synthetic://g7-01/WRONG_BASIS",
+ "checked_at": "2026-08-11T00:00:00Z",
+ "contract": {
+  "scope": "SYN-700003",
+  "period": "2026",
+  "unit": "CNY_million",
+  "vintage": "2026-08",
+  "snapshot": "SNAP-001",
+  "security_code": "SYN-700003.SH",
+  "company_id": "SYN-700003",
+  "as_of": "2026-08-11",
+  "version": "v0.1.0",
+  "workflow": "a-share-single-company-research"
+ },
+ "expected": {
+  "scope": "SYN-700003",
+  "period": "2026",
+  "unit": "CNY_million",
+  "period_basis": "ANNUAL"
+ },
+ "rules": {
+  "R01": {
+   "scope": "SYN-OTHER-SCOPE",
+   "period": "2026",
+   "instant_or_duration": "DURATION",
+   "single_quarter_or_cumulative": "ANNUAL",
+   "original_or_restated": "ORIGINAL",
+   "unit": "CNY_million",
+   "source_precision": "min_unit",
+   "applicability_predicate": "APPLICABLE",
+   "absolute_tolerance": "0",
+   "relative_tolerance": "0.001",
+   "allowed_residual": "0.5",
+   "failure_impact": "BLOCKING",
+   "locator": "synthetic://g7-01/WRONG_BASIS/r01",
+   "values": {
+    "merged_revenue": "600",
+    "segment_external_revenue": "700",
+    "segment_intercompany_revenue": "100",
+    "eliminations": "200"
+   }
+  },
+  "R02": {
+   "scope": "SYN-700003",
+   "period": "2026",
+   "instant_or_duration": "DURATION",
+   "single_quarter_or_cumulative": "ANNUAL",
+   "original_or_restated": "ORIGINAL",
+   "unit": "CNY_million",
+   "source_precision": "min_unit",
+   "applicability_predicate": "APPLICABLE",
+   "absolute_tolerance": "0",
+   "relative_tolerance": "0.001",
+   "allowed_residual": "0.5",
+   "failure_impact": "BLOCKING",
+   "locator": "synthetic://g7-01/WRONG_BASIS/r02",
+   "values": {
+    "net_profit": "100",
+    "parent_net_profit": "90",
+    "minority_profit": "10"
+   }
+  },
+  "R03": {
+   "scope": "SYN-700003",
+   "period": "2026",
+   "instant_or_duration": "DURATION",
+   "single_quarter_or_cumulative": "ANNUAL",
+   "original_or_restated": "ORIGINAL",
+   "unit": "CNY_million",
+   "source_precision": "min_unit",
+   "applicability_predicate": "APPLICABLE",
+   "absolute_tolerance": "0",
+   "relative_tolerance": "0.001",
+   "allowed_residual": "0.5",
+   "failure_impact": "BLOCKING",
+   "locator": "synthetic://g7-01/WRONG_BASIS/r03",
+   "values": {
+    "cash_net_increase": "50",
+    "ocf": "100",
+    "icf": "-30",
+    "fcf": "-20",
+    "fx_effect": "0"
+   }
+  },
+  "R04": {
+   "scope": "SYN-700003",
+   "period": "2026",
+   "instant_or_duration": "DURATION",
+   "single_quarter_or_cumulative": "ANNUAL",
+   "original_or_restated": "ORIGINAL",
+   "unit": "CNY_million",
+   "source_precision": "min_unit",
+   "applicability_predicate": "APPLICABLE",
+   "absolute_tolerance": "0",
+   "relative_tolerance": "0.001",
+   "allowed_residual": "0.5",
+   "failure_impact": "BLOCKING",
+   "locator": "synthetic://g7-01/WRONG_BASIS/r04",
+   "values": {
+    "ocf": "100",
+    "net_profit": "80",
+    "non_cash_items": "15",
+    "working_capital_changes": "10",
+    "other_adjustments": "-5"
+   }
+  },
+  "R05": {
+   "scope": "SYN-700003",
+   "period": "2026",
+   "instant_or_duration": "INSTANT",
+   "single_quarter_or_cumulative": "ANNUAL",
+   "original_or_restated": "ORIGINAL",
+   "unit": "CNY_million",
+   "source_precision": "min_unit",
+   "applicability_predicate": "APPLICABLE",
+   "absolute_tolerance": "0",
+   "relative_tolerance": "0.001",
+   "allowed_residual": "0.5",
+   "failure_impact": "BLOCKING",
+   "locator": "synthetic://g7-01/WRONG_BASIS/r05",
+   "values": {
+    "ending_equity": "400",
+    "beginning_equity": "350",
+    "comprehensive_income": "30",
+    "owner_contributions_distributions": "10",
+    "share_based_payment": "5",
+    "m_and_a_effects": "5",
+    "other_changes": "0"
+   }
+  },
+  "R06": {
+   "scope": "SYN-700003",
+   "period": "2026",
+   "instant_or_duration": "INSTANT",
+   "single_quarter_or_cumulative": "ANNUAL",
+   "original_or_restated": "ORIGINAL",
+   "unit": "",
+   "source_precision": "min_unit",
+   "applicability_predicate": "APPLICABLE",
+   "absolute_tolerance": "0",
+   "relative_tolerance": "0.001",
+   "allowed_residual": "0.5",
+   "failure_impact": "BLOCKING",
+   "locator": "synthetic://g7-01/WRONG_BASIS/r06",
+   "values": {
+    "total_assets": "1000",
+    "total_liabilities": "600",
+    "total_equity": "400"
+   }
+  },
+  "R07": {
+   "scope": "SYN-700003",
+   "period": "2026",
+   "instant_or_duration": "DURATION",
+   "single_quarter_or_cumulative": "ANNUAL",
+   "original_or_restated": "ORIGINAL",
+   "unit": "CNY_million",
+   "source_precision": "min_unit",
+   "applicability_predicate": "APPLICABLE",
+   "absolute_tolerance": "0",
+   "relative_tolerance": "0.001",
+   "allowed_residual": "0.5",
+   "failure_impact": "BLOCKING",
+   "locator": "synthetic://g7-01/WRONG_BASIS/r07",
+   "values": {
+    "parent_net_profit": "90",
+    "parent_non_recurring_gain_loss": "20",
+    "non_gang_parent_net_profit": "70"
+   }
+  },
+  "R08": {
+   "scope": "SYN-700003",
+   "period": "2026",
+   "instant_or_duration": "DURATION",
+   "single_quarter_or_cumulative": "SINGLE",
+   "original_or_restated": "ORIGINAL",
+   "unit": "CNY_million",
+   "source_precision": "min_unit",
+   "applicability_predicate": "APPLICABLE",
+   "absolute_tolerance": "0",
+   "relative_tolerance": "0.001",
+   "allowed_residual": "0.5",
+   "failure_impact": "BLOCKING",
+   "locator": "synthetic://g7-01/WRONG_BASIS/r08",
+   "values": {
+    "merged_profit": "200",
+    "segment_profit_sum": "200",
+    "segment_eliminations": "0",
+    "segment_measurement_basis": "COMPARABLE"
+   }
+  },
+  "R09": {
+   "scope": "SYN-700003",
+   "period": "2026",
+   "instant_or_duration": "INSTANT",
+   "single_quarter_or_cumulative": "ANNUAL",
+   "original_or_restated": "ORIGINAL",
+   "unit": "CNY_million",
+   "source_precision": "min_unit",
+   "applicability_predicate": "APPLICABLE",
+   "absolute_tolerance": "0",
+   "relative_tolerance": "0.001",
+   "allowed_residual": "0.5",
+   "failure_impact": "BLOCKING",
+   "locator": "synthetic://g7-01/WRONG_BASIS/r09",
+   "values": {
+    "parent_assets": "700",
+    "subsidiary_assets": "400",
+    "intercompany_eliminations": "100",
+    "consolidated_assets": "1000"
+   }
+  },
+  "R10": {
+   "scope": "SYN-700003",
+   "period": "2026",
+   "instant_or_duration": "INSTANT",
+   "single_quarter_or_cumulative": "ANNUAL",
+   "original_or_restated": "ORIGINAL",
+   "unit": "CNY_million",
+   "source_precision": "min_unit",
+   "applicability_predicate": "APPLICABLE",
+   "absolute_tolerance": "0",
+   "relative_tolerance": "0.001",
+   "allowed_residual": "0.5",
+   "failure_impact": "BLOCKING",
+   "locator": "synthetic://g7-01/WRONG_BASIS/r10",
+   "values": {
+    "this_period_beginning": "1000",
+    "prior_period_ending": "1000",
+    "restatement_pending": ""
+   }
+  }
+ },
+ "predictions": [
+  {"id": "PRED-G7-01-W1", "claim_id": "CLAIM-SYN-W1",
+   "horizon": "2027-06-30T00:00:00Z", "probability": 0.6,
+   "calibration_pending": true, "registered_at": "2026-08-01T00:00:00Z",
+   "status": "REGISTERED"},
+  {"id": "PRED-G7-01-W2", "claim_id": "CLAIM-SYN-W2",
+   "horizon": "2027-12-31T00:00:00Z", "probability": 0.35,
+   "calibration_pending": true, "registered_at": "2026-05-01T00:00:00Z",
+   "status": "UNDECIDABLE"}
+ ],
+ "claims": [
+  {"id": "CLAIM-SYN-W1", "schema_version": "1.0.0",
+   "statement": "SYNTHETIC：合成口径例营业收入勾稽成立",
+   "refs": ["EV-SYN-W1"], "status": "SUPPORTED",
+   "category": "D", "materiality": "MATERIAL"},
+  {"id": "CLAIM-SYN-W2", "schema_version": "1.0.0",
+   "statement": "SYNTHETIC：合成口径例资产负债勾稽成立",
+   "refs": ["EV-SYN-W1"], "status": "DISPUTED",
+   "category": "D", "materiality": "MATERIAL"}
+ ],
+ "evidence": [
+  {"id": "EV-SYN-W1", "schema_version": "1.0", "artifact_id": "ART-SYN-W1",
+   "snapshot_id": "SNAP-001", "schema_ver": "1.0",
+   "parser_version": "0.1.0",
+   "sha256": "2e8bfe6b855115151c3bf39766ed606fb68b7b07ab8c1d8e96197a15188fe1d3",
+   "content": "SYNTHETIC：合成口径错配示例（不复制任何真实披露）"}
+ ],
+ "facts": [
+  {"id": "F-SYN-W1", "schema_version": "1.0.0", "artifact_id": "ART-SYN-W1",
+   "metric": "单季分部利润",
+   "value": "220", "unit": "CNY_million", "period": "2026-09-30",
+   "scope": "CONSOLIDATED", "basis": "REPORTED", "vintage": "V2026-08",
+   "locator": "synthetic://g7-01/WRONG_BASIS/f-seg",
+   "parser_version": "0.1.0"}
+ ],
+ "open_items": []
+}

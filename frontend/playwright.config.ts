@@ -7,6 +7,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "e2e/g7/**", // G7 真实后端套件独立配置（playwright.g7.config.ts）
   timeout: 30_000,
   fullyParallel: false,
   workers: 1,

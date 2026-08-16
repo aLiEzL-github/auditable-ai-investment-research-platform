@@ -16,6 +16,8 @@
 
 ### 甲 · fixture 合成性（A-2a）
   · backend/tests/fixtures/ 下的 .json 须带顶层 SYNTHETIC_FIXTURE=true
+  · **递归**扫子目录（确定性排序，报告相对路径）；符号链接/不可读/
+    非法 JSON 一律判红而非跳过（失败关闭）
   · 合成 fixture 不得含真实形态 locator（.xlsx/.pdf/http/交易所/巨潮/stats.gov）
   · fixtures/ 目录不存在 = 无对象可检查 → 判红
 
@@ -89,28 +91,92 @@ def tracked_files():
     return [p for p in r.stdout.splitlines() if p.strip()]
 
 
+def _fixture_symlink_dirs():
+    """收集 fixtures 树中**任意深度**的符号链接目录。
+
+    os.walk(followlinks=False) 会把符号链接目录列进 dirnames 但静默跳过
+    —— 漏扫的树照样报「检查 0 个」绿灯。必须先把它显式枚举出来判红
+    （失败关闭），否则入仓一个符号链接目录指向真实数据即可绕过本工具。
+    """
+    found = []
+    for dirpath, dirnames, _ in os.walk(FIXTURES):
+        for d in sorted(dirnames):
+            full = os.path.join(dirpath, d)
+            if os.path.islink(full):
+                found.append(os.path.relpath(full, FIXTURES))
+    return found
+
+
+def _iter_fixture_symlinks():
+    """枚举 fixtures 树中**任意扩展名**的符号链接文件（失败关闭）。
+
+    os.walk(followlinks=False) 对目录内符号链接**文件**会原样列出，但
+    _iter_fixture_json 的 .json 过滤会把非 .json 的符号链接漏掉 ——
+    fixtures/*.txt 指向真实数据即可绕过。符号链接文件不论扩展名一律判红。
+    隐藏目录不得被剪枝（剪枝即漏扫）：fixtures 树中没有应被隐身的目录。
+    __pycache__ 是 Python 缓存目录、与 fixture 无关，保持显式跳过。
+    """
+    for dirpath, dirnames, filenames in os.walk(FIXTURES):
+        dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+        for fn in sorted(filenames):
+            full = os.path.join(dirpath, fn)
+            if os.path.islink(full):
+                yield os.path.relpath(full, FIXTURES)
+
+
+def _iter_fixture_json():
+    """递归枚举 fixtures 目录下的 .json（确定性排序，不剪枝隐藏目录）。
+
+    报告相对路径（相对 fixtures 根）—— 嵌套子目录（如 g7-01/）必须被
+    计入，不得只扫顶层；隐藏目录里的 fixture 同样是检查对象，剪枝即漏扫。
+    符号链接目录由 _fixture_symlink_dirs 另行判红；符号链接文件由
+    _iter_fixture_symlinks 另行判红。
+    """
+    for dirpath, dirnames, filenames in os.walk(FIXTURES):
+        dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+        for fn in sorted(filenames):
+            if not fn.endswith(".json"):
+                continue
+            yield os.path.relpath(os.path.join(dirpath, fn), FIXTURES)
+
+
 def _check_fixtures():
     """甲 · A-2a：fixture 合成性。返回 (bad, checked, exempt)。"""
     bad, checked, exempt = [], 0, []
     if not os.path.isdir(FIXTURES):
         return (["fixtures/ 目录不存在 —— 无对象可检查，判红（A-2a）"], 0, [])
-    for fn in sorted(os.listdir(FIXTURES)):
-        if not fn.endswith(".json"):
-            continue
-        fp = os.path.join(FIXTURES, fn)
+    if os.path.islink(FIXTURES):
+        # 根本身是符号链接 —— os.walk 会跟随根，等于扫了根所指的真实树。
+        # 必须显式判红（失败关闭），否则指向真实数据即可绕过本工具。
+        return (["fixtures/ 根是符号链接 —— 判红而非跟随（失败关闭）"], 0, [])
+    for rel in _fixture_symlink_dirs():
+        bad.append(f"{rel}: 符号链接目录 —— 判红而非跟随（失败关闭）")
+    for rel in _iter_fixture_symlinks():
+        bad.append(f"{rel}: 符号链接文件 —— 判红而非跟随（失败关闭）")
+    for rel in _iter_fixture_json():
+        fp = os.path.join(FIXTURES, rel)
+        if os.path.islink(fp):
+            continue  # 已在符号链接文件清单判红（避免重复计数）
         try:
-            d = json.load(open(fp, encoding="utf-8"))
+            with open(fp, encoding="utf-8") as fh:
+                d = json.load(fh)
         except Exception as e:
-            bad.append(f"{fn}: JSON 解析失败 {e} —— 判红而非跳过")
+            bad.append(f"{rel}: JSON 解析失败 {e} —— 判红而非跳过")
             continue
         checked += 1
         if d.get("SYNTHETIC_FIXTURE") is True:
-            exempt.append(fn)
+            exempt.append(rel)
             if REAL_LOCATOR.search(json.dumps(d, ensure_ascii=False)):
-                bad.append(f"{fn}: 合成 fixture 含真实形态 locator "
+                bad.append(f"{rel}: 合成 fixture 含真实形态 locator "
                            f"（xlsx/pdf/http/交易所）—— 冒充真实数据的风险")
             continue
-        bad.append(f"{fn}: 缺 SYNTHETIC_FIXTURE 标记 —— 合成数据冒充真实数据（A-2a）")
+        bad.append(f"{rel}: 缺 SYNTHETIC_FIXTURE 标记 —— "
+                   f"合成数据冒充真实数据（A-2a）")
+    if checked == 0 and not bad:
+        # fixtures/ 存在但一个 .json 都没被检查 → 判红。存在但为空 ≠
+        # 检查通过；符号链接目录/非法文件已产生错误时不重复计一次。
+        bad.append("fixtures/ 下无任何 .json fixture —— 检查 0 个，判红"
+                   "（失败关闭：存在但为空 ≠ 通过）")
     return bad, checked, exempt
 
 
@@ -177,7 +243,8 @@ def main() -> int:
               f"{len(bad_b)} 项（乙·研究产出禁入）")
         return 1
     print(f"✅ 研究数据隔离与禁入合格："
-          f"甲 检查 {n_a} 个 fixture（豁免 {len(ex_a)}：{', '.join(ex_a) or '无'}）· "
+          f"甲 检查 {n_a} 个 fixture（递归，豁免 {len(ex_a)}："
+          f"{', '.join(ex_a) or '无'}）· "
           f"乙 检查 {n_b} 个已跟踪文本文件（豁免 {ex_b}）")
     return 0
 
