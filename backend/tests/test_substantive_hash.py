@@ -24,6 +24,7 @@
 而不是它是否出现在源码里。
 """
 import ast
+import hashlib
 import os
 import re
 import sys
@@ -34,9 +35,10 @@ _TOOLS = os.path.join(_HERE, "..", "tools")
 sys.path.insert(0, _TOOLS)
 
 from substantive_hash import (  # noqa: E402
-    LIVE_BEGIN, LIVE_END, legacy_leaks, live_lines, strip_live, substantive,
-    unbalanced_markers,
+    LIVE_BEGIN, LIVE_END, declared, legacy_leaks, live_lines, selfdecl_mismatch,
+    strip_live, substantive, unbalanced_markers,
 )
+from substantive_hash import _BLOCK as _BLOCK_RE  # noqa: E402  变异注入要用
 
 _GEN_RE = re.compile(r"^build_gate\w+_acceptance\.py$")
 
@@ -87,6 +89,66 @@ class TestSubstantiveBehaviour(unittest.TestCase):
 
     def test_balanced_markers_ok(self):
         self.assertIsNone(unbalanced_markers(_DOC))
+
+
+class TestSelfDeclRoundtrip(unittest.TestCase):
+    """自声明值须等于就地重算值 —— **本轮漏掉的那个测量点**。
+
+    生成器算 `substantive("\\n".join(L))`（写盘前，还没有自声明行），
+    审计 `T1` 对**整个文件**就地重算。签署记录绑定前者、校验用后者，
+    两者若不同口径，签了也永远校验不过（`T1` 恒红）。
+
+    S-1/S-2 验的是「连跑两次 substantive 是否一致」—— 两次都用生成器的口径，
+    **永远自洽**，测不出跨口径的这条。直到 S-4 去取第一份签署哈希才发现：
+    同一份 Gate3 包，自声明 `f3f58b04…`、就地重算 `7a0ae372…`，差 `'\\n\\n'`。
+    """
+
+    def _emit(self, body):
+        """模拟生成器：算 join(L) 的哈希，再追加自声明行。"""
+        h = substantive(body)
+        return body + f"\nsubstantive_sha256 = {h}\n", h
+
+    def test_generator_and_inplace_agree(self):
+        for name, body in (
+                ("普通", "# 包\n正文\n"
+                         f"{LIVE_BEGIN}\n生成时刻 = X\n{LIVE_END}\n尾"),
+                ("正文以换行结尾", "# 包\n正文\n"
+                                   f"{LIVE_BEGIN}\nX\n{LIVE_END}\n尾\n"),
+                ("末尾多空行", "# 包\n正文\n"
+                               f"{LIVE_BEGIN}\nX\n{LIVE_END}\n尾\n\n\n"),
+                ("无活块", "# 包\n只有正文\n")):
+            with self.subTest(name):
+                f, h = self._emit(body)
+                self.assertEqual(
+                    substantive(f), h,
+                    f"{name}：就地重算 ≠ 生成器自声明 —— T1 将恒红")
+                self.assertIsNone(selfdecl_mismatch(f))
+
+    def test_mismatch_detected(self):
+        body = f"# 包\n正文\n{LIVE_BEGIN}\nX\n{LIVE_END}\n"
+        f, _ = self._emit(body)
+        bad = re.sub(r"substantive_sha256 = \w+",
+                     "substantive_sha256 = " + "0" * 64, f)
+        self.assertIsNotNone(selfdecl_mismatch(bad),
+                             "自声明被改成假值却未判红")
+
+    def test_no_selfdecl_is_not_a_mismatch(self):
+        """Gate0 不写自声明行 —— 无该行不等于不符。"""
+        self.assertIsNone(selfdecl_mismatch("# 包\n正文\n"))
+
+    def test_predicate_goes_red_on_old_regex(self):
+        """变异注入：用**原缺陷形态**（只删行文本、不吃换行、不 rstrip）。"""
+        old_decl = re.compile(r"^substantive_sha256\s*=.*$", re.M)
+
+        def strip_old(t):
+            return old_decl.sub("", _BLOCK_RE.sub("", t))
+
+        body = f"# 包\n正文\n{LIVE_BEGIN}\nX\n{LIVE_END}\n尾"
+        h_gen = hashlib.sha256(strip_old(body).encode()).hexdigest()
+        f = body + f"\nsubstantive_sha256 = {h_gen}\n"
+        h_file = hashlib.sha256(strip_old(f).encode()).hexdigest()
+        self.assertNotEqual(h_gen, h_file,
+                            "旧写法本应对不上 —— 变异未复现原缺陷，此用例无效")
 
 
 class TestNoDowngrade(unittest.TestCase):
