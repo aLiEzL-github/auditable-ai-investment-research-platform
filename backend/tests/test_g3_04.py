@@ -38,8 +38,8 @@ class TestNoFreeEval(unittest.TestCase):
 
     def test_eval_syntax_rejected(self):
         reg = registry()
-        for evil in ("eval('x')", "x.__class__", "os.system('rm -rf /')",
-                     "open('/etc/passwd')", "a.b.c", "f(x)",
+        for evil in ("eval('x')", "x.__class__", "os.system('TEST_SENTINEL')",
+                     "open('TEST_SENTINEL')", "a.b.c", "f(x)",
                      "x; y", "import os", "x ** 2", "x // 2", "x @ y",
                      "x @ 1"):  # 纯 bad token（@ 后无 id，无 UnregisteredConstant 兜底）
             # 恶意表达式必须在登记期被拒绝 —— 拒绝类型不限

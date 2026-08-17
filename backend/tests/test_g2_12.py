@@ -42,7 +42,7 @@ class TestParserSandbox(unittest.TestCase):
 
     # ── XXE/实体膨胀 ───────────────────────────────────────────────
     def test_xxe_rejected(self):
-        evil = b'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><r>&x;</r>'
+        evil = b'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///nonexistent/xxe-test-sentinel">]><r>&x;</r>'
         with self.assertRaises(SandboxError) as ctx:
             xxe_guard(evil)
         self.assertIn("E-G2-12-005", str(ctx.exception))

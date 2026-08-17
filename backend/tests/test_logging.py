@@ -93,8 +93,9 @@ class TestSecretScanLogSample(unittest.TestCase):
         import shutil
         tmp = tempfile.mkdtemp()
         try:
+            synthetic_token = "ghp_" + "A" * 40
             with open(os.path.join(tmp, "app.log.txt"), "w", encoding="utf-8") as fh:
-                fh.write('{"ts": "x", "msg": "token=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}\n')
+                fh.write(f'{{"ts": "x", "msg": "token={synthetic_token}"}}\n')
             scan = os.path.join(os.path.dirname(__file__), "..", "tools", "secret_scan.py")
             r = subprocess.run([sys.executable, scan, tmp], capture_output=True, text=True)
             self.assertEqual(r.returncode, 1, f"secret_scan 未命中合成密钥日志: {r.stdout[-200:]}")
