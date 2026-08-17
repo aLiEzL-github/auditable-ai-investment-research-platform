@@ -49,6 +49,13 @@ from red_team_marker_check import (  # noqa: E402
     independent_review_missing,
 )
 
+# ── 写盘前置：目标被 ACTIVE 签署即拒绝（A §10.3）────────────────────
+# 验收包内嵌实时读数（CI run / 审计合计 / 开放项计数），**一跑就改字节**。
+# 保护此前只在 acceptance_fixpoint 上，直接运行本脚本无任何拦截 ——
+# 2026-08-17 实测后果：六份已签包全部漂移。判据只此一份，见该模块。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from signed_object_guard import refuse_if_signed   # noqa: E402
+
 NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
 
 # 与 audit_session.py 的 _SUB_EXCLUDE **逐字一致**（14 条）
@@ -431,6 +438,7 @@ def main() -> int:
     L = _H + L
 
     pkg = os.path.join(PORTFOLIO, "Gate6A-验收包.md")
+    refuse_if_signed(PORTFOLIO, pkg)
     with open(pkg, "w", encoding="utf-8") as f:
         f.write("\n".join(L))
     assert open(pkg, encoding="utf-8").read() == "\n".join(L), "写入后断言失败"

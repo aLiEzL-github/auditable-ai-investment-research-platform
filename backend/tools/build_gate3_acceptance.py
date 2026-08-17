@@ -13,6 +13,13 @@ import shlex
 import subprocess
 import sys
 
+# ── 写盘前置：目标被 ACTIVE 签署即拒绝（A §10.3）────────────────────
+# 验收包内嵌实时读数（CI run / 审计合计 / 开放项计数），**一跑就改字节**。
+# 保护此前只在 acceptance_fixpoint 上，直接运行本脚本无任何拦截 ——
+# 2026-08-17 实测后果：六份已签包全部漂移。判据只此一份，见该模块。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from signed_object_guard import refuse_if_signed   # noqa: E402
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 def _portfolio_root() -> str:
     """台账根目录 —— 由 PORTFOLIO_ROOT 给出，**缺失即拒**（OI-PF-186）。
@@ -289,6 +296,7 @@ def main() -> int:
         raise SystemExit(
             "E-A2D: Gate3-验收包.md 缺 SYNTHETIC 数据源声明（A-2d）—— "
             "删掉载明即生成失败")
+    refuse_if_signed(PORTFOLIO, pkg)
     with open(pkg, "w", encoding="utf-8") as f:
         f.write(_acc_text)
     assert open(pkg, encoding="utf-8").read() == _acc_text
