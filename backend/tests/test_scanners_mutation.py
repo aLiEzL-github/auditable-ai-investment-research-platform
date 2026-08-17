@@ -231,6 +231,25 @@ class TestRepoHygieneRules(unittest.TestCase):
         self.assertEqual(
             repo_hygiene_check.root_violations(set(repo_hygiene_check.ROOT_ALLOWED)), [])
 
+    def test_h3_rejects_tracked_db_companion(self):
+        """受跟踪的 SQLite 伴生文件（backend/ 下的残留形态）须判红。
+
+        H-2 只查仓库根 —— 本判据补的就是 backend/ 下伴生文件的缺口。
+        """
+        for rel in ("backend/app.db-shm", "backend/app.db-wal",
+                    "app.db-wal", "data/x.db-shm"):
+            with self.subTest(rel):
+                v = repo_hygiene_check.sqlite_companion_violations([rel])
+                self.assertTrue(any(rel in x for x in v),
+                                f"H-3 未判红：{rel!r}")
+
+    def test_h3_clean_file_set_passes(self):
+        """防误红：非伴生文件不得判红。"""
+        self.assertEqual(
+            repo_hygiene_check.sqlite_companion_violations([
+                "backend/app/main.py", "backend/app.db", "x.db2",
+                "wal.txt", "backend/db_shm.py"]), [])
+
     def test_guard_is_actually_wired_end_to_end(self):
         """判据对 ≠ 守卫生效：在临时 git 仓库上端到端跑一次。
 
@@ -244,6 +263,8 @@ class TestRepoHygieneRules(unittest.TestCase):
             subprocess.run(["git", "init", "-q", d], check=True)
             with open(os.path.join(d, "stray.py"), "w", encoding="utf-8") as f:
                 f.write(_c('SRC = "', _U, '"') + "\n")
+            with open(os.path.join(d, "stray.db-wal"), "w", encoding="utf-8") as f:
+                f.write("")
             subprocess.run(["git", "-C", d, "add", "-A"], check=True)
             r = subprocess.run(
                 [sys.executable,
@@ -252,6 +273,7 @@ class TestRepoHygieneRules(unittest.TestCase):
             self.assertEqual(r.returncode, 1, f"端到端未判红：{r.stdout}")
             self.assertIn("H-1", r.stdout)
             self.assertIn("H-2", r.stdout)
+            self.assertIn("H-3", r.stdout)
 
 
 if __name__ == "__main__":

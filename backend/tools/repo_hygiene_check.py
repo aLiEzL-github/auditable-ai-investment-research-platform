@@ -9,10 +9,16 @@
 
   H-1  受跟踪文件内不得出现本机绝对路径（/Users/… 或 /home/…）
   H-2  仓库根的受跟踪条目须与声明集合**完全一致**（多一个即判红）
+  H-3  受跟踪文件不得含 SQLite 伴生文件（*.db-shm / *.db-wal）
 
 H-2 是**默认拒绝**，不是豁免清单：不在声明集合内的一律判红。
 方向与「白名单内放行、单外也放行」的穷举清单相反 —— 后者不可证完备，
 前者只要声明集合本身被 review 过，新增物就无处藏身。
+
+H-3 补 H-2 的缺口：H-2 只查仓库根，而 WAL 模式的伴生文件通常躺在
+backend/ 等子目录下（如 backend/app.db-wal），`.gitignore` 是防被
+`git add -A` 扫进去的第一道，H-3 是第二道 —— 两道职责分开，
+不能因为第一道挡住了就让第二道永远不被走到（与 OI-PF-186 同形）。
 
 用法：python3 backend/tools/repo_hygiene_check.py <repo_root>
 """
@@ -41,6 +47,9 @@ _TEXT_EXT = {".py", ".md", ".yml", ".yaml", ".json", ".toml", ".cfg", ".ini",
 # 改为：本文件只在 H-1 中跳过**自身路径**，且该事实在此写明。
 _SELF = "backend/tools/repo_hygiene_check.py"
 
+# ── H-3：SQLite WAL 模式伴生文件后缀（数据禁入的残留形态）──
+_SQLITE_COMPANION_SUFFIXES = (".db-shm", ".db-wal")
+
 
 def abs_path_hit(line: str):
     """H-1 判据：一行里是否含本机绝对路径。返回命中串或 None。
@@ -64,6 +73,21 @@ def root_violations(roots):
         out.append(f"H-2: 仓库根多出受跟踪条目 {e!r} —— 未在 ROOT_ALLOWED 声明")
     for m in sorted(ROOT_ALLOWED - set(roots)):
         out.append(f"H-2: 声明的根条目 {m!r} 已不存在 —— 声明集合须随之更新")
+    return out
+
+
+def sqlite_companion_violations(files):
+    """H-3 判据：受跟踪文件路径不得以 SQLite 伴生后缀结尾。
+
+    **默认拒绝**：命中即判红，没有豁免入口。`.gitignore` 是第一道
+    （防 `git add -A` 扫入），本判据是第二道（防有人用 `-f` 或
+    在其他分支上把它带进受跟踪集合）。
+    """
+    out = []
+    for rel in files:
+        if rel.endswith(_SQLITE_COMPANION_SUFFIXES):
+            out.append(f"H-3: 受跟踪文件 {rel!r} 是 SQLite 伴生文件"
+                       f"（{_SQLITE_COMPANION_SUFFIXES}）—— 不得入仓")
     return out
 
 
@@ -102,6 +126,9 @@ def main() -> int:
     roots = {rel.split("/", 1)[0] for rel in files}
     bad.extend(root_violations(roots))
 
+    # ── H-3 ──
+    bad.extend(sqlite_companion_violations(files))
+
     if bad:
         print("❌ 仓库卫生违规（OI-PF-186）：")
         for b in bad[:40]:
@@ -110,7 +137,8 @@ def main() -> int:
             print(f"  …… 另 {len(bad) - 40} 条")
         return 1
     print(f"✅ 检查对象 {len(files)} 个受跟踪文件："
-          f"H-1 无本机绝对路径 · H-2 根条目 {len(roots)} 项与声明完全一致")
+          f"H-1 无本机绝对路径 · H-2 根条目 {len(roots)} 项与声明完全一致"
+          f" · H-3 无 SQLite 伴生文件")
     return 0
 
 
