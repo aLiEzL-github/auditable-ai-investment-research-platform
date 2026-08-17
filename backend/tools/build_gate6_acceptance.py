@@ -41,9 +41,7 @@ def _portfolio_root() -> str:
             f"{p!r} 未设或不是目录）—— 本工具不再使用任何硬编码缺省路径")
     return os.path.abspath(p)
 
-
 PORTFOLIO = _portfolio_root()
-
 
 # ── ADR-026：单人期红队的精确状态 ────────────────────────────────────
 # ADR-026 的结构判据只在 red_team_marker_check 里有一份。Gate 6 与 Gate 6A
@@ -63,18 +61,16 @@ from red_team_marker_check import (  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from signed_object_guard import refuse_if_signed   # noqa: E402
 
+from substantive_hash import (   # noqa: E402
+    LIVE_BEGIN, LIVE_END, substantive as substantive_of, unbalanced_markers,
+)
+
 NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
-
-EXCLUDE = ("生成时刻", "实测时刻", "main 最新 CI run", "run = ", "ruleset: ",
-           "g1-08-2026", "_mut-", "sparseimage", "备份目录 = ", "  g1-08-",
-           "substantive_sha256", "合计", "独立审计:", "v2.0 基线:")
-
 
 def run(cmd):
     r = subprocess.run(["/bin/sh", "-o", "pipefail", "-c", cmd],
                        capture_output=True, text=True, cwd=ROOT)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
-
 
 def status_of(cmd):
     rc, out, err = run(cmd)
@@ -87,12 +83,10 @@ def status_of(cmd):
         return _tail
     return f"**未返回可识别成功标记（rc=0）**：{_tail}"
 
-
 def status_ok(status):
     return (not status.startswith("**")
             and bool(re.search(r"\b(?:OK|PASS)\b", status))
             and not bool(re.search(r"\bFAIL(?:ED)?\b", status)))
-
 
 def in_gate6(i):
     """ADR-021 §2 逐字段口径（OI-PF-157）：汇合任务 G6-01。"""
@@ -103,10 +97,8 @@ def in_gate6(i):
             return True
     return bool(re.search(r"Gate 6\b|Gate 6[^ABC]", str(i.get("blocks_decisions") or "")))
 
-
 def is_standing_risk(i):
     return str(i.get("blocks_data_flow")) == "ALL"
-
 
 def _blk(i):
     p = []
@@ -118,13 +110,11 @@ def _blk(i):
         p.append(f"数据面={i['blocks_data_flow']}")
     return " · ".join(p) or "无"
 
-
 def _rec(tid):
     fp = os.path.join(PORTFOLIO, "task-records", f"{tid}.json")
     if os.path.exists(fp):
         return json.load(open(fp, encoding="utf-8"))
     return None
-
 
 def main() -> int:
     L = []
@@ -389,7 +379,9 @@ def main() -> int:
     L.append(f"G6C 工程测试: {_t_g6c}")
     L.append(f"后端全量测试: {_t_all}")
     L.append(f"H-8 表述守卫: {_t_guard}")
+    L.append(LIVE_BEGIN)
     L.append(f"台账审计: {_audit}")
+    L.append(LIVE_END)
     L.append("```\n")
 
     # ── §4 风险与已知缺口 ─────────────────────────────────────────
@@ -429,7 +421,9 @@ def main() -> int:
     _H = []
     _H.append("# Gate 6 汇合验收包（G6-01）\n")
     _H.append("```text")
+    _H.append(LIVE_BEGIN)
     _H.append(f"生成时刻   = {NOW}")
+    _H.append(LIVE_END)
     _H.append("生成方式   = backend/tools/build_gate6_acceptance.py（全部数据实时采集）")
     _H.append("依据       = 基线 B §10 末 G6-01 + ADR-012 §5 + ADR-026 + VD-14/VD-26 + "
               "ADR-021 §2 + ADR-022 §2/§3 + ADR-010 §3.1")
@@ -438,8 +432,13 @@ def main() -> int:
               "其余字段含 G6/Gate 6；blocks_data_flow=\"ALL\" 不算命中"
               "（ADR-022 §2），另见 §1.7")
     _H.append(f"结论       = **{verdict}**"
-              + (f" —— {'；'.join(_blockers)}" if _blockers
-                 else "（三分支并列可见且各自就绪）"))
+              + ("" if _blockers else "（三分支并列可见且各自就绪）"))
+    # 阻断明细里嵌着实时读数（台账审计合计等）—— 判定须签、明细不能签，
+    # 否则加一条审计守卫就改写结论行。就绪态下 _blockers 为空，签署内容无损失。
+    if _blockers:
+        _H.append(LIVE_BEGIN)
+        _H.append(f"结论明细   = —— {'；'.join(_blockers)}")
+        _H.append(LIVE_END)
     if verdict == "G6_JOINT_PASSED_SINGLE_PERSON_RED_TEAM":
         _H.append("**本包不是独立红队 Gate 6 PASS。** 它只形成 ADR-026 的精确较弱")
         _H.append("签署对象；独立性要求仍未满足，且当前文件本身不构成签署。")
@@ -461,8 +460,13 @@ def main() -> int:
         f.write("\n".join(L))
     assert open(pkg, encoding="utf-8").read() == "\n".join(L), "写入后断言失败"
 
-    sub_lines = [ln for ln in L if not any(x in ln for x in EXCLUDE)]
-    substantive = hashlib.sha256("\n".join(sub_lines).encode("utf-8")).hexdigest()
+    _merr = unbalanced_markers("\n".join(L))
+
+    if _merr:
+
+        raise SystemExit(f"E-LIVE-001: {_merr}")
+
+    substantive = substantive_of("\n".join(L))
     with open(pkg, "a", encoding="utf-8") as f:
         f.write(f"\nsubstantive_sha256 = {substantive}\n")
     content = hashlib.sha256(open(pkg, "rb").read()).hexdigest()
@@ -477,7 +481,6 @@ def main() -> int:
         # 一条被截断的阻断理由，和一条含糊的阻断理由，对读者是一回事。
         print(f"  · {_b}", file=sys.stderr)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

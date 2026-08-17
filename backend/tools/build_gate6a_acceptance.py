@@ -39,7 +39,6 @@ def _portfolio_root() -> str:
             f"{p!r} 未设或不是目录）—— 本工具不再使用任何硬编码缺省路径")
     return os.path.abspath(p)
 
-
 PORTFOLIO = _portfolio_root()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from red_team_marker_check import (  # noqa: E402
@@ -56,23 +55,20 @@ from red_team_marker_check import (  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from signed_object_guard import refuse_if_signed   # noqa: E402
 
-NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
+from substantive_hash import (   # noqa: E402
+    LIVE_BEGIN, LIVE_END, substantive as substantive_of, unbalanced_markers,
+)
 
-# 与 audit_session.py 的 _SUB_EXCLUDE **逐字一致**（14 条）
-EXCLUDE = ("生成时刻", "实测时刻", "main 最新 CI run", "run = ", "ruleset: ",
-           "g1-08-2026", "_mut-", "sparseimage", "备份目录 = ", "  g1-08-",
-           "substantive_sha256", "合计", "独立审计:", "v2.0 基线:")
+NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
 
 EXEC_TASKS = ("G6A-01", "G6A-05", "G6A-06")
 SUSPENDED_TASKS = ("G6A-02", "G6A-03", "G6A-04")
-
 
 def run(cmd):
     """pipefail 强制打开（㉞）：`python … | tail -1` 的退出码不得取自 tail。"""
     r = subprocess.run(["/bin/sh", "-o", "pipefail", "-c", cmd],
                        capture_output=True, text=True, cwd=ROOT)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
-
 
 def status_of(cmd):
     """只取状态词（OK/FAILED）；取不到状态词时**显式说没跑起来**（㉟）。"""
@@ -82,7 +78,6 @@ def status_of(cmd):
         return m[-1]
     _tail = ((err or out).splitlines() or ["（无输出）"])[-1][:70]
     return f"**未跑起来（rc={rc}）**：{_tail}"
-
 
 def in_gate6a(i):
     """ADR-021 §2 的**逐字段**口径（与 in_gate5 同构，OI-PF-157）：
@@ -98,11 +93,9 @@ def in_gate6a(i):
             return True
     return bool(re.search(r"Gate 6A", str(i.get("blocks_decisions") or "")))
 
-
 def is_standing_risk(i):
     """blocks_data_flow == "ALL" 的持续性风险项（ADR-022，单列义务）。"""
     return str(i.get("blocks_data_flow")) == "ALL"
-
 
 def _blk(i):
     p = []
@@ -113,7 +106,6 @@ def _blk(i):
     if i.get("blocks_data_flow"):
         p.append(f"数据面={i['blocks_data_flow']}")
     return " · ".join(p) or "无"
-
 
 def main() -> int:
     L = []
@@ -357,7 +349,9 @@ def main() -> int:
     L.append("```text")
     L.append(f"G6A-01 工程测试: {_t_g6a01}")
     L.append(f"G6A-05 工程测试: {_t_g6a05}")
+    L.append(LIVE_BEGIN)
     L.append(f"台账审计（含 P5 新守卫）: {_audit}")
+    L.append(LIVE_END)
     L.append("```\n")
 
     # ── §5 风险与已知缺口 ─────────────────────────────────────────
@@ -405,7 +399,9 @@ def main() -> int:
     _H = []
     _H.append("# Gate 6A 验收包\n")
     _H.append("```text")
+    _H.append(LIVE_BEGIN)
     _H.append(f"生成时刻   = {NOW}")
+    _H.append(LIVE_END)
     _H.append("生成方式   = backend/tools/build_gate6a_acceptance.py（全部数据实时采集）")
     _H.append("依据       = G6A-执行计划.md §4 + 基线 §9 + ADR-012 + ADR-026 + ADR-021 §2"
               " + ADR-022 §2/§3 + ADR-010 §3.1")
@@ -415,9 +411,14 @@ def main() -> int:
               "G6A/Gate 6A；blocks_data_flow=\"ALL\" 不算命中（ADR-022 §2），"
               "另见 §1.7")
     _H.append(f"结论       = **{verdict}**"
-              + (f" —— {'；'.join(_blockers)}" if _blockers
-                 else f"（执行 3 项已就绪：01/05 DONE、06 {_g6a06_state}；"
+              + ("" if _blockers else f"（执行 3 项已就绪：01/05 DONE、06 {_g6a06_state}；"
                        "挂起 3 项标签与重开条件齐备；范围内材料性开放项为零）"))
+    # 阻断明细里嵌着实时读数（台账审计合计等）—— 判定须签、明细不能签，
+    # 否则加一条审计守卫就改写结论行。就绪态下 _blockers 为空，签署内容无损失。
+    if _blockers:
+        _H.append(LIVE_BEGIN)
+        _H.append(f"结论明细   = —— {'；'.join(_blockers)}")
+        _H.append(LIVE_END)
     if _g6a06_attested:
         _H.append("**本包不构成独立红队 PASS。** G6A-06 为 ADR-026 的精确单人状态；")
         _H.append("Gate 6 只能使用带单人红队标记的较弱 verdict，见 Gate6-验收包.md")
@@ -443,8 +444,13 @@ def main() -> int:
         f.write("\n".join(L))
     assert open(pkg, encoding="utf-8").read() == "\n".join(L), "写入后断言失败"
 
-    sub_lines = [ln for ln in L if not any(x in ln for x in EXCLUDE)]
-    substantive = hashlib.sha256("\n".join(sub_lines).encode("utf-8")).hexdigest()
+    _merr = unbalanced_markers("\n".join(L))
+
+    if _merr:
+
+        raise SystemExit(f"E-LIVE-001: {_merr}")
+
+    substantive = substantive_of("\n".join(L))
     with open(pkg, "a", encoding="utf-8") as f:
         f.write(f"\nsubstantive_sha256 = {substantive}\n")
     content = hashlib.sha256(open(pkg, "rb").read()).hexdigest()
@@ -456,7 +462,6 @@ def main() -> int:
     for _b in _blockers:
         print(f"  · {_b[:120]}", file=sys.stderr)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

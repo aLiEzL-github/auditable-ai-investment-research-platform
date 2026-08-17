@@ -25,6 +25,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from signed_object_guard import refuse_if_signed   # noqa: E402
 
+from substantive_hash import (   # noqa: E402
+    LIVE_BEGIN, LIVE_END, substantive as substantive_of, unbalanced_markers,
+)
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 def _portfolio_root() -> str:
     """台账根目录 —— 由 PORTFOLIO_ROOT 给出，**缺失即拒**（OI-PF-186）。
@@ -41,22 +45,15 @@ def _portfolio_root() -> str:
             f"{p!r} 未设或不是目录）—— 本工具不再使用任何硬编码缺省路径")
     return os.path.abspath(p)
 
-
 PORTFOLIO = _portfolio_root()
 NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
 
-EXCLUDE = ("生成时刻", "实测时刻", "main 最新 CI run", "run = ", "ruleset: ",
-           "g1-08-2026", "_mut-", "sparseimage", "备份目录 = ", "  g1-08-",
-           "substantive_sha256", "合计", "独立审计:", "v2.0 基线:")
-
 TASKS = ("G6C-01", "G6C-02", "G6C-03")
-
 
 def run(cmd):
     r = subprocess.run(["/bin/sh", "-o", "pipefail", "-c", cmd],
                        capture_output=True, text=True, cwd=ROOT)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
-
 
 def status_of(cmd):
     rc, out, err = run(cmd)
@@ -65,7 +62,6 @@ def status_of(cmd):
         return m[-1]
     _tail = ((err or out).splitlines() or ["（无输出）"])[-1][:70]
     return f"**未跑起来（rc={rc}）**：{_tail}"
-
 
 def in_gate6c(i):
     """ADR-021 §2 逐字段口径（OI-PF-157）："""
@@ -76,10 +72,8 @@ def in_gate6c(i):
             return True
     return bool(re.search(r"Gate 6C", str(i.get("blocks_decisions") or "")))
 
-
 def is_standing_risk(i):
     return str(i.get("blocks_data_flow")) == "ALL"
-
 
 def _blk(i):
     p = []
@@ -90,7 +84,6 @@ def _blk(i):
     if i.get("blocks_data_flow"):
         p.append(f"数据面={i['blocks_data_flow']}")
     return " · ".join(p) or "无"
-
 
 def main() -> int:
     L = []
@@ -289,7 +282,9 @@ def main() -> int:
     L.append(f"test_calibration_guard（H-8 表述守卫变异注入，先红后绿）: "
              f"{_tests['test_calibration_guard']}")
     L.append(f"H-8 表述守卫（CI scans job）: {_guard}")
+    L.append(LIVE_BEGIN)
     L.append(f"台账审计（含 P6 新守卫）: {_audit}")
+    L.append(LIVE_END)
     L.append("```\n")
 
     # ── §5 风险与已知缺口 ─────────────────────────────────────────
@@ -328,7 +323,9 @@ def main() -> int:
     _H = []
     _H.append("# Gate 6C 验收包\n")
     _H.append("```text")
+    _H.append(LIVE_BEGIN)
     _H.append(f"生成时刻   = {NOW}")
+    _H.append(LIVE_END)
     _H.append("生成方式   = backend/tools/build_gate6c_acceptance.py（全部数据实时采集）")
     _H.append("依据       = G6C-执行计划.md §4 + 基线 §10A + VD-26 + ADR-021 §2"
               " + ADR-022 §2/§3 + ADR-010 §3.1")
@@ -338,9 +335,14 @@ def main() -> int:
               "G6C/Gate 6C；blocks_data_flow=\"ALL\" 不算命中（ADR-022 §2），"
               "另见 §1.7")
     _H.append(f"结论       = **{verdict}**"
-              + (f" —— {'；'.join(_blockers)}" if _blockers
-                 else "（三任务 DONE；范围内材料性开放项为零；工程测试全过；"
+              + ("" if _blockers else "（三任务 DONE；范围内材料性开放项为零；工程测试全过；"
                       "H-8 表述守卫在 CI 接线）"))
+    # 阻断明细里嵌着实时读数（台账审计合计等）—— 判定须签、明细不能签，
+    # 否则加一条审计守卫就改写结论行。就绪态下 _blockers 为空，签署内容无损失。
+    if _blockers:
+        _H.append(LIVE_BEGIN)
+        _H.append(f"结论明细   = —— {'；'.join(_blockers)}")
+        _H.append(LIVE_END)
     _H.append("**本包不构成 Gate 6C PASS。** VD-26 下永久 CALIBRATION_PENDING ——")
     _H.append("本 Gate 的 PASS 不验证预测能力，只验证「未校准」被记准确、")
     _H.append("且不可能被误读为能力（G6C-执行计划 §2）")
@@ -355,8 +357,13 @@ def main() -> int:
         f.write("\n".join(L))
     assert open(pkg, encoding="utf-8").read() == "\n".join(L), "写入后断言失败"
 
-    sub_lines = [ln for ln in L if not any(x in ln for x in EXCLUDE)]
-    substantive = hashlib.sha256("\n".join(sub_lines).encode("utf-8")).hexdigest()
+    _merr = unbalanced_markers("\n".join(L))
+
+    if _merr:
+
+        raise SystemExit(f"E-LIVE-001: {_merr}")
+
+    substantive = substantive_of("\n".join(L))
     with open(pkg, "a", encoding="utf-8") as f:
         f.write(f"\nsubstantive_sha256 = {substantive}\n")
     content = hashlib.sha256(open(pkg, "rb").read()).hexdigest()
@@ -368,7 +375,6 @@ def main() -> int:
     for _b in _blockers:
         print(f"  · {_b[:120]}", file=sys.stderr)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

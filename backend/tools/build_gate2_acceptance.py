@@ -5,7 +5,6 @@ X-7（修订，OI-PF-118 教训）：审计结果行（合计/独立审计:/v2.0
 substantive 覆盖（AA-1 同款）——ACTIVE 状态下连跑三次实质哈希逐字一致。
 Z1 前置：副源挂起期间禁装 akshare/curl_cffi（ADR-017 §3.3）。
 """
-import hashlib
 import json
 import os
 import re
@@ -19,6 +18,10 @@ import sys
 # 2026-08-17 实测后果：六份已签包全部漂移。判据只此一份，见该模块。
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from signed_object_guard import refuse_if_signed   # noqa: E402
+
+from substantive_hash import (   # noqa: E402
+    LIVE_BEGIN, LIVE_END, substantive as substantive_of, unbalanced_markers,
+)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 def _portfolio_root() -> str:
@@ -36,14 +39,8 @@ def _portfolio_root() -> str:
             f"{p!r} 未设或不是目录）—— 本工具不再使用任何硬编码缺省路径")
     return os.path.abspath(p)
 
-
 PORTFOLIO = _portfolio_root()
 NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
-
-EXCLUDE = ("生成时刻", "实测时刻", "main 最新 CI run", "run = ", "ruleset: ",
-           "g1-08-2026", "_mut-", "sparseimage", "备份目录 = ", "  g1-08-",
-           "substantive_sha256", "合计", "独立审计:", "v2.0 基线:")
-
 
 def _adr021_in_scope(i, g):
     """ADR-021 §2 **逐字段**口径 + ADR-022 §2（"ALL" 不算命中）。
@@ -71,18 +68,15 @@ def _adr021_in_scope(i, g):
     return bool(re.search(rf"Gate {g[1:]}\b",
                           str(i.get("blocks_decisions") or "")))
 
-
 def run(cmd):
     r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
-
 
 def status_of(cmd):
     """只取测试状态词（OK/FAILED），不含耗时行（X-7 幂等）。"""
     rc, out, _ = run(cmd)
     m = re.findall(r"(OK|FAILED[^\n]*)", out)
     return m[-1] if m else f"rc={rc}"
-
 
 def in_gate2(i):
     """ADR-021 §2 逐字段口径（OI-PF-157）。"""
@@ -100,7 +94,9 @@ def main() -> int:
     other_mat = [i for i in mat if not in_gate2(i)]
     L.append("# Gate 2 验收包\n")
     L.append("```text")
+    L.append(LIVE_BEGIN)
     L.append(f"生成时刻   = {NOW}")
+    L.append(LIVE_END)
     L.append("生成方式   = tools/build_gate2_acceptance.py（全部数据实时采集）")
     L.append("依据       = G2-执行流程.md §3（Gate 2 验收）+ ADR-017（F1 读法 (c) + 副源挂起）")
     L.append("结论       = " + ("**READY_FOR_APPROVAL**（ADR-019 F1 论证更正 + ADR-010 §3.1 债务清点①为零）"
@@ -218,10 +214,12 @@ def main() -> int:
     # ── §2 测试基线 ────────────────────────────────────────────────
     L.append("## 2. 测试命令、退出码与结果\n")
     L.append("```text")
+    L.append(LIVE_BEGIN)
     for name, script in (("独立审计", "audit_session.py"), ("v2.0 基线", "test_v2_baseline.py")):
         rc, out, err = run(f"python3 {shlex.quote(os.path.join(ROOT, '..', 'portfolio', 'tools', script))} "
                            f"{shlex.quote(os.path.join(ROOT, '..', 'portfolio'))}")
         L.append(f"{name}: 退出码 {rc} | {out.splitlines()[-1] if out else err}")
+    L.append(LIVE_END)
     L.append(f"工程测试: {status_of('.venv/bin/python -m unittest discover -s backend/tests 2>&1 | tail -1')}")
     for t in ("arch_import_check", "contract_coverage_check", "migration_check"):
         rc, out, _ = run(f"python3 backend/tools/{t}.py . 2>&1 | tail -1")
@@ -285,8 +283,13 @@ def main() -> int:
         f.write("\n".join(L))
     assert open(pkg, encoding="utf-8").read() == "\n".join(L)
 
-    sub_lines = [ln for ln in L if not any(x in ln for x in EXCLUDE)]
-    substantive = hashlib.sha256("\n".join(sub_lines).encode("utf-8")).hexdigest()
+    _merr = unbalanced_markers("\n".join(L))
+
+    if _merr:
+
+        raise SystemExit(f"E-LIVE-001: {_merr}")
+
+    substantive = substantive_of("\n".join(L))
     with open(pkg, "a", encoding="utf-8") as f:
         f.write(f"\nsubstantive_sha256 = {substantive}\n")
     content = subprocess.run(["shasum", "-a", "256", pkg],
@@ -295,7 +298,6 @@ def main() -> int:
     print(f"content_sha256 = {content}", file=sys.stderr)
     print(f"substantive_sha256 = {substantive}", file=sys.stderr)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
