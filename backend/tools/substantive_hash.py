@@ -93,6 +93,20 @@ _LEGACY_VOLATILE = (
 )
 # `substantive_sha256` 不在此列 —— 它由 _SELF_DECL 单独剔除。
 
+# 旧清单**没**覆盖、但实测证明会漂的读数。加进来是收紧（MR-1 严格者胜）。
+#
+# 「开放项总计 N / M」是全局计数 —— 登记册任何一处变动都会改它，与本 Gate 无关。
+# 它正是当初漏网的那条：漂移分析里「④ 开放项 N/M 与 CI 步骤明细不在清单里」
+# 就是六份包 substantive 全漂的直接原因之一。
+# 2026-08-17 闭合 OI-PF-022/026 时再次撞到：闭掉两项就让 Gate0 的这一行由
+# 37/214 变成 35/214。
+#
+# **范围内**计数不在此列 —— 那是断言（「本 Gate 范围内材料性开放项 0 项」），
+# 变了就该让签名失效。区分读数与断言，正是结构分隔比模式清单强的地方。
+_MEASURED_VOLATILE = (
+    "开放项总计",
+)
+
 # **没有豁免名单。**
 # 起草时曾给「结论       = 」开一条豁免，理由是「判定本体须签」——
 # 那是把正要修的缺陷豁免掉了：Gate6 的结论行里嵌着 `合计 75 项：PASS 71 / FAIL 4`，
@@ -107,7 +121,7 @@ def legacy_leaks(text: str):
     """
     out = []
     for ln in strip_live(text).splitlines():
-        for pat in _LEGACY_VOLATILE:
+        for pat in _LEGACY_VOLATILE + _MEASURED_VOLATILE:
             if pat in ln:
                 out.append((pat, ln.strip()))
                 break

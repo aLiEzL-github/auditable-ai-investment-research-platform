@@ -261,7 +261,11 @@ def main() -> int:
     L.append("")
     L.append("### 4.3 债务趋势\n")
     L.append("```text")
+    # 全局计数是**读数** —— 任何一处开放项变动都会改它，与本 Gate 无关。
+    # 范围内计数是**断言**，留在 substantive 里（见结论行）。
+    L.append(LIVE_BEGIN)
     L.append(f"开放项总计     {OI['counts']['open']} / {OI['counts']['total']}")
+    L.append(LIVE_END)
     L.append(f"其中材料性     {len(mat)}")
     L.append(f"  · G2 范围内  {len(g2_mat)}")
     L.append(f"  · 归属后续   {len(other_mat)}")

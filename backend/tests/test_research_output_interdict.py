@@ -27,6 +27,18 @@ research_data_interdict.py . --this-flag-does-not-exist ┘ md5 一致
 于是 `rc=0` 被读成「自检通过」，实际什么都没跑。**「没这个功能」被当成
 「自检通过」** —— 与规则 ㉟（「跑了但失败」与「根本没跑」须可分辨）同形态。
 本文件把「未知开关须判红」也固化成用例。
+
+## 本文件为何须自证 SYNTHETIC_FIXTURE
+
+R2 的正向样本必须**长得像真数据**，否则测不出规则会不会命中 —— 于是本文件
+自己就带着研究数据形态的字符串，`research_data_interdict` 扫到它会判红
+（实测撞到）。这不是误报，是扫描器在正确工作。
+
+走它既有的自证机制：`backend/tests/` 下声明 `SYNTHETIC_FIXTURE` 即豁免。
+**该机制是自我声明** —— 任何测试文件都能这样给自己开豁免；这是既有设计的
+已知边界，不是本文件引入的。写在这里以免下一个人以为它是强保证。
+
+SYNTHETIC_FIXTURE = true —— 本文件内的数值全部为构造样本，非真实财报数据。
 """
 import os
 import subprocess
