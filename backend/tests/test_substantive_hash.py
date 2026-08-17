@@ -160,11 +160,54 @@ class TestGeneratorCoverage(unittest.TestCase):
             f"import 了名字不等于包住了东西（build_gate0 实际踩过）")
 
     def test_every_generator_uses_shared_predicate(self):
-        """X-2：不得各自再实现一遍（此前 9 份定义已分岔成 2 种）。"""
-        bad = [f for f in _generators()
-               if "substantive_hash" not in open(
-                   os.path.join(_TOOLS, f), encoding="utf-8").read()]
+        """X-2：不得各自再实现一遍（此前 9 份定义已分岔成 2 种）。
+
+        判据检的是**真的调用了** `substantive_of(...)` 且**没有自带排除清单**。
+        初版检的是 `"substantive_hash" in src` —— 子串，import 行就能满足。
+        台账侧 build_gate6b 因此蒙混过关：它 import 了共享判据，
+        却在 `main()` 里用局部 `_exclude` 清单 + `hashlib.sha256` 自己算，
+        与「只 import 不使用」是同一个形态（本轮第三次遇到）。
+        """
+        bad = []
+        for f in _generators():
+            src = open(os.path.join(_TOOLS, f), encoding="utf-8").read()
+            tree = ast.parse(src)
+            calls, own = False, []
+            for n in ast.walk(tree):
+                if (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                        and n.func.id in ("substantive_of", "substantive")):
+                    calls = True
+                if isinstance(n, ast.Assign):
+                    own += [t.id for t in n.targets if isinstance(t, ast.Name)
+                            and "exclu" in t.id.lower()]
+            if not calls:
+                bad.append(f"{f}（未调用共享判据）")
+            elif own:
+                bad.append(f"{f}（仍自带排除清单 {own}）")
         self.assertEqual(bad, [], f"未使用共享判据：{bad}")
+
+    def test_shared_predicate_check_goes_red(self):
+        """变异注入：用 build_gate6b 的**原缺陷形态** —— import 了但自己算。"""
+        def probe(src):
+            tree = ast.parse(src)
+            calls = any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                        and n.func.id in ("substantive_of", "substantive")
+                        for n in ast.walk(tree))
+            own = [t.id for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                   for t in n.targets if isinstance(t, ast.Name)
+                   and "exclu" in t.id.lower()]
+            return calls and not own
+
+        mutant = ("from substantive_hash import substantive as substantive_of\n"
+                  "def main():\n"
+                  "    _exclude = ('生成时刻', '合计')\n"
+                  "    _sub = [l for l in lines if not any(x in l for x in _exclude)]\n"
+                  "    return hashlib.sha256('\\n'.join(_sub).encode()).hexdigest()\n")
+        self.assertFalse(probe(mutant), "import 了但自己算，判据不应放行")
+        good = ("from substantive_hash import substantive as substantive_of\n"
+                "def main():\n"
+                "    return substantive_of('\\n'.join(lines))\n")
+        self.assertTrue(probe(good))
 
     def test_generator_set_not_empty(self):
         self.assertGreaterEqual(len(_generators()), 7,
