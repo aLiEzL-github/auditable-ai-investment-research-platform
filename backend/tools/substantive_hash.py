@@ -42,8 +42,19 @@ import re
 LIVE_BEGIN = "<!-- LIVE-BEGIN -->"
 LIVE_END = "<!-- LIVE-END -->"
 
-# substantive 自声明行：哈希的产物不能参与自己的计算
-_SELF_DECL = re.compile(r"^substantive_sha256\s*=.*$", re.M)
+# substantive 自声明行：哈希的产物不能参与自己的计算。
+#
+# **连同行尾换行一并剔除**，且 strip_live 末尾 rstrip("\n")。这两处不是洁癖：
+# 生成器算的是 `substantive("\n".join(L))`（写盘**前**，此时还没有自声明行），
+# 而审计 T1 是对**整个文件**就地重算。文件 = join(L) + "\nsubstantive_sha256 = X\n"。
+# 若只删行文本、留下两侧换行，文件侧就比生成器侧多出 '\n\n' ——
+# **自声明值与就地重算值永远对不上，T1 恒红**，签署锚定的哈希无从校验。
+#
+# 旧的模式清单方案没有这个问题：它是逐行过滤，file.splitlines() 后滤掉自声明行
+# 得到的正是 L，两侧天然相等。改成正则替换时把这条性质弄丢了。
+# 2026-08-17 在 S-4 取第一份签署哈希时才发现 —— S-1/S-2 验的是「两次生成是否
+# 一致」，两次都用生成器的口径，**永远自洽**，测不出跨口径的这条。
+_SELF_DECL = re.compile(r"^substantive_sha256\s*=.*$\n?", re.M)
 
 _BLOCK = re.compile(
     re.escape(LIVE_BEGIN) + r".*?" + re.escape(LIVE_END),
@@ -51,8 +62,36 @@ _BLOCK = re.compile(
 
 
 def strip_live(text: str) -> str:
-    """剔除全部活块与 substantive 自声明行，返回参与哈希的正文。"""
-    return _SELF_DECL.sub("", _BLOCK.sub("", text))
+    """剔除全部活块与 substantive 自声明行，返回参与哈希的正文。
+
+    末尾 `rstrip("\\n")` 使**生成器输入**（写盘前的 `"\\n".join(L)`）与
+    **文件内容**（其后追加了自声明行）归一到同一个串 —— 见 `_SELF_DECL` 的说明。
+    代价：仅在文件末尾增删空行不改变 substantive。那是无语义的改动，接受。
+    """
+    return _SELF_DECL.sub("", _BLOCK.sub("", text)).rstrip("\n")
+
+
+def declared(text: str):
+    """取文件里自声明的 substantive_sha256；无该行返回 None。"""
+    m = re.search(r"^substantive_sha256\s*=\s*([0-9a-f]{64})\s*$", text, re.M)
+    return m.group(1) if m else None
+
+
+def selfdecl_mismatch(text: str):
+    """自声明值 ≠ 就地重算值即返回说明，None = 相符（或本就无自声明行）。
+
+    **这是本轮漏掉的那个测量点。** 签署记录绑定的是自声明值，而 `T1` 校验的是
+    就地重算值；两者若不同口径，签了也永远校验不过。
+    S-1/S-2 只比过「两次生成是否一致」—— 同一口径自比，测不出这条。
+    """
+    d = declared(text)
+    if d is None:
+        return None
+    got = substantive(text)
+    if d != got:
+        return (f"自声明 substantive {d[:12]}… ≠ 就地重算 {got[:12]}… —— "
+                f"签署锚定的哈希与 T1 的校验口径不同，签了也校验不过")
+    return None
 
 
 def substantive(text: str) -> str:
