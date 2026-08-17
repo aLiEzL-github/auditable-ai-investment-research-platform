@@ -71,3 +71,20 @@ frontend/playwright-report/
 /mut_*.py
 /_scratch*
 /*.tmp.py
+
+# ── 研究产出禁入（OI-PF-022 / VD-20 = 仅内部；ADR-002 三层分离）────────
+# 这一层是 G1-01 的交付内容，与 CI 侧的 research_data_interdict.py（G1-07）
+# **各管一半**：.gitignore 防误 git add；CI 防 git add -f、防粘进 Markdown。
+# ADR-006 L4 原文：「.gitignore 不够」—— 不够不等于不要，两层缺一都留口子。
+# 2026-08-17 实测：闭合 OI-PF-022 时才发现这一层从未落地 ——
+# 研究产出目录一个也没被忽略，全靠 CI 单层拦。
+golden-baselines/
+evidence-packs/
+candidates/
+research/
+portfolio/
+
+# ADR-006 L5 指针化（OI-PF-026 统计局条款）：原始序列不入库，
+# 只放 locator + SHA-256 + 少量事实数字。
+raw-series/
+*.xbrl

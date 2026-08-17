@@ -180,6 +180,27 @@ def _check_fixtures():
     return bad, checked, exempt
 
 
+def _r1_hit(rel, txt):
+    """R1 台账制品结构 —— **判据只此一份**，扫描与 `--selftest` 共用。
+
+    抽出来的直接原因：`--selftest` 初版在自检里**重新实现了一遍** R1
+    （`"baseline_id" in txt and "back_source" in txt`），于是治理文本
+    「本文讨论 baseline_id 字段…以及 back_source 的取值范围」被判成命中 ——
+    自检测的是它自己的代理，不是真规则（2026-08-17 实测）。
+
+    真判据经过三次收窄，现为：**能解析成 JSON 且顶层同时含这两个键**。
+    解析成功 = 它就是数据文件，不是代码；无法被「代码里恰好有这两个字符串」
+    触发（`golden_baseline.py` 的类定义与 `to_dict()` 都曾误命中过）。
+    """
+    if not rel.endswith(".json"):
+        return False
+    try:
+        obj = json.loads(txt)
+    except Exception:
+        return False
+    return isinstance(obj, dict) and "baseline_id" in obj and "back_source" in obj
+
+
 def _check_interdiction():
     """乙 · OI-PF-022：研究产出禁入。返回 (bad, checked, exempt)。"""
     bad, checked, exempt = [], 0, 0
@@ -215,14 +236,7 @@ def _check_interdiction():
         # **第三次收窄**：R1 只在文件能被解析为 JSON 且顶层含这两个键时命中。
         # 解析成功 = 它就是数据文件，不是代码。这个判据无法被「代码里恰好有
         # 这两个字符串」触发。
-        _is_data = False
-        if rel.endswith(".json"):
-            try:
-                _obj = json.loads(txt)
-                _is_data = isinstance(_obj, dict) and "baseline_id" in _obj and "back_source" in _obj
-            except Exception:
-                _is_data = False
-        if _is_data:
+        if _r1_hit(rel, txt):
             bad.append(f"**{rel}**: R1 台账制品结构（JSON 中同时含 "
                        f'"baseline_id" 与 "back_source" 键）—— golden-baseline 形态')
             continue
@@ -233,7 +247,75 @@ def _check_interdiction():
     return bad, checked, exempt
 
 
+def _selftest() -> int:
+    """变异注入自检：每条规则须**能红**，且良性输入须**不红**。
+
+    此前本工具**没有** `--selftest`，而未知开关被无声吞掉 ——
+    `research_data_interdict.py . --selftest` 与
+    `research_data_interdict.py . --this-flag-does-not-exist` 输出逐字相同。
+    闭合 OI-PF-022 时据此读成「自检通过」，实际什么都没跑（2026-08-17 实测）。
+    「没这个功能」被当成「自检通过」，是规则 ㉟ 的同一形态。
+    """
+    bad = []
+
+    # R1 —— 调用真判据 _r1_hit，不在此重新实现（初版就是这么错的）
+    for name, rel, txt, want in (
+            ("R1 台账制品 JSON", "x.json",
+             '{"baseline_id": "B-600089-1", "back_source": "cninfo"}', True),
+            ("R1 治理文本不误报", "adr/x.md",
+             "本文讨论 baseline_id 字段的语义，以及 back_source 的取值范围。", False),
+            ("R1 序列化代码不误报", "app/golden_baseline.py",
+             'def to_dict(self): return {"baseline_id": self.baseline_id, '
+             '"back_source": self.back_source}', False),
+            ("R1 JSON 但键不全", "y.json", '{"baseline_id": "B-1"}', False)):
+        hit = _r1_hit(rel, txt)
+        if hit != want:
+            bad.append(f"{name}: 期望{'命中' if want else '不命中'}，实际相反")
+        print(f"  {'✅' if hit == want else '❌'} {name:22s} → "
+              f"{'命中' if hit else '未命中'}")
+
+    # R2 —— 同样调用真判据
+    for name, txt, want in (
+            ("R2 真实财报形态数值", "600089 营业收入 12345678.90 元；净利润 2345678.12 元", True),
+            ("R2 占位值不误报", "600089 营业收入 1000000 元（占位）", False),
+            ("R2 只有标的码不误报", "标的 600089 的权利判定见 VD-12", False),
+            ("R2 无标的码不误报", "营业收入 12345678.90 元（他司）", False)):
+        hit = bool(_looks_like_real_data(txt))
+        if hit != want:
+            bad.append(f"{name}: 期望{'命中' if want else '不命中'}，实际相反")
+        print(f"  {'✅' if hit == want else '❌'} {name:22s} → "
+              f"{'命中' if hit else '未命中'}")
+
+    # R3 是路径规则，单独按路径判定
+    for rel, want in (("golden-baselines/600089.json", True),
+                      ("evidence-packs/x.json", True),
+                      ("candidates/y.json", True),
+                      ("backend/app/models.py", False)):
+        hit = bool(PATH_PAT.search(rel))
+        if hit != want:
+            bad.append(f"R3 {rel}: 期望{'命中' if want else '不命中'}")
+        print(f"  {'✅' if hit == want else '❌'} R3 {rel:34s} → "
+              f"{'命中' if hit else '未命中'}")
+
+    if bad:
+        print("❌ 自检未过：" + "；".join(bad))
+        return 1
+    print("✅ 自检通过：每条规则均可判红，良性输入均不误报")
+    return 0
+
+
 def main() -> int:
+    # **未知开关判红，不静默忽略。** 静默忽略会让「跑了个不存在的自检」
+    # 与「自检通过」不可分辨 —— 本工具自己就是这么被误读的。
+    flags = [a for a in sys.argv[2:] if a.startswith("-")]
+    unknown = [f for f in flags if f != "--selftest"]
+    if unknown:
+        print(f"❌ 未知开关 {unknown} —— 拒绝执行（静默忽略会让"
+              f"「没跑」与「跑过了」不可分辨）")
+        return 2
+    if "--selftest" in flags:
+        return _selftest()
+
     bad_a, n_a, ex_a = _check_fixtures()
     bad_b, n_b, ex_b = _check_interdiction()
     for b in bad_a + bad_b:

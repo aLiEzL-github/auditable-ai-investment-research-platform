@@ -42,12 +42,14 @@
 环境：PORTFOLIO_ROOT 指向台账根目录，**必填**（OI-PF-186：不再有硬编码缺省）
 """
 import argparse
-import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from substantive_hash import substantive as _sh_substantive   # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 def _portfolio_root() -> str:
@@ -63,9 +65,7 @@ def _portfolio_root() -> str:
             f"{p!r} 未设或不是目录）—— 本工具不再使用任何硬编码缺省路径")
     return os.path.abspath(p)
 
-
 PORTFOLIO = _portfolio_root()
-
 
 def _signed_objects():
     """ACTIVE 签署所锚定的对象 —— 这些包**不得**重新生成。"""
@@ -82,7 +82,6 @@ def _signed_objects():
             if o:
                 out.add(os.path.basename(o))
     return out
-
 
 def _generators():
     """(标签, 命令, 产物文件名) —— 仓库侧与台账侧各自枚举。"""
@@ -103,18 +102,10 @@ def _generators():
                           f"Gate{m.group(1).upper()}-验收包.md", PORTFOLIO))
     return g
 
-
-# 与台账 audit_session.py 的 _SUB_EXCLUDE、各生成器的 EXCLUDE 同一份清单。
-# 剔除的是与实质无关的易变行。
-_SUB_EXCLUDE = ("生成时刻", "实测时刻", "main 最新 CI run", "run = ", "ruleset: ",
-                "g1-08-2026", "_mut-", "sparseimage", "备份目录 = ", "  g1-08-",
-                "substantive_sha256", "合计", "独立审计:", "v2.0 基线:")
-
-
 def _subs():
     """当前全部验收包的实质哈希。
 
-    优先取包内自声明的 substantive_sha256；**无该行时按 _SUB_EXCLUDE 就地重算**，
+    优先取包内自声明的 substantive_sha256；**无该行时按 substantive_hash 就地重算**，
     不退回全文哈希 —— 全文含「生成时刻」，每轮必变，会使不动点**永远达不到**。
     初版就是这么写的：Gate0-验收包.md 不写自声明行，于是它每轮都被判为
     「仍在变」，四轮跑完报「未达到不动点」，而真正在变的只有一个时间戳。
@@ -129,11 +120,11 @@ def _subs():
         if m:
             out[f] = m.group(1)
             continue
-        keep = [x for x in txt.splitlines()
-                if not any(e in x for e in _SUB_EXCLUDE)]
-        out[f] = hashlib.sha256("\n".join(keep).encode("utf-8")).hexdigest()
+        # **判据只此一份**（substantive_hash）。原为本文件自带的 _SUB_EXCLUDE
+        # 模式清单 —— 实测不完备（「④ 开放项 N/M」与 CI 步骤明细不在其中），
+        # 且全仓 9 份定义已归并为 2 种。改为结构分隔剔活块。
+        out[f] = _sh_substantive(txt)
     return out
-
 
 def _audit():
     r = subprocess.run([sys.executable, "tools/audit_session.py"],
@@ -141,7 +132,6 @@ def _audit():
     last = (r.stdout.strip().splitlines() or [""])[-1]
     m = re.search(r"PASS (\d+) / FAIL (\d+)", last)
     return (int(m.group(2)) == 0 if m else False), last
-
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -176,7 +166,6 @@ def main() -> int:
     print(f"❌ {a.max_pass} 轮内未达到不动点 —— **不接受最后一轮的结果**。"
           f"须人工查明是哪个包/哪条检查在持续变动。")
     return 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

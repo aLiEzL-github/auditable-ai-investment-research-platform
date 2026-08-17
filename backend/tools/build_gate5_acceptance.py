@@ -15,7 +15,8 @@
   ⑨  两个数不得合并成一个 —— 前端与后端证据**分列报数**
   ⑮ **前端校验不计入 E-1/E-3 的证据**（G5-执行计划 §3.1）——
      本包对二者只采信 backend/tests 的用例，前端测试另列且标明其边界
-  EXCLUDE 与台账 audit_session.py 的 _SUB_EXCLUDE 逐字一致（T1 就地重算）
+  实质哈希用 substantive_hash 这一份判据（结构分隔），与台账 T1 的就地重算同源。
+  此前是各自一份 EXCLUDE 模式清单并声称「逐字一致」—— 实测不成立（见该模块）。
 """
 import hashlib
 import json
@@ -23,6 +24,17 @@ import os
 import re
 import subprocess
 import sys
+
+# ── 写盘前置：目标被 ACTIVE 签署即拒绝（A §10.3）────────────────────
+# 验收包内嵌实时读数（CI run / 审计合计 / 开放项计数），**一跑就改字节**。
+# 保护此前只在 acceptance_fixpoint 上，直接运行本脚本无任何拦截 ——
+# 2026-08-17 实测后果：六份已签包全部漂移。判据只此一份，见该模块。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from signed_object_guard import refuse_if_signed   # noqa: E402
+
+from substantive_hash import (   # noqa: E402
+    LIVE_BEGIN, LIVE_END, substantive as substantive_of, unbalanced_markers,
+)
 
 # 仓库根（backend/tools/x.py → 上溯两级）。**不是 backend/** ——
 # 初版写成上溯一级并把它当 cwd，于是 .venv/bin/python 在该目录不存在，
@@ -43,17 +55,8 @@ def _portfolio_root() -> str:
             f"{p!r} 未设或不是目录）—— 本工具不再使用任何硬编码缺省路径")
     return os.path.abspath(p)
 
-
 PORTFOLIO = _portfolio_root()
 NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
-
-# 与 audit_session.py 的 _SUB_EXCLUDE **逐字一致**（14 条）。
-# 注：G3 生成器只有 9 条（缺 g1-08-2026/_mut-/sparseimage/备份目录 = /  g1-08-），
-# 目前不影响其哈希（那些模式不会出现在 G3 包里），但属潜在分叉点。
-EXCLUDE = ("生成时刻", "实测时刻", "main 最新 CI run", "run = ", "ruleset: ",
-           "g1-08-2026", "_mut-", "sparseimage", "备份目录 = ", "  g1-08-",
-           "substantive_sha256", "合计", "独立审计:", "v2.0 基线:")
-
 
 def run(cmd):
     """**pipefail 强制打开**。初版没开，于是 `python … | tail -1` 的退出码
@@ -65,7 +68,6 @@ def run(cmd):
     r = subprocess.run(["/bin/sh", "-o", "pipefail", "-c", cmd],
                        capture_output=True, text=True, cwd=ROOT)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
-
 
 def status_of(cmd):
     """只取状态词（OK/FAILED），不含耗时行（X-7 幂等）。
@@ -80,7 +82,6 @@ def status_of(cmd):
     _tail = ((err or out).splitlines() or ["（无输出）"])[-1][:70]
     return f"**未跑起来（rc={rc}）**：{_tail}"
 
-
 def guard_of(cmd):
     """守卫输出末行；退出码非 0 时显式标注「未通过或未跑起来」——
     二者在读者眼里必须可分辨（Gate 4 的 migration_check 教训：
@@ -88,7 +89,6 @@ def guard_of(cmd):
     rc, out, err = run(cmd)
     tail = (out or err).splitlines()[-1] if (out or err) else "（无输出）"
     return tail if rc == 0 else f"**未通过或未跑起来（rc={rc}）**：{tail[:80]}"
-
 
 def in_gate5(i):
     """ADR-021 §2 的**逐字段**口径 —— 按该 ADR 原文，四个字段模式各不相同：
@@ -112,7 +112,6 @@ def in_gate5(i):
             return True
     return bool(re.search(r"Gate 5", str(i.get("blocks_decisions") or "")))
 
-
 def is_standing_risk(i):
     """blocks_data_flow == "ALL" 的持续性风险项。
 
@@ -130,7 +129,6 @@ def is_standing_risk(i):
     """
     return str(i.get("blocks_data_flow")) == "ALL"
 
-
 def _blk(i):
     p = []
     if i.get("blocks_development"):
@@ -140,7 +138,6 @@ def _blk(i):
     if i.get("blocks_data_flow"):
         p.append(f"数据面={i['blocks_data_flow']}")
     return " · ".join(p) or "无"
-
 
 def main() -> int:
     L = []
@@ -448,7 +445,10 @@ def main() -> int:
     _H = []
     _H.append("# Gate 5 验收包\n")
     _H.append("```text")
+    # 活读数圈进标记内 —— substantive 剔整块（结构分隔，非模式清单）
+    _H.append(LIVE_BEGIN)
     _H.append(f"生成时刻   = {NOW}")
+    _H.append(LIVE_END)
     _H.append("生成方式   = backend/tools/build_gate5_acceptance.py（全部数据实时采集）")
     _H.append("依据       = G5-执行计划.md §1A/§3/§4 + 基线 §9 + ADR-021 §2"
               " + ADR-022 §2/§3 + ADR-010 §3.1")
@@ -467,12 +467,17 @@ def main() -> int:
     L = _H + L
 
     pkg = os.path.join(PORTFOLIO, "Gate5-验收包.md")
+    refuse_if_signed(PORTFOLIO, pkg)
     with open(pkg, "w", encoding="utf-8") as f:
         f.write("\n".join(L))
     assert open(pkg, encoding="utf-8").read() == "\n".join(L), "写入后断言失败"
 
-    sub_lines = [ln for ln in L if not any(x in ln for x in EXCLUDE)]
-    substantive = hashlib.sha256("\n".join(sub_lines).encode("utf-8")).hexdigest()
+    # **判据只此一份**（substantive_hash）。此前全仓 9 份 EXCLUDE 定义
+    # 已归并为 2 种 —— build_gate3 少 5 条，与审计口径不同。
+    _marker_err = unbalanced_markers("\n".join(L))
+    if _marker_err:
+        raise SystemExit(f"E-LIVE-001: {_marker_err}")
+    substantive = substantive_of("\n".join(L))
     with open(pkg, "a", encoding="utf-8") as f:
         f.write(f"\nsubstantive_sha256 = {substantive}\n")
     content = hashlib.sha256(open(pkg, "rb").read()).hexdigest()
@@ -488,7 +493,6 @@ def main() -> int:
     for _b in _blockers:
         print(f"  · {_b[:120]}", file=sys.stderr)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

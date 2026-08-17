@@ -11,13 +11,23 @@
 X-7（修订）：审计结果行移出 substantive 覆盖 —— ACTIVE 状态下连跑三次
 实质哈希逐字一致（AA-1 教训；审计结果由签署记录 S1 承载）。
 """
-import hashlib
 import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+
+# ── 写盘前置：目标被 ACTIVE 签署即拒绝（A §10.3）────────────────────
+# 验收包内嵌实时读数（CI run / 审计合计 / 开放项计数），**一跑就改字节**。
+# 保护此前只在 acceptance_fixpoint 上，直接运行本脚本无任何拦截 ——
+# 2026-08-17 实测后果：六份已签包全部漂移。判据只此一份，见该模块。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from signed_object_guard import refuse_if_signed   # noqa: E402
+
+from substantive_hash import (   # noqa: E402
+    LIVE_BEGIN, LIVE_END, substantive as substantive_of, unbalanced_markers,
+)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 def _portfolio_root() -> str:
@@ -35,14 +45,8 @@ def _portfolio_root() -> str:
             f"{p!r} 未设或不是目录）—— 本工具不再使用任何硬编码缺省路径")
     return os.path.abspath(p)
 
-
 PORTFOLIO = _portfolio_root()
 NOW = subprocess.run(["date", "-u"], capture_output=True, text=True).stdout.strip()
-
-EXCLUDE = ("生成时刻", "实测时刻", "main 最新 CI run", "run = ", "ruleset: ",
-           "g1-08-2026", "_mut-", "sparseimage", "备份目录 = ", "  g1-08-",
-           "substantive_sha256", "合计", "独立审计:", "v2.0 基线:")
-
 
 def _adr021_in_scope(i, g):
     """ADR-021 §2 **逐字段**口径 + ADR-022 §2（"ALL" 不算命中）。
@@ -70,18 +74,15 @@ def _adr021_in_scope(i, g):
     return bool(re.search(rf"Gate {g[1:]}\b",
                           str(i.get("blocks_decisions") or "")))
 
-
 def run(cmd):
     r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
-
 
 def status_of(cmd):
     """只取测试状态词（OK/FAILED），不含耗时行（X-7 幂等）。"""
     rc, out, _ = run(cmd)
     m = re.findall(r"(OK|FAILED[^\n]*)", out)
     return m[-1] if m else f"rc={rc}"
-
 
 def in_gate4(i):
     """ADR-021 §2 逐字段口径（OI-PF-157）。"""
@@ -107,7 +108,9 @@ def main() -> int:
 
     L.append("# Gate 4 验收包\n")
     L.append("```text")
+    L.append(LIVE_BEGIN)
     L.append(f"生成时刻   = {NOW}")
+    L.append(LIVE_END)
     L.append("生成方式   = backend/tools/build_gate4_acceptance.py（全部数据实时采集）")
     L.append("依据       = G4-执行计划.md §1A/§3/§4 + ADR-021 §2 + ADR-010 §3.1")
     L.append("范围口径   = ADR-021 §2 并集：material ∧ OPEN ∧ category != 签署前置条件；"
@@ -216,10 +219,12 @@ def main() -> int:
     # ── §2 测试基线 ────────────────────────────────────────────
     L.append("## 2. 测试命令、退出码与结果\n")
     L.append("```text")
+    L.append(LIVE_BEGIN)
     for name, script in (("独立审计", "audit_session.py"), ("v2.0 基线", "test_v2_baseline.py")):
         rc, out, err = run(f"python3 {shlex.quote(os.path.join(PORTFOLIO, 'tools', script))} "
                            f"{shlex.quote(PORTFOLIO)}")
         L.append(f"{name}: 退出码 {rc} | {out.splitlines()[-1] if out else err}")
+    L.append(LIVE_END)
     L.append(f"工程测试: {_tests_out}")
     # 初版用系统 python3 跑守卫，而工程测试用 .venv/bin/python —— 同一段代码
     # 两套解释器，于是 migration_check 报 ModuleNotFoundError: sqlalchemy，
@@ -262,7 +267,11 @@ def main() -> int:
     L.append("")
     L.append("### 4.3 债务趋势\n")
     L.append("```text")
+    # 全局计数是**读数** —— 任何一处开放项变动都会改它，与本 Gate 无关。
+    # 范围内计数是**断言**，留在 substantive 里（见结论行）。
+    L.append(LIVE_BEGIN)
     L.append(f"开放项总计     {OI['counts']['open']} / {OI['counts']['total']}")
+    L.append(LIVE_END)
     L.append(f"其中材料性     {len(mat)}")
     L.append(f"  · G4 范围内  {len(g4_mat)}")
     L.append(f"  · 归属后续   {len(other_mat)}")
@@ -289,12 +298,18 @@ def main() -> int:
 
     pkg = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         PORTFOLIO, "Gate4-验收包.md")
+    refuse_if_signed(PORTFOLIO, pkg)
     with open(pkg, "w", encoding="utf-8") as f:
         f.write("\n".join(L))
     assert open(pkg, encoding="utf-8").read() == "\n".join(L)
 
-    sub_lines = [ln for ln in L if not any(x in ln for x in EXCLUDE)]
-    substantive = hashlib.sha256("\n".join(sub_lines).encode("utf-8")).hexdigest()
+    _merr = unbalanced_markers("\n".join(L))
+
+    if _merr:
+
+        raise SystemExit(f"E-LIVE-001: {_merr}")
+
+    substantive = substantive_of("\n".join(L))
     with open(pkg, "a", encoding="utf-8") as f:
         f.write(f"\nsubstantive_sha256 = {substantive}\n")
     content = subprocess.run(["shasum", "-a", "256", pkg],
@@ -303,7 +318,6 @@ def main() -> int:
     print(f"content_sha256 = {content}", file=sys.stderr)
     print(f"substantive_sha256 = {substantive}", file=sys.stderr)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
