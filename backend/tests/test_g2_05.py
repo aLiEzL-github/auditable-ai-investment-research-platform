@@ -40,7 +40,8 @@ class TestMacroAdapter(unittest.TestCase):
     def setUp(self):
         os.environ["MACRO_BASE_URL"] = "https://example.test"
         self.guard = RightsGuard(matrix=MATRIX)
-        self.ad = MacroAdapter(self.guard, min_interval=0.0)
+        # strict_origin=False 显式测试注入：非 strict 仅供测试，生产默认 True。
+        self.ad = MacroAdapter(self.guard, min_interval=0.0, strict_origin=False)
         self._tmp = tempfile.mkdtemp()
         self.repo = create_repository(os.path.join(self._tmp, "g2_05.sqlite3"))
         self.repo.create_all()
@@ -77,7 +78,8 @@ class TestMacroAdapter(unittest.TestCase):
         for d in mx["data_sources"]:
             if d["source_key"] == "SRC_NBS":
                 d["actions"]["automated_acquisition"] = status_text  # OI-PF-128：领域键
-        return MacroAdapter(RightsGuard(matrix=mx), min_interval=0.0)
+        return MacroAdapter(RightsGuard(matrix=mx), min_interval=0.0,
+                            strict_origin=False)
 
     def test_unknown_zero_network(self):
         ad = self._denied_adapter("UNKNOWN（测试）")
@@ -184,7 +186,7 @@ class TestMacroAdapter(unittest.TestCase):
             m.assert_not_called()
 
     def test_rate_limit(self):
-        ad = MacroAdapter(self.guard, min_interval=0.05)
+        ad = MacroAdapter(self.guard, min_interval=0.05, strict_origin=False)
         with mock.patch("macro_adapter.urllib.request.urlopen",
                         return_value=_resp(200)):
             ad.fetch("/a")
@@ -192,6 +194,17 @@ class TestMacroAdapter(unittest.TestCase):
             ad.fetch("/b")
             elapsed = __import__("time").time() - t0
         self.assertGreaterEqual(elapsed, 0.04)
+
+    def test_default_strict_origin_rejects_arbitrary_origin(self):
+        """生产默认安全：strict_origin 默认 True —— 任意 MACRO_BASE_URL 在
+        出网前失败关闭（不留默认可用的任意 origin 路径）。"""
+        os.environ["MACRO_BASE_URL"] = "https://evil.example"
+        ad = MacroAdapter(self.guard, min_interval=0.0)  # 默认 strict_origin=True
+        with mock.patch("macro_adapter.urllib.request.urlopen") as m:
+            with self.assertRaises(ValueError) as cm:
+                ad.fetch("/sj/x")
+            m.assert_not_called()
+        self.assertIn("E-G7-02-033", str(cm.exception))
 
 
 if __name__ == "__main__":

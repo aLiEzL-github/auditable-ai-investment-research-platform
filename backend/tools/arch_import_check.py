@@ -36,7 +36,8 @@ LAYER_EXEMPT = {
     "migrations": ["backend/migrations"],
     "L3_fetch": ["backend/tools/import_guard.py", "backend/tools/sse_adapter.py",
                  "backend/tools/macro_adapter.py", "backend/tools/akshare_adapter.py",
-                 "backend/tools/cninfo_adapter.py"],
+                 "backend/tools/cninfo_adapter.py",
+                 "backend/tools/g7_02.py"],
     "tools_internal": ["backend/tools/migration_check.py", "backend/tools/vertical_smoke.py"],
     # OI-PF-141：供应链清单刷新工具。出网范围仅 pypi.org 的 JSON 元数据端点，
     # **只读元数据、不下载分发包、不执行任何上游代码**，且**不在 CI 中运行**
@@ -146,6 +147,16 @@ EXEMPT_ASSERTS = {
          lambda src: "curl_cffi_interdict" in src),
         ("backend/tools/cninfo_adapter.py", "取数层须持有网络面（NETWORK_LIBS 之一）",
          lambda src: any(lib in src for lib in NETWORK_LIBS)),
+        ("backend/tools/g7_02.py",
+         "G7-02 取数 CLI 须全接线：① 官方 endpoint 校验（www.stats.gov.cn / "
+         "strict_origin）② 仓外路径门（Git ROOT 之外）③ RightsGuard 权利门 "
+         "④ 出网委托给受管 macro_adapter",
+         lambda src: "strict_origin" in src
+                     and "www.stats.gov.cn" in src
+                     and "resolve_outside_repo" in src
+                     and "_resolve_outside_repo" in src
+                     and "RightsGuard" in src
+                     and "macro_adapter" in src),
     ],
     "tools_internal": [
         ("backend/tools/migration_check.py", "内部工具须经 subprocess 驱动 alembic",

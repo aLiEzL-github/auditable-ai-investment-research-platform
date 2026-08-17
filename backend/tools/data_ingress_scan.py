@@ -93,11 +93,20 @@ MUTATION_TEST_EXEMPT = ('test_scanners_mutation.py', 'test_g2_11.py',
 # 引擎常数（NBS_DOMAIN）与合成 fixture/测试必须出现 stats.gov.cn 字样才能
 # 机检「署名在首屏前 N 行」义务；数值全部合成、无任何真实数据。缺失域名即
 # 守卫失效，故与 rights_matrix.json 同类豁免并注明理由。
+# G7-02（OI-PF-058 模式延续）：G7-02 生产 CLI 的官方 endpoint 边界检查要求
+# 代码与测试持有官方域名常量（www.stats.gov.cn）与官方路径形状校验 —— 这是
+# 职能性引用（无真实页面/正文/数值），缺失即守卫失效。合成 fixture 的
+# source_url 用 synthetic:// 占位，真实形状 URL 只在测试侧构造，不入仓。
 G4_ATTRIBUTION_EXEMPT = ('backend/app/publish_engine.py',
                          'backend/app/network_probe.py',
                          'backend/tests/_g4_fixtures.py',
                          'backend/tests/test_g4_02.py',
-                         'backend/tools/build_gate4_acceptance.py')
+                         'backend/tools/build_gate4_acceptance.py',
+                         'backend/app/g7_02_service.py',
+                         'backend/tools/g7_02.py',
+                         'backend/tools/macro_adapter.py',
+                         'backend/tests/test_g7_02.py',
+                         'backend/tools/arch_import_check.py')
 SKIP_DIR = {".git", "node_modules", "__pycache__", ".venv", "venv"}
 
 

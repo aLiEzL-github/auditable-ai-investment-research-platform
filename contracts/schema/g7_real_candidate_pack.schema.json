@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0.0",
+  "title": "G7-02 real candidate pack",
+  "description": "G7-02 全链真实候选 pack（内容寻址）。Pack 只含定位/哈希/状态/计数，不含原始正文或真实批量数值。顶层 candidate_status 与 company.data_status 分轴：macro 固定 PARTIAL+CONTEXT_ONLY、G6A 四路 NOT_EVALUATED 时顶层恒 PARTIAL，即使 company data coverage 自身 FULL。发布四类写入计数恒为 0。pack 自身身份 = canonical 字节的 sha256（与 G6A final candidate 同约定，对象体内不内嵌自身 id）。",
+  "type": "object",
+  "required": [
+    "schema_version", "kind", "task_id", "source_commit", "source_tree",
+    "scope_id", "as_of_date", "cutoff_at", "research_contract",
+    "company", "material_fact_coverage", "missing_periods", "missing_bindings",
+    "candidate_status", "single_source_disclosed", "reviewer_independence",
+    "macro", "g6a_candidate", "gate_status", "write_counts"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "kind": {"const": "g7_real_candidate_pack"},
+    "task_id": {"const": "G7-02"},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "source_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "scope_id": {"const": "600089.SH"},
+    "as_of_date": {"type": "string", "minLength": 1},
+    "cutoff_at": {"type": "string", "minLength": 1},
+    "research_contract": {
+      "type": "object",
+      "required": ["contract_id", "scope", "workflow", "market_scope",
+                   "currency", "as_of_date", "cutoff_at"],
+      "properties": {
+        "contract_id": {"type": "string", "minLength": 1},
+        "scope": {"const": "600089.SH"},
+        "workflow": {"const": "G7-02_PIPELINE_ACCEPTANCE_ONLY"},
+        "market_scope": {"const": "CN_A_SHARE"},
+        "currency": {"const": "CNY"},
+        "as_of_date": {"type": "string", "minLength": 1},
+        "cutoff_at": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "company": {
+      "type": "object",
+      "required": ["ticker", "data_status", "input_sha256", "input_raw_sha256",
+                   "source_doc_count", "material_fact_count",
+                   "material_verified_count", "period_status",
+                   "single_source_disclosed", "source_id", "source_family",
+                   "import_action", "import_rights_decision", "source_complete"],
+      "properties": {
+        "ticker": {"const": "600089"},
+        "data_status": {"enum": ["FULL", "PARTIAL"]},
+        "input_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "input_raw_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_doc_count": {"type": "integer", "minimum": 1},
+        "material_fact_count": {"type": "integer", "minimum": 1},
+        "material_verified_count": {"type": "integer", "minimum": 0},
+        "period_status": {"type": "object"},
+        "single_source_disclosed": {"const": "SINGLE_SOURCE_DISCLOSED"},
+        "source_id": {"const": "SRC_CNINFO"},
+        "source_family": {"const": "600089-issuer-legal-filings"},
+        "import_action": {"const": "IMPORT"},
+        "import_rights_decision": {"type": "object"},
+        "source_complete": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "material_fact_coverage": {
+      "description": "材料性事实覆盖：归一 metric → {period: {locator, state, unit}}（不含数值）。",
+      "type": "object"
+    },
+    "missing_periods": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "missing_bindings": {
+      "description": "缺失的 metric×period 绑定（防假绿：单条 2024 事实不能使全体 FULL）。",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "candidate_status": {
+      "description": "顶层分轴状态：macro PARTIAL+CONTEXT_ONLY / G6A NOT_EVALUATED 下恒 PARTIAL。",
+      "const": "PARTIAL"
+    },
+    "single_source_disclosed": {"const": "SINGLE_SOURCE_DISCLOSED"},
+    "reviewer_independence": {"const": "SINGLE_REVIEWER_ATTESTED"},
+    "macro": {
+      "type": "object",
+      "required": ["source_id", "source_family", "source_url",
+                   "source_commit", "source_tree", "manifest_sha256",
+                   "manifest_raw_sha256", "raw_sha256", "raw_bytes", "scope",
+                   "publication_date", "reference_period", "acquired_at",
+                   "cutoff_at", "policy_version", "rights_decision",
+                   "gate_status", "is_financial_dual_source_for_600089"],
+      "properties": {
+        "source_id": {"const": "SRC_NBS"},
+        "source_family": {"const": "nbs-official"},
+        "source_url": {"type": "string", "minLength": 1},
+        "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "manifest_raw_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "raw_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "raw_bytes": {"type": "integer", "minimum": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "publication_date": {"type": "string", "minLength": 1},
+        "reference_period": {"type": "string", "minLength": 1},
+        "acquired_at": {"type": "string", "minLength": 1},
+        "cutoff_at": {"type": "string", "minLength": 1},
+        "policy_version": {"type": "string", "minLength": 1},
+        "rights_decision": {"type": "object"},
+        "gate_status": {"type": "object"},
+        "is_financial_dual_source_for_600089": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "g6a_candidate": {
+      "type": "object",
+      "required": ["candidate_id", "request_hash", "product_count",
+                   "quality_status", "release_eligible"],
+      "properties": {
+        "candidate_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "request_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "product_count": {"const": 11},
+        "quality_status": {"const": "PARTIAL"},
+        "release_eligible": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "gate_status": {
+      "type": "object",
+      "required": ["gate7_reached", "gate_release_eligible"],
+      "properties": {
+        "gate7_reached": {"const": false},
+        "gate_release_eligible": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "write_counts": {
+      "type": "object",
+      "required": ["Approval", "DecisionVersion", "Release", "CurrentPointer",
+                   "latest", "trade"],
+      "properties": {
+        "Approval": {"const": 0},
+        "DecisionVersion": {"const": 0},
+        "Release": {"const": 0},
+        "CurrentPointer": {"const": 0},
+        "latest": {"const": 0},
+        "trade": {"const": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
