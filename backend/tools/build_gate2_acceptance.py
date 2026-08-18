@@ -216,8 +216,16 @@ def main() -> int:
     L.append("```text")
     L.append(LIVE_BEGIN)
     for name, script in (("独立审计", "audit_session.py"), ("v2.0 基线", "test_v2_baseline.py")):
-        rc, out, err = run(f"python3 {shlex.quote(os.path.join(ROOT, '..', 'portfolio', 'tools', script))} "
-                           f"{shlex.quote(os.path.join(ROOT, '..', 'portfolio'))}")
+        # 台账路径走 PORTFOLIO（本文件开头已由 _portfolio_root() 算好）。
+        # 此处原为 os.path.join(ROOT, '..', 'portfolio', ...) —— 无视 PORTFOLIO_ROOT，
+        # 拼出 <仓库>/portfolio/tools/audit_session.py，该路径不存在。
+        # 后果不是崩，是**静默记账**：§6 写下「退出码 2 | can't open file」，
+        # 而结论仍取 READY_FOR_APPROVAL —— 包在「自己的证据段显示检查没跑起来」
+        # 的状态下被签过一次（2026-08-11），无人发现。
+        # OI-PF-153 修过同类缺陷，注释就在本文件第 171 行，**漏了这一处**：
+        # 「找到一个实例」与「列全实例」是两件事。
+        rc, out, err = run(f"python3 {shlex.quote(os.path.join(PORTFOLIO, 'tools', script))} "
+                           f"{shlex.quote(PORTFOLIO)}")
         L.append(f"{name}: 退出码 {rc} | {out.splitlines()[-1] if out else err}")
     L.append(LIVE_END)
     L.append(f"工程测试: {status_of('.venv/bin/python -m unittest discover -s backend/tests 2>&1 | tail -1')}")
