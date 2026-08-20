@@ -116,12 +116,22 @@ def _rec(tid):
         return json.load(open(fp, encoding="utf-8"))
     return None
 
+def _is_unclosed(i):
+    """ADR-029 裁定 (c)：未闭 = status 非 CLOSED 且非 RESOLVED_BY_ADR-*。
+
+    此前一律 `status == "OPEN"`（候选 (a) 的口径，无文档定义）。按 ADR-029
+    分档口径，LARGELY_MITIGATED / PARTIALLY_CLOSED / RESOLVED_AS_UNKNOWN /
+    ACKNOWLEDGED 均为未闭；RESOLVED_BY_ADR-* 有 ADR 承载者视为已闭。
+    """
+    s = i.get("status") or ""
+    return s != "CLOSED" and not s.startswith("RESOLVED_BY_ADR")
+
 def main() -> int:
     L = []
     OI = json.load(open(os.path.join(PORTFOLIO, "risk", "open-items.json"),
                         encoding="utf-8"))
     items = OI["items"]
-    mat = [i for i in items if i["status"] == "OPEN" and i.get("material")]
+    mat = [i for i in items if _is_unclosed(i) and i.get("material")]
     g6_mat = [i for i in mat if in_gate6(i)
               and i.get("category") != "签署前置条件"]
     _standing = [i for i in mat if is_standing_risk(i)]
@@ -356,7 +366,8 @@ def main() -> int:
              + (f" —— 非零: {[i['open_item_id'] for i in g6_mat]}" if g6_mat else ""))
     L.append(f"   \"ALL\" 项不计入本条（ADR-022 §2 取字面），"
              f"另见 §1.7 逐项点名的 {len(_standing)} 项持续性风险")
-    L.append(f"② 全部未闭材料性开放项 —— {len(mat)} 项")
+    L.append(f"② 全部未闭材料性开放项 —— {len(mat)} 项"
+             f"（未闭 = 非 CLOSED 且非 RESOLVED_BY_ADR-*，ADR-029 裁定 (c)）")
     for i in mat:
         L.append(f"   {i['open_item_id']} | {i.get('category','')} | 阻断={_blk(i)}")
     _WINDOW = ("2026-08-11", "2026-08-12")

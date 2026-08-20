@@ -84,11 +84,21 @@ def in_gate2(i):
     # 重生成会改字节而触发 A §10.3（见 OI-PF-168）。
     return _adr021_in_scope(i, "G2")
 
+def _is_unclosed(i):
+    """ADR-029 裁定 (c)：未闭 = status 非 CLOSED 且非 RESOLVED_BY_ADR-*。
+
+    此前一律 `status == "OPEN"`（候选 (a) 的口径，无文档定义）。按 ADR-029
+    分档口径，LARGELY_MITIGATED / PARTIALLY_CLOSED / RESOLVED_AS_UNKNOWN /
+    ACKNOWLEDGED 均为未闭；RESOLVED_BY_ADR-* 有 ADR 承载者视为已闭。
+    """
+    s = i.get("status") or ""
+    return s != "CLOSED" and not s.startswith("RESOLVED_BY_ADR")
+
 def main() -> int:
     L = []
     OI = json.load(open(os.path.join(PORTFOLIO, "risk", "open-items.json"),
                         encoding="utf-8"))
-    op = [i for i in OI["items"] if i["status"] == "OPEN"]
+    op = [i for i in OI["items"] if _is_unclosed(i)]
     mat = [i for i in op if i.get("material")]
     g2_mat = [i for i in mat if in_gate2(i)]
     other_mat = [i for i in mat if not in_gate2(i)]
@@ -183,13 +193,12 @@ def main() -> int:
     # 按 MR-1 严格者胜取并集（与 build_gate0_acceptance.py 的 in_g0() 同构）：
     # 删掉 blocks_decisions 会撤销 OI-PF-082 的修复（§2(c) 覆盖），故保留。
     def _in_g2(i):
-        _s = " ".join(str(i.get(k) or "") for k in
-                      ("blocks_development", "blocks_data_flow",
-                       "blocks_decisions", "deprecated_blocks_gate"))
-        return bool(re.search(r"\bG2-\d\d\b|Gate 2", _s))
+        # OI-PF-157：§1.5 与 §4.1 须同口径。原局部正则要求 G2-xx 短横，
+        # 漏掉 deprecated_blocks_gate 的裸 "G2"（实测 OI-PF-027），两节互相矛盾。
+        return in_gate2(i)
     gate2 = [i for i in items if _in_g2(i)]
     # 签署前置条件单列：这类项只能由签署关闭，计入阻断即成循环（ADR-021 §2.4）
-    gate2_mat = [i for i in gate2 if i.get("material") and i.get("status") == "OPEN"
+    gate2_mat = [i for i in gate2 if i.get("material") and _is_unclosed(i)
                  and i.get("category") != "签署前置条件"]
     L.append(f"Gate 2 范围内的材料性开放项：{len(gate2_mat)} 项（须为零）"
              f"［范围判定：blocks_development 含 G2-xx，ADR-021 §2 并集口径］"
@@ -197,8 +206,9 @@ def main() -> int:
     for i in gate2:
         L.append(f"   {i['open_item_id']}: {i.get('status')} 材料性={i.get('material')} "
                  f"阻断任务={i.get('blocks_development')} 阻断决策={i.get('blocks_decisions')}")
-    unclosed = [i for i in items if i.get("status") == "OPEN" and i.get("material")]
-    L.append(f"② 全部未闭材料性开放项 —— {len(unclosed)} 项")
+    unclosed = [i for i in items if _is_unclosed(i) and i.get("material")]
+    L.append(f"② 全部未闭材料性开放项 —— {len(unclosed)} 项"
+             f"（未闭 = 非 CLOSED 且非 RESOLVED_BY_ADR-*，ADR-029 裁定 (c)）")
     for i in unclosed:
         L.append(f"   {i['open_item_id']} | {i.get('category','')} | "
                  f"阻断={i.get('blocks_decisions') or '无'}")

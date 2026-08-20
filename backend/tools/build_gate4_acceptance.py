@@ -90,12 +90,22 @@ def in_gate4(i):
     # 重生成会改字节而触发 A §10.3（见 OI-PF-168）。
     return _adr021_in_scope(i, "G4")
 
+def _is_unclosed(i):
+    """ADR-029 裁定 (c)：未闭 = status 非 CLOSED 且非 RESOLVED_BY_ADR-*。
+
+    此前一律 `status == "OPEN"`（候选 (a) 的口径，无文档定义）。按 ADR-029
+    分档口径，LARGELY_MITIGATED / PARTIALLY_CLOSED / RESOLVED_AS_UNKNOWN /
+    ACKNOWLEDGED 均为未闭；RESOLVED_BY_ADR-* 有 ADR 承载者视为已闭。
+    """
+    s = i.get("status") or ""
+    return s != "CLOSED" and not s.startswith("RESOLVED_BY_ADR")
+
 def main() -> int:
     L = []
     OI = json.load(open(os.path.join(PORTFOLIO, "risk", "open-items.json"),
                         encoding="utf-8"))
     items = OI["items"]
-    op = [i for i in items if i["status"] == "OPEN"]
+    op = [i for i in items if _is_unclosed(i)]
     mat = [i for i in op if i.get("material")]
     g4_mat = [i for i in mat if in_gate4(i)
               and i.get("category") != "签署前置条件"]
@@ -206,7 +216,8 @@ def main() -> int:
     for i in g4_mat:
         L.append(f"   {i['open_item_id']}: {i.get('status')} 材料性={i.get('material')} "
                  f"阻断={_blk(i)}")
-    L.append(f"② 全部未闭材料性开放项 —— {len(mat)} 项")
+    L.append(f"② 全部未闭材料性开放项 —— {len(mat)} 项"
+             f"（未闭 = 非 CLOSED 且非 RESOLVED_BY_ADR-*，ADR-029 裁定 (c)）")
     for i in mat:
         L.append(f"   {i['open_item_id']} | {i.get('category','')} | 阻断={_blk(i)}")
     # 净变化 = 新增 - 关闭。初版写成 关闭 - 新增，于是「新增 3 · 关闭 21」
