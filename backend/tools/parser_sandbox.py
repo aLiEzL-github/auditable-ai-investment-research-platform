@@ -56,9 +56,12 @@ def run_isolated(argv: list, timeout: float = TIMEOUT_S,
                  cwd: str = None, env: dict = None) -> subprocess.CompletedProcess:
     """进程级隔离（ADR-007）：子进程 + 资源上限 + 超时 kill（失败关闭）。"""
     import resource
+    import math
 
     def _limit():
-        resource.setrlimit(resource.RLIMIT_CPU, (timeout, timeout + 5))
+        # setrlimit 要求整数：浮点 timeout 向上取整，保证 CPU 上限 ≥ 超时值
+        cpu_secs = int(math.ceil(timeout))
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu_secs, cpu_secs + 5))
         try:
             # macOS 上 AS 收紧可能被 hard limit 拒绝：容错跳过（CPU+超时为主防线）
             resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))
