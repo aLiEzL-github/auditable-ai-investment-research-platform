@@ -813,6 +813,11 @@ class TestFreezePack(_StoreBase):
                          "PARTIAL")
         self.assertIs(result.pack["g6a_candidate"]["release_eligible"], False)
         self.assertEqual(result.pack["g6a_candidate"]["product_count"], 11)
+        # SOTP 显式排除（候选人条件③）：独立字段记录，不进入四路契约。
+        exc = result.pack.get("sotp_exclusion")
+        self.assertIsNotNone(exc)
+        self.assertEqual(exc["state"], "NOT_APPLICABLE")
+        self.assertIn("E-G3-06-004", exc["reason"])
         # Gate/发布轴独立且不提升。
         self.assertIs(result.pack["gate_status"]["gate7_reached"], False)
         self.assertIs(result.pack["gate_status"]["gate_release_eligible"],

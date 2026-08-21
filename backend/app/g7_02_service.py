@@ -721,6 +721,18 @@ def build_candidate_request(*, company: CompanyValidation,
                 "tolerance": "0.15", "owner_role": "U",
                 "due_date": "2026-08-31", "blocks_gate": "G7"},
             "valuation_routes": routes,
+            # SOTP 显式排除（候选人条件③）：600089 合并报表无分部披露，
+            # SOTP 分部加总不适用（E-G3-06-004 RouteNotApplicable 依据）；
+            # SOTP 不在四路契约（VALUATION_ROUTES）内 —— 独立字段显式记录，
+            # 不破坏「估值路由声明键集 = 生产注册表」的硬契约。
+            "sotp_exclusion": {
+                "state": "NOT_APPLICABLE",
+                "reason": "600089 合并报表无分部披露（E-G3-06-004 "
+                          "RouteNotApplicable）；SOTP 不在 G7-02 四路契约"
+                          "（VALUATION_ROUTES）内，显式排除",
+                "evidence_refs": [f"object:{company.input_sha256}",
+                                  f"object:{manifest_sha}"],
+            },
         },
     }
 
@@ -811,6 +823,14 @@ def build_pack(*, company: CompanyValidation, macro_manifest: dict,
         "gate_status": {
             "gate7_reached": False,
             "gate_release_eligible": False,
+        },
+        "sotp_exclusion": {
+            "state": "NOT_APPLICABLE",
+            "reason": "600089 合并报表无分部披露（E-G3-06-004 "
+                      "RouteNotApplicable）；SOTP 不在 G7-02 四路契约"
+                      "（VALUATION_ROUTES）内，显式排除",
+            "evidence_refs": [f"object:{company.input_sha256}",
+                              f"object:{manifest_sha}"],
         },
         "write_counts": {axis: 0 for axis in WRITE_AXES},
     }

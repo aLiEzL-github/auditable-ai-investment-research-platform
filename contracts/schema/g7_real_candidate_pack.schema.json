@@ -9,7 +9,7 @@
     "scope_id", "as_of_date", "cutoff_at", "research_contract",
     "company", "material_fact_coverage", "missing_periods", "missing_bindings",
     "candidate_status", "single_source_disclosed", "reviewer_independence",
-    "macro", "g6a_candidate", "gate_status", "write_counts"
+    "macro", "g6a_candidate", "gate_status", "sotp_exclusion", "write_counts"
   ],
   "properties": {
     "schema_version": {"const": "1.0.0"},
@@ -128,6 +128,20 @@
       "properties": {
         "gate7_reached": {"const": false},
         "gate_release_eligible": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "sotp_exclusion": {
+      "type": "object",
+      "required": ["state", "reason", "evidence_refs"],
+      "properties": {
+        "state": {"const": "NOT_APPLICABLE"},
+        "reason": {"type": "string", "minLength": 1},
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
       },
       "additionalProperties": false
     },

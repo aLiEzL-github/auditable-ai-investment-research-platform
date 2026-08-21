@@ -276,7 +276,8 @@ def final_candidate_request(payload: dict) -> FinalCandidateRequest:
         root["context"], "request.context",
         ("contract", "facts", "macro", "formula_specs", "valuation_inputs",
          "assumption_defaults", "approved_snapshot", "open_items_policy",
-         "valuation_routes"))
+         "valuation_routes"),
+        ("sotp_exclusion",))
 
     mappings = {}
     for key in ("contract", "facts", "macro", "formula_specs",
