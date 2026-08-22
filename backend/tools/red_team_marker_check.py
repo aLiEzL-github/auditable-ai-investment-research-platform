@@ -75,8 +75,10 @@ def baseline_natural_persons(root):
             text = stream.read()
     except OSError:
         return None
-    match = re.search(r"baseline_natural_persons\s*=\s*(\d+)", text)
-    return int(match.group(1)) if match else None
+    # 取**最后**一次匹配（追加段优先，符合只追加语义 —— 初始段可能写 1，
+    # 后续重开追加段写 2，生效值取最后）
+    matches = re.findall(r"baseline_natural_persons\s*=\s*(\d+)", text)
+    return int(matches[-1]) if matches else None
 
 
 def attestation_missing(rec, natural_persons):
