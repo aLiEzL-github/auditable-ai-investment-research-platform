@@ -85,12 +85,22 @@ def _blk(i):
         p.append(f"数据面={i['blocks_data_flow']}")
     return " · ".join(p) or "无"
 
+def _is_unclosed(i):
+    """ADR-029 裁定 (c)：未闭 = status 非 CLOSED 且非 RESOLVED_BY_ADR-*。
+
+    此前一律 `status == "OPEN"`（候选 (a) 的口径，无文档定义）。按 ADR-029
+    分档口径，LARGELY_MITIGATED / PARTIALLY_CLOSED / RESOLVED_AS_UNKNOWN /
+    ACKNOWLEDGED 均为未闭；RESOLVED_BY_ADR-* 有 ADR 承载者视为已闭。
+    """
+    s = i.get("status") or ""
+    return s != "CLOSED" and not s.startswith("RESOLVED_BY_ADR")
+
 def main() -> int:
     L = []
     OI = json.load(open(os.path.join(PORTFOLIO, "risk", "open-items.json"),
                         encoding="utf-8"))
     items = OI["items"]
-    mat = [i for i in items if i["status"] == "OPEN" and i.get("material")]
+    mat = [i for i in items if _is_unclosed(i) and i.get("material")]
     g6c_mat = [i for i in mat if in_gate6c(i)
                and i.get("category") != "签署前置条件"]
     _standing = [i for i in mat if is_standing_risk(i)]
@@ -256,7 +266,8 @@ def main() -> int:
     for i in [x for x in items if in_gate6c(x)]:
         L.append(f"   {i['open_item_id']}: {i.get('status')} "
                  f"材料性={i.get('material')} 阻断={_blk(i)}")
-    L.append(f"② 全部未闭材料性开放项 —— {len(mat)} 项")
+    L.append(f"② 全部未闭材料性开放项 —— {len(mat)} 项"
+             f"（未闭 = 非 CLOSED 且非 RESOLVED_BY_ADR-*，ADR-029 裁定 (c)）")
     for i in mat:
         L.append(f"   {i['open_item_id']} | {i.get('category','')} | 阻断={_blk(i)}")
     _WINDOW = ("2026-08-11", "2026-08-12")

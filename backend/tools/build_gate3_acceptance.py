@@ -83,12 +83,36 @@ def in_gate3(i):
     # 重生成会改字节而触发 A §10.3（见 OI-PF-168）。
     return _adr021_in_scope(i, "G3")
 
+def _is_unclosed(i):
+    """ADR-029 裁定 (c)：未闭 = status 非 CLOSED 且非 RESOLVED_BY_ADR-*。
+
+    此前一律 `status == "OPEN"`（候选 (a) 的口径，无文档定义）。按 ADR-029
+    分档口径，LARGELY_MITIGATED / PARTIALLY_CLOSED / RESOLVED_AS_UNKNOWN /
+    ACKNOWLEDGED 均为未闭；RESOLVED_BY_ADR-* 有 ADR 承载者视为已闭。
+    """
+    s = i.get("status") or ""
+    return s != "CLOSED" and not s.startswith("RESOLVED_BY_ADR")
+
+
+def sig_state(fname):
+    """读 gate-record 的签署状态与时刻。§7 P-1 此前为硬编码字面量，
+    连「实测」二字也是字面量的一部分 —— 于是 2026-08-11 那次签署被漂移
+    取代后，包里仍写着 ACTIVE。现改为当刻实读，读不到即如实报读不到。
+    """
+    p = os.path.join(PORTFOLIO, "gate-records", fname)
+    try:
+        d = json.load(open(p, encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return f"（{fname} 读取失败：{type(e).__name__}）"
+    return (f"{d.get('signature_status', '?')}"
+            f"（signed_at={d.get('signed_at') or '—'}）")
+
 def main() -> int:
     L = []
     OI = json.load(open(os.path.join(PORTFOLIO, "risk", "open-items.json"),
                         encoding="utf-8"))
     items = OI["items"]
-    op = [i for i in items if i["status"] == "OPEN"]
+    op = [i for i in items if _is_unclosed(i)]
     mat = [i for i in op if i.get("material")]
     g3_mat = [i for i in mat if in_gate3(i)
               and i.get("category") != "签署前置条件"]
@@ -138,7 +162,12 @@ def main() -> int:
     L.append(f"  C-1 宏观先冻结: MacroGate 冻结于 MacroSnapshot.freeze()，"
              f"公司分析（vertical_candidate_g3_08）在其后 —— {status_of('.venv/bin/python -m unittest backend.tests.test_g3_03 2>&1 | tail -1')}")
     L.append(f"  C-2 材料性宏观缺失→不输出当前估值: {status_of('.venv/bin/python -m unittest backend.tests.test_g3_03 2>&1 | tail -1')}（含 test_material_missing_blocks）")
-    L.append(f"  C-3 材料性判定可机检: 变异注入把材料性项标非材料性→阻断消失（mut: c3_gdp_material_false）—— 全部先红后绿")
+    # C-3 此前为无占位符的 f-string 字面量，其所引证据 `mut: c3_gdp_material_false`
+    # 在全仓不存在 —— 只出现在本行自身。改为实跑，并指向真实存在的互补用例对：
+    # 材料性项缺失 → 阻断；非材料性项缺失 → 仅降级。这一对才是「判定与材料性相关」的证据。
+    L.append(f"  C-3 材料性判定可机检: {status_of('.venv/bin/python -m unittest backend.tests.test_g3_03 2>&1 | tail -1')}"
+             f"（test_material_missing_blocks 缺材料性 GDP_YOY→MacroGateFail(E-G3-03-001)"
+             f" 对 test_non_material_missing_degrades_only 缺非材料性 CPI_YOY→仅 PARTIAL）")
     L.append("```\n")
 
     L.append("### 2.2 适用分母与硬规则（C-4/C-5/C-6）\n")
@@ -157,8 +186,12 @@ def main() -> int:
 
     L.append("### 2.4 对外表述（C-10/C-11）\n")
     L.append("```text")
-    L.append("  C-10 首屏声明（U 裁定：前 3 行）: test_g3_05.test_first_screen_attestation —— 首屏 PASS / 脚注 FAIL")
-    L.append("  C-11 不构成投资建议: test_g3_05.test_disclaimer_missing_fails —— 缺失即 FAIL")
+    # C-10/C-11 此前为纯字面量，与本节「逐条实测」的标题不符。改为实跑。
+    _c1011 = status_of('.venv/bin/python -m unittest backend.tests.test_g3_05 2>&1 | tail -1')
+    L.append(f"  C-10 首屏声明（U 裁定：前 3 行）: {_c1011}"
+             f"（test_g3_05.test_first_screen_attestation —— 首屏 PASS / 脚注 FAIL）")
+    L.append(f"  C-11 不构成投资建议: {_c1011}"
+             f"（test_g3_05.test_disclaimer_missing_fails —— 缺失即 FAIL）")
     L.append("```\n")
 
     # ── §3 Gate 3 退出条件四条（基线 B §6 原文）──────────────────
@@ -207,8 +240,9 @@ def main() -> int:
     L.append(f"① Gate 3 范围内的材料性开放项：{len(g3_mat)} 项（须为零）"
              f"［blocks_development 含 G3-xx，ADR-021 §2 并集口径］"
              + (f" —— 非零: {[i['open_item_id'] for i in g3_mat]}" if g3_mat else ""))
-    unclosed = [i for i in items if i.get("status") == "OPEN" and i.get("material")]
-    L.append(f"② 全部未闭材料性开放项 —— {len(unclosed)} 项")
+    unclosed = [i for i in items if _is_unclosed(i) and i.get("material")]
+    L.append(f"② 全部未闭材料性开放项 —— {len(unclosed)} 项"
+             f"（未闭 = 非 CLOSED 且非 RESOLVED_BY_ADR-*，ADR-029 裁定 (c)）")
     for i in unclosed:
         L.append(f"   {i['open_item_id']} | {i.get('category','')} | "
                  f"阻断={i.get('blocks_decisions') or '无'} | 数据面={i.get('blocks_data_flow') or '—'}")
@@ -245,8 +279,9 @@ def main() -> int:
     # ── §7 签署前置 ───────────────────────────────────────────────
     L.append("## 7. 签署前置\n")
     L.append("```text")
-    L.append("P-1 G1/G2 签署有效性：G1-acceptance-6 / G2-acceptance-4 ACTIVE"
-             "（signed_at=2026-08-11T06:26:33Z，实测）")
+    L.append(f"P-1 G1/G2 签署有效性（当刻实读 gate-record，非字面量）："
+             f"G1-acceptance-6 = {sig_state('G1-acceptance-6.json')}；"
+             f"G2-acceptance-4 = {sig_state('G2-acceptance-4.json')}")
     L.append("P-2 OI-PF-070：U 裁定首屏 = 前 3 行（2026-08-11），C-10 已按此实现")
     L.append("P-3 数据来源：600089 全人工导入（ADR-017），自动取得能力为零 —— "
              "G3 按此前提设计，风险已如实载入本包 §8")
